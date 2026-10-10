@@ -61,6 +61,8 @@ constexpr std::array<BindingPair, static_cast<std::size_t>(Action::Count)> kDefa
     {SDL_SCANCODE_K, kAxisSourceBase + SDL_CONTROLLER_AXIS_RIGHTY * 2 + 1},
     {SDL_SCANCODE_J, kAxisSourceBase + SDL_CONTROLLER_AXIS_RIGHTX * 2},
     {SDL_SCANCODE_L, kAxisSourceBase + SDL_CONTROLLER_AXIS_RIGHTX * 2 + 1},
+    {SDL_SCANCODE_O, SDL_CONTROLLER_BUTTON_RIGHTSTICK},
+    {dkr::runtime::input::kUnbound, kAxisSourceBase + SDL_CONTROLLER_AXIS_TRIGGERRIGHT * 2 + 1},
 }};
 #else
 constexpr std::array<BindingPair, static_cast<std::size_t>(Action::Count)> kDefaults{};
@@ -144,13 +146,14 @@ std::atomic<float> g_trigger_threshold{0.5F};
 constexpr std::array<const char*, static_cast<std::size_t>(Action::Count)> kIdentifiers{{
     "stick_up", "stick_down", "stick_left", "stick_right", "a", "b", "z",
     "start", "dpad_up", "dpad_down", "dpad_left", "dpad_right", "l", "r",
-    "c_up", "c_down", "c_left", "c_right",
+    "c_up", "c_down", "c_left", "c_right", "look_back", "accelerate",
 }};
 
 constexpr std::array<const char*, static_cast<std::size_t>(Action::Count)> kLabels{{
     "Analogue up", "Analogue down", "Analogue left", "Analogue right", "A button",
     "B button", "Z trigger", "Start", "D-pad up", "D-pad down", "D-pad left",
     "D-pad right", "L shoulder", "R shoulder", "C-up", "C-down", "C-left", "C-right",
+    "Look back", "Accelerate",
 }};
 
 std::size_t Index(Action action) {
@@ -1030,6 +1033,11 @@ dkr::runtime::input::State dkr::runtime::input::poll(
     press(Action::CDown, kCDown);
     press(Action::CLeft, kCLeft);
     press(Action::CRight, kCRight);
+    state.camera_x = std::clamp(value(Action::CRight) - value(Action::CLeft), -1.0F, 1.0F);
+    state.camera_y = std::clamp(value(Action::CUp) - value(Action::CDown), -1.0F, 1.0F);
+    state.look_back = value(Action::LookBack) > 0.5F;
+    state.accelerate = value(Action::Accelerate) >
+        (dkr::runtime::enhancements::modern_presentation_enabled() ? trigger_threshold() : 0.5F);
     state.stick_x = std::clamp(value(Action::StickRight) - value(Action::StickLeft), -1.0F, 1.0F);
     state.stick_y = std::clamp(value(Action::StickUp) - value(Action::StickDown), -1.0F, 1.0F);
     if (dkr::runtime::enhancements::modern_presentation_enabled()) {
@@ -1165,6 +1173,13 @@ dkr::runtime::input::State dkr::runtime::input::poll_snapshot(
     press(Action::CDown, kCDown);
     press(Action::CLeft, kCLeft);
     press(Action::CRight, kCRight);
+    state.camera_x = std::clamp(value(Action::CRight) - value(Action::CLeft),
+                                -1.0F, 1.0F);
+    state.camera_y = std::clamp(value(Action::CUp) - value(Action::CDown),
+                                -1.0F, 1.0F);
+    state.look_back = value(Action::LookBack) > 0.5F;
+    state.accelerate = value(Action::Accelerate) >
+        (dkr::runtime::enhancements::modern_presentation_enabled() ? trigger_threshold() : 0.5F);
     state.stick_x = std::clamp(value(Action::StickRight) -
                                value(Action::StickLeft), -1.0F, 1.0F);
     state.stick_y = std::clamp(value(Action::StickUp) -

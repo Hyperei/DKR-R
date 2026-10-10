@@ -127,6 +127,24 @@ fi
 for tool in git python3 cmake ninja; do
   command -v "$tool" >/dev/null || fail "Required tool missing: $tool"
 done
+# Never retire generated output through an unresolved/aliased source path.
+OUTPUT="$(python3 - "$OUTPUT" "$PROJECT_ROOT" <<'PY'
+import pathlib, sys
+target, root = (pathlib.Path(p).resolve() for p in sys.argv[1:])
+blocked = [pathlib.Path.home().resolve(), root, root / "extern",
+           root / "runtime-recomp" / "RecompiledFuncs",
+           root / "runtime-recomp" / "RecompiledPatches"]
+if target == pathlib.Path(target.anchor) or any(
+        target == p or target in p.parents for p in blocked) or any(
+        p == target or p in target.parents for p in blocked[2:]):
+    raise SystemExit("--output must be a dedicated generated-build directory")
+for revision in (77, 80):
+    child = target / ("v" + str(revision))
+    if child.is_symlink():
+        raise SystemExit("refusing symlinked generated revision: " + str(child))
+print(target)
+PY
+)" || fail "Unsafe generated output directory."
 if ! xcrun metal -v >/dev/null 2>&1; then
   xcodebuild -downloadComponent MetalToolchain || fail "Install the Metal toolchain: xcodebuild -downloadComponent MetalToolchain"
 fi
@@ -176,10 +194,14 @@ RECOMPILER="$TOOL_BUILD/N64Recomp"
 
 step "Decomp toolchain"
 DECOMP="$PROJECT_ROOT/extern/dkr-decomp"
+BINUTILS_CACHE="$PROJECT_ROOT/build/runtime-tools/mips-binutils"
+BINUTILS_SOURCE="$DECOMP/tools/binutils"
 # The Makefile uses a PATH toolchain only when both ld and gcc exist, else
 # tools/binutils. ld is copied last, so its presence means a complete set.
 if ! [[ -x "$DECOMP/tools/binutils/mips64-elf-ld" ]] &&
   ! { command -v mips64-elf-ld >/dev/null && command -v mips64-elf-gcc >/dev/null; }; then
+  BINUTILS_SOURCE="$BINUTILS_CACHE"
+  if ! [[ -x "$BINUTILS_CACHE/mips64-elf-ld" ]]; then
   # The decomp's get-binutils.sh uses Linux-only nproc; build them here.
   version="binutils-2.46.0"
   scratch="$(mktemp -d "${TMPDIR:-/tmp}/dkr-binutils.XXXXXX")"
@@ -195,15 +217,12 @@ if ! [[ -x "$DECOMP/tools/binutils/mips64-elf-ld" ]] &&
       --enable-64-bit-bfd --disable-gold --disable-nls --disable-shared --disable-werror >/dev/null
     make -j"$JOBS" >/dev/null
   ) || fail "Building MIPS binutils failed."
-  rm -rf "$DECOMP/tools/binutils"
-  mkdir -p "$DECOMP/tools/binutils"
+  mkdir -p "$BINUTILS_CACHE"
   for pair in binutils/ar:ar binutils/objcopy:objcopy binutils/objdump:objdump \
     binutils/strip-new:strip gas/as-new:as ld/ld-new:ld; do
-    cp "$scratch/$version/${pair%%:*}" "$DECOMP/tools/binutils/mips64-elf-${pair##*:}"
+    cp "$scratch/$version/${pair%%:*}" "$BINUTILS_CACHE/mips64-elf-${pair##*:}"
   done
-fi
-if ! [[ -x "$DECOMP/.venv/bin/python3" ]] || ! "$DECOMP/.venv/bin/python3" -c 'import splat' 2>/dev/null; then
-  (cd "$DECOMP" && "$GMAKE" setup) || fail "Decomp setup failed."
+  fi
 fi
 
 # stamp_matches <file> <value>: true when the stage's recorded inputs match.
@@ -247,7 +266,15 @@ PY
     echo "[OK] up to date: $elf"
   else
     rsync -a --delete --exclude /.git --exclude /build --exclude /asm --exclude /assets \
-      --exclude /baseroms --exclude /.dkr-elf-stamp "$DECOMP/" "$tree/"
+      --exclude /baseroms --exclude /.venv --exclude /.dkr-elf-stamp "$DECOMP/" "$tree/"
+    if [[ -x "$BINUTILS_SOURCE/mips64-elf-ld" ]]; then
+      mkdir -p "$tree/tools/binutils"
+      cp "$BINUTILS_SOURCE"/mips64-elf-* "$tree/tools/binutils/"
+      touch "$tree/tools/binutils/.dkr-toolchain"
+    fi
+    if ! [[ -x "$tree/.venv/bin/python3" ]] || ! "$tree/.venv/bin/python3" -c 'import splat' 2>/dev/null; then
+      (cd "$tree" && "$GMAKE" setup) || fail "Decomp setup failed."
+    fi
     (cd "$tree" && "$GMAKE" VERSION="v$revision" extract && "$GMAKE" VERSION="v$revision" -j"$JOBS") ||
       fail "The US v$revision decomp build failed."
     echo "$decomp_commit $sha1" >"$tree/.dkr-elf-stamp"
@@ -261,7 +288,13 @@ PY
     echo "[OK] up to date: $work/RecompiledFuncs"
     return
   fi
-  rm -rf "$work"
+  if [[ -e "$work" ]]; then
+    [[ -f "$work/.dkr-payload-stamp" ]] || fail "Refusing to replace unmanaged output: $work"
+    local previous="$work.previous-$(date '+%Y%m%d-%H%M%S')-$$"
+    [[ ! -e "$previous" ]] || fail "Recovery output already exists: $previous"
+    mv "$work" "$previous"
+    echo "[OK] Previous generated output preserved: $previous"
+  fi
   mkdir -p "$work/RecompiledFuncs"
   python3 "$SCRIPT_DIR/compose_legacy_mod_policy.py" \
     --policy "$PROJECT_ROOT/runtime-recomp/dkr.us.v$revision.recomp-policy.json" \

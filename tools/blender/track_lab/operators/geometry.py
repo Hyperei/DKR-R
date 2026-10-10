@@ -1301,6 +1301,11 @@ def set_extra_textures(obj, records) -> None:
     _write_records(obj, PROP_EXTRA_TEXTURES, records)
 
 
+def set_base_textures(obj, records) -> None:
+    """Only for the base file's own table changing on disk beside it."""
+    _write_records(obj, PROP_BASE_TEXTURES, records)
+
+
 def texture_table(obj) -> list:
     """The whole table a face's index addresses: the base, then the additions."""
     return base_textures(obj) + extra_textures(obj)

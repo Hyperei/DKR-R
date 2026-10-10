@@ -54,6 +54,9 @@ void attach(RT64::Application& application);
 void detach(RT64::Application& application);
 void draw(RT64::Application& application);
 bool handle_runtime_event(SDL_Event* event);
+// Once per event pump, after the events: captures the pointer for the Modern
+// camera's mouse orbit while racing, and lets it go when anything needs it.
+void update_camera_mouse();
 bool input_capture_active();
 void toggle_overlay();
 bool overlay_visible();

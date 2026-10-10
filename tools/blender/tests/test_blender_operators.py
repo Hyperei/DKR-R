@@ -81,7 +81,7 @@ def test_registration():
                  "minimap_save_png", "minimap_use_png", "minimap_forget_png",
                  "make_convertible", "ai_copy_difficulty",
                  "set_face_transparency", "set_texture_transparency",
-                 "restore_custom_textures",
+                 "restore_custom_textures", "remove_unused_custom_textures",
                  "add_water", "select_water", "remove_water", "wave_preset"):
         check(hasattr(bpy.ops.dkr, name), "operator dkr.%s exists" % name)
     check(hasattr(bpy.types.Scene, "dkr"), "scene settings registered")
@@ -4031,7 +4031,10 @@ def test_moved_blend_rebuilds_its_textures():
         result = bpy.ops.dkr.track_from_mesh_blank(keep_source=True)
         check(result == {"FINISHED"}, "the moved scene converts again (%r)" % (result,))
         own = custom_ops.entries(bpy.context)
-        check(len(own) == 3, "reusing its textures rather than adding them again")
+        check([e.name for e in own] == ["green", "blue"],
+              "reusing its textures rather than adding them again, with red - "
+              "which nothing draws now - off the list (%r)"
+              % [e.name for e in own])
         folder = custom_ops.folder(bpy.context)
         check(os.path.samefile(os.path.dirname(folder), second)
               and all(os.path.isfile(e.png) and os.path.isfile(e.original)
@@ -4044,8 +4047,9 @@ def test_moved_blend_rebuilds_its_textures():
         obj = geometry_ops.geometry_objects(bpy.context)[0]
         table = geometry_ops.texture_table(obj)
         ordinals = [texture_module.custom_ordinal(r["id"]) for r in table]
-        check(ordinals == [1, 2],
-              "the table moved up one, as the empty material asks (%r)" % ordinals)
+        check(ordinals == [0, 1],
+              "the table moved up one, as the empty material asks, naming the "
+              "two left by their new numbers (%r)" % ordinals)
         wanted = {index: os.path.normcase(os.path.normpath(own[ordinal].png))
                   for index, ordinal in enumerate(ordinals)}
         shown = _shown_pictures(obj)
@@ -4082,6 +4086,270 @@ def test_moved_blend_rebuilds_its_textures():
         fresh()
         for directory in (first, second, third):
             shutil.rmtree(directory, ignore_errors=True)
+
+
+def test_track_from_mesh_drops_what_it_no_longer_draws():
+    """Converting again after repainting leaves the old pictures behind.
+
+    The case that shipped: an author gave a converted track's materials new
+    pictures and converted again. The new ones went on the end of the list and
+    the old ones stayed at the front - the panel showed the old artwork, every
+    export shipped it, and once the old pictures were gone the export refused
+    outright over textures nothing drew. Everything that names one of the
+    survivors by number has to follow it: the model file, the materials, a
+    texture scroll and the browser's pick.
+    """
+    print("converting again drops the textures the mesh no longer draws")
+    from track_lab import level_model, texture_scroll, textures as texture_module
+    from track_lab.operators import custom_textures as custom_ops
+    from track_lab.operators import geometry as geometry_ops
+    from track_lab.operators import waterfall
+
+    fresh()
+    temporary = tempfile.mkdtemp(prefix="dkr-repaint-")
+    try:
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.join(temporary, "repaint.blend"))
+        paths = {name: _write_probe_image(temporary, name, 90 + 30 * index, 50)
+                 for index, name in enumerate(("old", "kept", "scrolled", "new"))}
+        bpy.ops.mesh.primitive_grid_add(size=4000.0, x_subdivisions=4,
+                                        y_subdivisions=4)
+        source = bpy.context.active_object
+        mesh = source.data
+        for name in ("old", "kept", "scrolled"):
+            mesh.materials.append(_image_material(name.title(), paths[name]))
+        for polygon in mesh.polygons:
+            polygon.material_index = polygon.index % 3
+
+        result = bpy.ops.dkr.track_from_mesh_blank(keep_source=True)
+        check(result == {"FINISHED"}, "the first conversion goes through (%r)"
+              % (result,))
+        own = custom_ops.entries(bpy.context)
+        check([e.name for e in own] == ["old", "kept", "scrolled"],
+              "with one texture per picture (%r)" % [e.name for e in own])
+        if len(own) != 3:
+            return
+        old_png = own[0].png
+
+        table = geometry_ops.texture_table(geometry_ops.geometry_objects(bpy.context)[0])
+        scrolled = texture_module.custom_id(2)
+        bpy.ops.dkr.place_object(object_id=texture_scroll.OBJECT_ID)
+        scroller = waterfall.scroll_objects(bpy.context)[-1]
+        waterfall.bind(scroller, table,
+                       next(i for i, r in enumerate(table) if r["id"] == scrolled))
+        settings = bpy.context.scene.dkr
+        settings.texture_id = texture_module.custom_id(1)
+
+        # A texture from another project, carried over in a .blend saved as a
+        # copy, whose picture is in neither place any more.
+        stale = settings.custom_textures.add()
+        stale.name = "elsewhere"
+        stale.source = os.path.join(temporary, "gone", "elsewhere.png")
+        stale.png = "%s/elsewhere.png" % custom_ops.FOLDER
+        stale.width, stale.height = 64, 32
+        stale.format = texture_module.FORMAT_CODES["RGBA16"]
+
+        # The repaint: Old's picture swapped for another.
+        bpy.ops.dkr.make_convertible(object_name=source.name)
+        custom_ops.image_node(mesh.materials[0]).image = (
+            bpy.data.images.load(paths["new"]))
+        bpy.context.view_layer.objects.active = source
+        result = bpy.ops.dkr.track_from_mesh_blank(keep_source=True)
+        check(result == {"FINISHED"}, "the repainted mesh converts (%r)" % (result,))
+
+        own = custom_ops.entries(bpy.context)
+        check([e.name for e in own] == ["kept", "scrolled", "new"],
+              "the list is what the track draws, in order, with the new picture "
+              "on the end (%r)" % [e.name for e in own])
+        check(not custom_ops.missing(bpy.context),
+              "and nothing on it is missing (%r)"
+              % [e.name for e in custom_ops.missing(bpy.context)])
+        check(os.path.isfile(old_png),
+              "the dropped texture's PNG is left where it was")
+        if len(own) != 3:
+            return
+
+        obj = geometry_ops.geometry_objects(bpy.context)[0]
+        table = geometry_ops.texture_table(obj)
+        written = level_model.load(os.path.join(temporary, "repaint-geometry.bin"))
+        check([t.texture_id for t in written.textures] == [r["id"] for r in table]
+              and sorted(texture_module.custom_ordinal(r["id"]) for r in table)
+              == [0, 1, 2],
+              "the model file names the three by their new numbers (%r)"
+              % [hex(t.texture_id) for t in written.textures])
+        wanted = {index: os.path.normcase(os.path.normpath(
+                      own[texture_module.custom_ordinal(record["id"])].png))
+                  for index, record in enumerate(table)}
+        shown = _shown_pictures(obj)
+        check(shown == wanted,
+              "each material shows its entry's picture (%r)" % shown)
+
+        reference = waterfall.read_reference(scroller)
+        check(reference["id"] == texture_module.custom_id(1),
+              "the scroll follows its texture to its new number (%r)"
+              % (reference["id"],))
+        check(table[waterfall.resolved_index(scroller, table)]["id"]
+              == texture_module.custom_id(1),
+              "and still resolves to the entry drawing it")
+        check(settings.texture_id == texture_module.custom_id(0),
+              "the browser's pick follows its texture too (%r)"
+              % (settings.texture_id,))
+
+        settings.track_name = "Repaint"
+        settings.track_id = "repaint"
+        bpy.ops.dkr.place_object(object_id="ASSET_OBJECT_SETUPPOINT")
+        target = os.path.join(temporary, "repaint.dkrmap")
+        result = bpy.ops.dkr.export_dkrmap(filepath=target, validate_first=False)
+        check(result == {"FINISHED"},
+              "the track exports, with nothing left over to refuse it (%r)"
+              % (result,))
+        check(sorted(os.listdir(os.path.join(target, "textures")))
+              == ["0.bin", "1.bin", "2.bin"],
+              "shipping only the three it draws")
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
+        fresh()
+
+
+def test_remove_unused_textures():
+    """Textures nothing draws come off the list without converting again.
+
+    The scene a converter from before conversions dropped anything leaves: the
+    old pictures first in the list, two of them gone from disk, and the track
+    edited since - a texture applied on top - so converting again would throw
+    work away. The button takes off what nothing names and renumbers the
+    rest everywhere a number is written: the model file on disk, whose bytes
+    must otherwise stay exactly as they were, the mesh's tables, a scroll and
+    the browser's pick.
+    """
+    print("removing the track's own textures nothing draws")
+    from track_lab import level_model, level_model_encoder, texture_scroll
+    from track_lab import textures as texture_module
+    from track_lab.operators import custom_textures as custom_ops
+    from track_lab.operators import geometry as geometry_ops
+    from track_lab.operators import new_track, waterfall
+
+    fresh()
+    temporary = tempfile.mkdtemp(prefix="dkr-unused-")
+    own_kept = new_track._own_kept
+    try:
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.join(temporary, "unused.blend"))
+        paths = {name: _write_probe_image(temporary, name, 90 + 30 * index, 50)
+                 for index, name in enumerate(("kept", "other", "extra", "spare"))}
+        settings = bpy.context.scene.dkr
+        for name in ("gone-1", "gone-2"):
+            stale = settings.custom_textures.add()
+            stale.name = name
+            stale.source = os.path.join(temporary, "gone", name + ".png")
+            stale.png = "%s/%s.png" % (custom_ops.FOLDER, name)
+            stale.width, stale.height = 64, 32
+            stale.format = texture_module.FORMAT_CODES["RGBA16"]
+
+        bpy.ops.mesh.primitive_grid_add(size=4000.0, x_subdivisions=4,
+                                        y_subdivisions=4)
+        mesh = bpy.context.active_object.data
+        mesh.materials.append(_image_material("Kept", paths["kept"]))
+        mesh.materials.append(_image_material("Other", paths["other"]))
+        for polygon in mesh.polygons:
+            polygon.material_index = polygon.index % 2
+        # Converted the old way, dropping nothing.
+        new_track._own_kept = lambda context, model: set(
+            range(len(context.scene.dkr.custom_textures)))
+        try:
+            result = bpy.ops.dkr.track_from_mesh_blank(keep_source=False)
+        finally:
+            new_track._own_kept = own_kept
+        check(result == {"FINISHED"}, "the mesh converts (%r)" % (result,))
+
+        obj = geometry_ops.geometry_objects(bpy.context)[0]
+        bpy.context.view_layer.objects.active = obj
+        model_path = obj[geometry_ops.PROP_MODEL_PATH]
+        extra, _was = custom_ops.add_image(
+            bpy.context, paths["extra"], texture_module.FORMAT_CODES["RGBA16"])
+        custom_ops.add_image(
+            bpy.context, paths["spare"], texture_module.FORMAT_CODES["RGBA16"])
+        _select_faces(obj.data, range(4))
+        settings.texture_id = extra.index
+        settings.texture_mapping = "PROJECT"
+        check(bpy.ops.dkr.apply_texture() == {"FINISHED"},
+              "a texture added afterwards goes on some faces")
+
+        table = geometry_ops.texture_table(obj)
+        bpy.ops.dkr.place_object(object_id=texture_scroll.OBJECT_ID)
+        scroller = waterfall.scroll_objects(bpy.context)[-1]
+        waterfall.bind(scroller, table, next(
+            i for i, r in enumerate(table) if r["id"] == texture_module.custom_id(3)))
+        settings.texture_id = extra.index
+
+        own = custom_ops.entries(bpy.context)
+        check([e.name for e in own]
+              == ["gone-1", "gone-2", "kept", "other", "extra", "spare"],
+              "the scene starts with the stale textures in front (%r)"
+              % [e.name for e in own])
+        check([e.name for e in custom_ops.unused(bpy.context)]
+              == ["gone-1", "gone-2", "spare"],
+              "and knows which three nothing names")
+        settings.track_name = "Unused"
+        settings.track_id = "unused"
+        bpy.ops.dkr.place_object(object_id="ASSET_OBJECT_SETUPPOINT")
+        target = os.path.join(temporary, "unused.dkrmap")
+        refused = _refused(lambda: bpy.ops.dkr.export_dkrmap(
+            filepath=target, validate_first=False))
+        check(refused is not None and "Remove Unused Textures" in refused,
+              "the export refuses over the missing ones and names the way out")
+
+        with open(model_path, "rb") as handle:
+            before = handle.read()
+        result = bpy.ops.dkr.remove_unused_custom_textures()
+        check(result == {"FINISHED"}, "Remove Unused Textures goes through (%r)"
+              % (result,))
+
+        own = custom_ops.entries(bpy.context)
+        check([e.name for e in own] == ["kept", "other", "extra"],
+              "the three in use are left, in order (%r)" % [e.name for e in own])
+        with open(model_path, "rb") as handle:
+            after = handle.read()
+        ids = [t.texture_id for t in level_model.parse(
+            level_model.decompress(after)).textures]
+        check(ids == [texture_module.custom_id(0), texture_module.custom_id(1)],
+              "the model file names the base textures by their new numbers (%r)"
+              % [hex(i) for i in ids])
+        moved = [at for at in range(max(len(before), len(after)))
+                 if before[at:at + 1] != after[at:at + 1]]
+        start = level_model_encoder.STORED_PREFIX_AT + level_model.parse(
+            level_model.decompress(after)).textures_ptr
+        check(len(before) == len(after)
+              and all(start <= at < start + 2 * level_model.TEXTURE_INFO_SIZE
+                      for at in moved),
+              "and not one other byte of it changed (%d bytes moved)" % len(moved))
+        check([r["id"] for r in geometry_ops.base_textures(obj)] == ids
+              and [r["id"] for r in geometry_ops.extra_textures(obj)]
+              == [texture_module.custom_id(2)],
+              "the mesh's tables follow (%r)"
+              % [r["id"] for r in geometry_ops.texture_table(obj)])
+        table = geometry_ops.texture_table(obj)
+        wanted = {index: os.path.normcase(os.path.normpath(
+                      own[texture_module.custom_ordinal(record["id"])].png))
+                  for index, record in enumerate(table)}
+        check(_shown_pictures(obj) == wanted,
+              "each material still shows its entry's picture")
+        check(waterfall.read_reference(scroller)["id"] == texture_module.custom_id(1)
+              and table[waterfall.resolved_index(scroller, table)]["id"]
+              == texture_module.custom_id(1),
+              "the scroll follows its texture")
+        check(settings.texture_id == texture_module.custom_id(2),
+              "and so does the browser's pick (%r)" % (settings.texture_id,))
+        check(not bpy.ops.dkr.remove_unused_custom_textures.poll(),
+              "with nothing left to remove, the button is off")
+
+        result = bpy.ops.dkr.export_dkrmap(filepath=target, validate_first=False)
+        check(result == {"FINISHED"}, "the track exports now (%r)" % (result,))
+        check(sorted(os.listdir(os.path.join(target, "textures")))
+              == ["0.bin", "1.bin", "2.bin"],
+              "shipping the three it draws")
+    finally:
+        new_track._own_kept = own_kept
+        shutil.rmtree(temporary, ignore_errors=True)
+        fresh()
 
 
 def test_track_from_mesh_survives_ctrl_j():
@@ -5178,6 +5446,8 @@ def main():
         test_track_from_mesh_with_its_own_textures()
         test_track_from_mesh_keeps_material_textures()
         test_moved_blend_rebuilds_its_textures()
+        test_track_from_mesh_drops_what_it_no_longer_draws()
+        test_remove_unused_textures()
         test_track_from_mesh_survives_ctrl_j()
         test_texture_browser_pieces()
         test_texture_side_operators()

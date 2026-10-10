@@ -33,6 +33,10 @@ enum class Action : std::uint8_t {
     CDown,
     CLeft,
     CRight,
+    // Host-only, no N64 bit: the Modern camera's held look-back, and its
+    // Accelerate (presses A while the Modern camera drives the race).
+    LookBack,
+    Accelerate,
     Count,
 };
 
@@ -61,6 +65,12 @@ struct State {
     std::uint16_t buttons = 0;
     float stick_x = 0.0F;
     float stick_y = 0.0F;
+    // Analogue values of the C-button bindings, the held look-back and
+    // Accelerate, for the local Modern camera. Not N64 controller state.
+    float camera_x = 0.0F;
+    float camera_y = 0.0F;
+    bool look_back = false;
+    bool accelerate = false;
 };
 
 struct ShortcutBinding {

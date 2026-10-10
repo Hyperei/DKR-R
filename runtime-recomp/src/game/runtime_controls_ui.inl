@@ -460,11 +460,12 @@ void DrawControlsBindings(ControlsPageState& state, float width, const std::func
         draw->AddRectFilled({at.x, bottom}, {at.x + width, bottom + 1.0F}, PaddockCol(kCtlLine));
         ImGui::Dummy({width, bottom + 1.0F - at.y});
     }
-    const std::array<std::pair<const char*, std::array<int, 6>>, 4> kGroups{{
+    const std::array<std::pair<const char*, std::array<int, 6>>, 5> kGroups{{
         {"Analogue stick", {0, 1, 2, 3, -1, -1}},
         {"Main buttons", {4, 5, 6, 7, 12, 13}},
         {"D-pad", {8, 9, 10, 11, -1, -1}},
         {"C-buttons", {14, 15, 16, 17, -1, -1}},
+        {"Modern camera", {18, 19, -1, -1, -1, -1}},
     }};
     for (const auto& [group, actions] : kGroups) {
         PaddockGap(20.0F);

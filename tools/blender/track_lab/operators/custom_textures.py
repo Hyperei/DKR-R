@@ -1051,9 +1051,222 @@ def _renumber(context, going: int) -> int:
     return moved
 
 
+# ---------------------------------------------------------------------------
+# Keeping only what a rebuilt track draws
+# ---------------------------------------------------------------------------
+
+def scroll_ordinals(context) -> set:
+    """Ordinals of the track's own textures a texture scroll still names.
+
+    A scroll's reference outlives the geometry it points into, so a conversion
+    keeps what one names. Dropping it would free the reference's id for
+    whichever texture closed up into that number, and the scroll would animate
+    a picture nobody pointed it at.
+    """
+    from . import waterfall  # noqa: PLC0415 - it imports this module
+    from .. import texture_scroll  # noqa: PLC0415
+
+    found = set()
+    for obj in waterfall.scroll_objects(context):
+        if texture_scroll.PROP_ENTRY not in obj:
+            continue
+        try:
+            ordinal = texture_module.custom_ordinal(
+                waterfall.read_reference(obj).get("id", 0))
+        except (texture_scroll.ScrollError, TypeError, ValueError, AttributeError):
+            continue
+        if ordinal is not None:
+            found.add(ordinal)
+    return found
+
+
+def renumbering(count: int, kept) -> dict:
+    """``{old ordinal: new ordinal}`` for the ``kept`` of ``count`` textures.
+
+    The survivors close up in the order they were in, so each keeps its place
+    relative to the others.
+    """
+    kept = set(kept)
+    return {old: new for new, old in
+            enumerate(ordinal for ordinal in range(count) if ordinal in kept)}
+
+
+def renumbered_id(texture_id, renumber: dict):
+    """``texture_id`` as it reads once :func:`keep_only` has run.
+
+    A ROM id is not the track's to move, and neither is an id past the end of
+    the list - it named nothing before and still names nothing.
+    """
+    ordinal = texture_module.custom_ordinal(texture_id)
+    if ordinal is None or ordinal not in renumber:
+        return texture_id
+    return texture_module.custom_id(renumber[ordinal])
+
+
+def keep_only(context, kept) -> list:
+    """Drop every texture of the track's own whose ordinal is not in ``kept``.
+
+    For a conversion, which rebuilds the whole track from the mesh: what the
+    mesh no longer draws would otherwise stay in the list for good - first in
+    the panel, shipped by every export, and refusing the export outright once
+    its picture is gone. The caller has already written the new table with the
+    survivors' new numbers (:func:`renumbering`); this moves the scene to
+    match, and the scroll references and the browser's pick with it.
+
+    The PNGs stay in the folder. They are cheap, and the original beside one
+    may be the only full-size copy of a picture left on the machine.
+
+    Returns the names dropped, in the order they were in.
+    """
+    settings = context.scene.dkr
+    count = len(settings.custom_textures)
+    renumber = renumbering(count, kept)
+    if len(renumber) == count:
+        return []
+
+    from . import waterfall  # noqa: PLC0415 - it imports this module
+    from .. import texture_scroll  # noqa: PLC0415
+
+    for obj in waterfall.scroll_objects(context):
+        if texture_scroll.PROP_ENTRY not in obj:
+            continue
+        try:
+            ref = waterfall.read_reference(obj)
+            moved = renumbered_id(int(ref.get("id", 0)), renumber)
+            if moved != int(ref.get("id", 0)):
+                ref["id"] = moved
+                obj[texture_scroll.PROP_ENTRY] = json.dumps(ref)
+        except (texture_scroll.ScrollError, TypeError, ValueError, AttributeError):
+            continue  # A broken reference remains a validation error.
+
+    picked = texture_module.custom_ordinal(settings.texture_id)
+    if picked is not None:
+        settings.texture_id = (texture_module.custom_id(renumber[picked])
+                               if picked in renumber else -1)
+
+    dropped = [settings.custom_textures[ordinal].name
+               for ordinal in range(count) if ordinal not in renumber]
+    for ordinal in reversed(range(count)):
+        if ordinal not in renumber:
+            settings.custom_textures.remove(ordinal)
+    return dropped
+
+
+def used_ordinals(context) -> set:
+    """Ordinals of the track's own textures something in the scene names.
+
+    A place in a geometry's texture table counts whether or not a face draws
+    it: dropping the texture would mean dropping the entry, and no operator
+    here removes table entries.
+    """
+    found = scroll_ordinals(context)
+    for obj in geometry.geometry_objects(context):
+        for record in geometry.texture_table(obj):
+            ordinal = texture_module.custom_ordinal(record.get("id", 0))
+            if ordinal is not None:
+                found.add(ordinal)
+    return found
+
+
+def unused(context) -> list:
+    """The track's own textures nothing in the scene names."""
+    used = used_ordinals(context)
+    return [entry for entry in entries(context) if entry.ordinal not in used]
+
+
+class DKR_OT_remove_unused_custom_textures(bpy.types.Operator):
+    """Remove this track's own textures that nothing draws, and renumber the rest. The track's model file is rewritten to the new numbers"""
+
+    bl_idname = "dkr.remove_unused_custom_textures"
+    bl_label = "Remove Unused Textures"
+    bl_options = {"REGISTER"}
+
+    @classmethod
+    def poll(cls, context):
+        return bool(geometry.geometry_objects(context)) and bool(unused(context))
+
+    def execute(self, context):
+        from .. import level_model, level_model_encoder  # noqa: PLC0415
+
+        settings = context.scene.dkr
+        kept = used_ordinals(context)
+        renumber = renumbering(len(settings.custom_textures), kept)
+        if len(renumber) == len(settings.custom_textures):
+            self.report({"INFO"}, "every texture of this track's own is in use")
+            return {"CANCELLED"}
+
+        # The ids a base table holds are written in the model file as well as
+        # on the mesh, so the file is renumbered too - in place, nothing but
+        # the ids, and only a file this addon wrote. Every file is patched in
+        # memory before any is written, so a refusal changes nothing.
+        objects = geometry.geometry_objects(context)
+        payloads = {}
+        for obj in objects:
+            ids = [int(record.get("id", 0)) for record in geometry.base_textures(obj)]
+            if all(renumbered_id(i, renumber) == i for i in ids):
+                continue
+            path = bpy.path.abspath(obj.get(geometry.PROP_MODEL_PATH) or "")
+            if not obj.get(geometry.PROP_AUTHORED_BASE, False) or not os.path.isfile(path):
+                self.report(
+                    {"ERROR"},
+                    "%s's model file is not one this addon wrote beside the "
+                    ".blend, so its texture numbers cannot be rewritten. Use "
+                    "Re-segment Track first, which makes the track its own "
+                    "base" % obj.name)
+                return {"CANCELLED"}
+            key = os.path.normcase(os.path.normpath(path))
+            if key in payloads:
+                continue
+            try:
+                with open(path, "rb") as handle:
+                    data = handle.read()
+                found = [t.texture_id for t in
+                         level_model.parse(level_model.decompress(data)).textures]
+                if found != ids:
+                    raise level_model_encoder.LevelModelEncodeError(
+                        "the file's texture table no longer matches the mesh; "
+                        "import the track geometry again")
+                payloads[key] = (path, data, level_model_encoder.patch_texture_ids(
+                    data, [renumbered_id(i, renumber) for i in ids]))
+            except (OSError, level_model.LevelModelError,
+                    level_model_encoder.LevelModelEncodeError) as error:
+                self.report({"ERROR"}, "could not renumber %s: %s"
+                            % (os.path.basename(path), error))
+                return {"CANCELLED"}
+
+        from ..model_transaction import rewrite_models  # noqa: PLC0415
+        try:
+            rewrite_models(payloads.values())
+        except OSError as error:
+            self.report({"ERROR"}, "model files were not committed: %s" % error)
+            return {"CANCELLED"}
+
+        for obj in objects:
+            for read, write in ((geometry.base_textures, geometry.set_base_textures),
+                                (geometry.extra_textures, geometry.set_extra_textures)):
+                records = read(obj)
+                for record in records:
+                    record["id"] = renumbered_id(int(record.get("id", 0)), renumber)
+                write(obj, records)
+        dropped = keep_only(context, kept)
+        geometry.show_own_pictures(context)
+        for area in (context.screen.areas if context.screen else []):
+            area.tag_redraw()
+
+        shown = sorted(set(dropped))
+        self.report(
+            {"INFO"},
+            "removed %d texture(s) nothing draws: %s. %d remain; their PNGs "
+            "stay in %s" % (len(dropped), ", ".join(shown[:8])
+                            + (" ..." if len(shown) > 8 else ""),
+                            len(settings.custom_textures), FOLDER))
+        return {"FINISHED"}
+
+
 CLASSES = (
     DKR_OT_add_custom_texture,
     DKR_OT_remove_custom_texture,
+    DKR_OT_remove_unused_custom_textures,
     DKR_OT_set_texture_transparency,
     DKR_OT_restore_custom_textures,
 )

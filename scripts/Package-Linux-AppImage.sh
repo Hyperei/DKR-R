@@ -47,7 +47,9 @@ VERSION="${DKR_RELEASE_VERSION:-${VERSION_FILE_VALUE}}"
 EXPERIMENTAL_RACE_TEST=0
 if grep -Eq '^DKR_EXPERIMENTAL_RACE_TEST:BOOL=(ON|1|TRUE|YES)[[:space:]]*$' "${BUILD_DIRECTORY}/CMakeCache.txt"; then
   EXPERIMENTAL_RACE_TEST=1
+  if [[ "${VERSION}" != 1.0.5 ]]; then
   [[ "${VERSION}" == *experimental* || "${VERSION}" == *rollback-test* || "${VERSION}" == 1.0.5-beta.15 || "${VERSION}" == 1.0.5-beta.15-playtest.[23456789] || "${VERSION}" == 1.0.5-beta.15-playtest.10 || "${VERSION}" == 1.0.5-beta.15-playtest.11 || "${VERSION}" == 1.0.5-beta.15-playtest.12 || "${VERSION}" == 1.0.5-beta.15-playtest.14 || "${VERSION}" == 1.0.5-beta.15-playtest.15 || "${VERSION}" == 1.0.5-beta.15-playtest.15-fix.[12] || "${VERSION}" == 1.0.5-beta.15-playtest.16 || "${VERSION}" == 1.0.5-beta.15-playtest.16-fix.[12] ]] || { echo 'Experimental builds require a distinct experimental version or an approved Beta 15 playtest candidate.' >&2; exit 1; }
+fi
 fi
 # Explicit beta qualification deferral; normal release packaging still runs all checks.
 SKIP_RUNTIME_TESTS="${DKR_SKIP_RUNTIME_TESTS:-0}"
@@ -164,11 +166,14 @@ mkdir -p "${APPDIR}/usr/share/metainfo"
 install -m 0644 "${ICON_FILE}" "${ICON_STAGE}/dkr-r.png"
 install -m 0755 "${BINARY}" "${BINARY_STAGE}/DKR-R"
 EXPERIMENTAL_DEPLOY_ARGS=()
+if [[ "${VERSION}" == 1.0.5 ]]; then
+  install -m 0644 "${PROJECT_ROOT}/docs/PUBLIC-1.0.5-NOTES.txt" "${APPDIR}/usr/share/doc/dkr-port/RELEASE-NOTES.txt"
+fi
 if [[ "${VERSION}" == 1.0.5-beta.15 ]]; then
   install -m 0644 "${PROJECT_ROOT}/docs/BETA15-RELEASE.txt" "${APPDIR}/usr/share/doc/dkr-port/BETA15-NOTES.txt"
   install -m 0644 "${PROJECT_ROOT}/docs/BETA15-ONLINE-STABILITY-20261007.txt" "${APPDIR}/usr/share/doc/dkr-port/ONLINE-STABILITY-CORRECTION.txt"
 fi
-if [[ "${EXPERIMENTAL_RACE_TEST}" == 1 ]]; then
+if [[ "${EXPERIMENTAL_RACE_TEST}" == 1 && "${VERSION}" != 1.0.5 ]]; then
   # The earlier generic file describes Playtest 2; current playtests ship their own
   # current connection/scope guide instead of contradictory version guidance.
   if [[ "${VERSION}" != 1.0.5-beta.15 && "${VERSION}" != 1.0.5-beta.15-playtest.8 && "${VERSION}" != 1.0.5-beta.15-playtest.9 && "${VERSION}" != 1.0.5-beta.15-playtest.10 && "${VERSION}" != 1.0.5-beta.15-playtest.11 && "${VERSION}" != 1.0.5-beta.15-playtest.12 && "${VERSION}" != 1.0.5-beta.15-playtest.14 && "${VERSION}" != 1.0.5-beta.15-playtest.15 && "${VERSION}" != 1.0.5-beta.15-playtest.15-fix.[12] && "${VERSION}" != 1.0.5-beta.15-playtest.16 && "${VERSION}" != 1.0.5-beta.15-playtest.16-fix.[12] ]]; then

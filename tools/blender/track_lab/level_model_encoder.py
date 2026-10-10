@@ -38,6 +38,7 @@ from .level_model import (
     BATCH_SIZE, BOUNDING_BOX_SIZE, BSP_NODE_SIZE, CONTAINER_TAG, ENDIAN,
     HEADER_FIELDS, SEGMENT_FIELDS, SEGMENT_SIZE, SEGMENT_TAIL,
     TEXTURE_INFO_SIZE, TRIANGLE_SIZE, VERTEX_SIZE, LevelModel, Segment,
+    decompress, parse,
 )
 
 
@@ -204,6 +205,38 @@ def pack(model: LevelModel, level: int = 9) -> bytes:
     stream += compressor.compress(blob[prefix:]) + compressor.flush()
 
     return struct.pack("<IB", len(blob), CONTAINER_TAG) + bytes(stream)
+
+
+def patch_texture_ids(data: bytes, texture_ids) -> bytes:
+    """``data`` - a file :func:`pack` wrote - with its table naming ``texture_ids``.
+
+    The ids sit in the stored block at the front, so they are rewritten where
+    they lie and every other byte of the file stays as it was. A file with no
+    such block - one :func:`pack` did not write - is refused rather than
+    re-encoded, because re-encoding is not this function's promise.
+    """
+    model = parse(decompress(data))
+    texture_ids = [int(texture_id) for texture_id in texture_ids]
+    if len(texture_ids) != len(model.textures):
+        raise LevelModelEncodeError(
+            "the model has %d textures and %d ids were given"
+            % (len(model.textures), len(texture_ids))
+        )
+    prefix = stored_prefix_size(model)
+    stored = len(data) >= STORED_PREFIX_AT and data[STORED_PREFIX_AT - 5] == 0
+    if stored:
+        length, check = struct.unpack_from("<HH", data, STORED_PREFIX_AT - 4)
+        stored = check == (~length) & 0xFFFF and length >= prefix
+    if not stored:
+        raise LevelModelEncodeError(
+            "the model's texture table is not in a stored block, so its ids "
+            "cannot be rewritten in place"
+        )
+    patched = bytearray(data)
+    for index, texture_id in enumerate(texture_ids):
+        _pack_into(patched, STORED_PREFIX_AT + model.textures_ptr
+                   + index * TEXTURE_INFO_SIZE, "i", texture_id)
+    return bytes(patched)
 
 
 # ---------------------------------------------------------------------------

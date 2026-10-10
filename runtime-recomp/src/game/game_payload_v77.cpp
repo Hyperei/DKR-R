@@ -72,6 +72,7 @@ const dkr::runtime::GamePayload& dkr::runtime::payload_v77() {
         .leveltable_vehicle_usable = leveltable_vehicle_usable,
         .set_level_default_vehicle = set_level_default_vehicle,
         .set_time_trial_enabled = set_time_trial_enabled,
+        .cam_set_fov = cam_set_fov,
         .register_sections = RegisterSectionsV77,
     };
     return payload;

@@ -1,0 +1,25 @@
+DKR-R v1.0.5 Public Build
+Windows x64 and Linux x64 AppImage
+
+This build combines the preserved local fixes with contributor PRs #49 and #50.
+Existing Track Lab, custom mods, save protection, water, texture-priority,
+launcher/overlay and online improvements are retained.
+
+PR #49: macOS source/build support, portable ELF verification, dependency
+preparation and platform lifecycle fixes. A macOS binary is NOT included or
+claimed verified in this delivery.
+PR #50: optional modern camera controls, the F7 camera tuning panel, and Track
+Lab geometry/texture workflow improvements. Modern camera state is reset at
+runtime handoff and disabled in online simulation. Track Lab texture remapping
+uses staged recoverable file replacement rather than sequential overwrites.
+
+Auto, Experimental Rollback, Host Prediction and Strict Input Sync remain in
+the existing online backend selector. Experimental Rollback remains explicitly
+experimental; public version numbering is not a claim of bug-free netplay.
+Use the same complete package on every peer, including its libexec workers.
+
+Keep backups of your saves and Track Lab projects before updating. No ROMs,
+personal saves or mod assets are supplied. Import your own supported game ROM.
+
+Validation for this delivery is automated/headless, plus compilation/package
+checks. Visual gameplay, multiplayer and hardware checks are left to testers.

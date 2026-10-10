@@ -666,6 +666,8 @@ def _draw_own_textures(layout, context, settings, texture_ops):
     header.operator("dkr.add_custom_texture", text="", icon="ADD")
     if own:
         header.operator("dkr.remove_custom_texture", text="", icon="REMOVE")
+        header.operator("dkr.remove_unused_custom_textures", text="",
+                        icon="TRASH")
 
     if not own:
         info_box(layout, context,
@@ -686,6 +688,13 @@ def _draw_own_textures(layout, context, settings, texture_ops):
             % (len(lost), custom_textures.FOLDER),
             icon="ERROR", alert=True)
         box.operator("dkr.restore_custom_textures", icon="FILE_REFRESH")
+        idle = {entry.ordinal for entry in custom_textures.unused(context)}
+        if any(entry.ordinal in idle for entry in lost):
+            # Nothing draws them, so there is nothing to put back: a track
+            # rebuilt from a repainted mesh leaves exactly these behind.
+            _dim_label(box, "Nothing draws %d of them"
+                       % sum(entry.ordinal in idle for entry in lost))
+            box.operator("dkr.remove_unused_custom_textures", icon="TRASH")
 
     grid = layout.grid_flow(row_major=True, columns=6, align=True)
     for entry in own:

@@ -37,6 +37,14 @@ than one:
 * **Nothing**, for a material with no picture. Its faces come out untextured,
   and the Textures panel - where all 1401 of the ROM's textures are available
   rather than one track's table - is where they get their look.
+
+**What the list keeps.** A conversion rebuilds the whole track, so afterwards
+the track's own textures are the ones it draws. A picture the mesh no longer
+draws - swapped for another on its material, say - leaves the list, and the
+rest close up in order. Left in, it would sit first in the panel, ship with
+every export, and refuse the export outright once its picture was gone. The one
+exception is a texture a scroll still points at: that reference lives on an
+object the conversion does not rebuild.
 """
 
 from __future__ import annotations
@@ -699,14 +707,24 @@ def build_track(operator, context, obj, textures, keep_source, donor=None,
     # picture has to be loadable again before they are.
     restored, lost = custom_textures.restore_missing(context)
     for level, message in custom_textures.restoration_reports(
-            context, restored, lost):
+            context, restored, []):
         operator.report(level, message)
+
+    def report_lost():
+        # Said only once the conversion is over: one the rebuilt track no
+        # longer draws is dropped, and a warning about it would be noise.
+        still = {entry.name for entry in custom_textures.missing(context)}
+        for level, message in custom_textures.restoration_reports(
+                context, [], [pair for pair in lost if pair[0] in still]):
+            operator.report(level, message)
+
     borrowed = len(textures)
     adopted = None
     if keep_textures:
         try:
             adopted = _adopt_images(context, obj, textures)
         except custom_textures.CustomTextureError as error:
+            report_lost()
             operator.report({"ERROR"}, str(error))
             return {"CANCELLED"}
         textures = adopted.table
@@ -714,6 +732,7 @@ def build_track(operator, context, obj, textures, keep_source, donor=None,
     def refuse(message):
         if adopted is not None and adopted.added:
             custom_textures.discard_last(context, adopted.added)
+        report_lost()
         operator.report({"ERROR"}, message)
         return {"CANCELLED"}
 
@@ -738,6 +757,16 @@ def build_track(operator, context, obj, textures, keep_source, donor=None,
             model.segments[0], faces, positions, colours
         )
         segments = level_model_layout.resegment(model)
+        # The track's own textures become what this track draws. The table
+        # names the survivors by the numbers they will have once the rest
+        # are dropped, which happens only after the file is written - a
+        # refused conversion leaves the list as it found it.
+        kept = _own_kept(context, model)
+        renumber = custom_textures.renumbering(
+            len(context.scene.dkr.custom_textures), kept)
+        for reference in model.textures:
+            reference.texture_id = custom_textures.renumbered_id(
+                reference.texture_id, renumber)
         payload = level_model_encoder.pack(model)
     except (level_model_layout.LayoutError,
             level_model_encoder.LevelModelEncodeError) as error:
@@ -767,6 +796,19 @@ def build_track(operator, context, obj, textures, keep_source, donor=None,
         obj.hide_set(True)
     else:
         bpy.data.objects.remove(obj, do_unlink=True)
+
+    dropped = custom_textures.keep_only(context, kept)
+    if dropped:
+        shown = sorted(set(dropped))
+        operator.report(
+            {"INFO"},
+            "%d texture(s) of this track's own are not drawn by the rebuilt "
+            "track and left the list: %s. Their PNGs stay in %s"
+            % (len(dropped), ", ".join(shown[:8]) + (" ..." if len(shown) > 8
+                                                     else ""),
+               custom_textures.FOLDER),
+        )
+    report_lost()
 
     # Imported back through the ordinary path, so the author gets the same
     # editable geometry as any other track and there is one importer to keep
@@ -814,6 +856,21 @@ def build_track(operator, context, obj, textures, keep_source, donor=None,
            source, os.path.basename(target)),
     )
     return {"FINISHED"}
+
+
+def _own_kept(context, model) -> set:
+    """Ordinals of the track's own textures a conversion keeps.
+
+    The ones the new table names - the mesh's pictures, and any a donor table
+    names - and the ones a texture scroll still points at, whose reference
+    lives on an object the conversion does not rebuild.
+    """
+    kept = custom_textures.scroll_ordinals(context)
+    for reference in model.textures:
+        ordinal = texture_module.custom_ordinal(reference.texture_id)
+        if ordinal is not None:
+            kept.add(ordinal)
+    return kept
 
 
 def _texture_warnings(adopted, stats, uv_layers) -> list:

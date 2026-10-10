@@ -3,6 +3,7 @@
 #include "controller_snapshot.hpp"
 #include "controller_mapping_policy.hpp"
 #include "custom_music.hpp"
+#include "modern_camera.hpp"
 #include "netplay/online_input_broker.hpp"
 #include "online_input_policy.hpp"
 #include "runtime_input.hpp"
@@ -1816,6 +1817,7 @@ void dkr::runtime::platform::pump_window_events(void*) {
         dkr::runtime::ui::LifecycleRequest::None) {
         ultramodern::quit();
     }
+    dkr::runtime::ui::update_camera_mouse();
     update_fullscreen_cursor();
 }
 
@@ -2448,6 +2450,9 @@ void dkr::runtime::platform::poll_input() {
                 gameplay_blocked || !window_focused || dkr::runtime::mobile::editing());
         }
 #endif
+        dkr::runtime::modern_camera::publish_input(
+            player, state.camera_x, state.camera_y, state.look_back,
+            online_routing);
         g_physical_buttons[player].store(state.buttons, std::memory_order_release);
         g_physical_stick_x[player].store(state.stick_x, std::memory_order_release);
         g_physical_stick_y[player].store(state.stick_y, std::memory_order_release);
@@ -2463,7 +2468,14 @@ void dkr::runtime::platform::poll_input() {
             dkr::runtime::netplay::publish_physical_input_to_virtual_port(
                 online_routing);
         if (publish_physical) {
-            g_buttons[player].store(state.buttons, std::memory_order_release);
+            std::uint16_t buttons = state.buttons;
+            if (dkr::runtime::modern_camera::owns_controls(player)) {
+                // During a race the Modern camera owns the C-button bindings
+                // (they orbit it), and Accelerate presses A.
+                buttons &= static_cast<std::uint16_t>(~0x000FU);
+                if (state.accelerate) buttons |= 0x8000U;
+            }
+            g_buttons[player].store(buttons, std::memory_order_release);
             g_stick_x[player].store(state.stick_x, std::memory_order_release);
             g_stick_y[player].store(state.stick_y, std::memory_order_release);
         }
@@ -2482,6 +2494,7 @@ void dkr::runtime::platform::poll_input() {
 
 void dkr::runtime::platform::set_online_input_routing(
     bool enabled, std::uint8_t occupied_mask, std::uint8_t local_slot) {
+    dkr::runtime::modern_camera::set_online_routing(enabled);
     g_online_occupied_mask.store(enabled ? occupied_mask : 0U,
                                  std::memory_order_release);
     g_online_local_slot.store(

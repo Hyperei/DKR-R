@@ -53,7 +53,7 @@ $deniedExtensions = @('.z64', '.v64', '.n64', '.eep', '.mpk', '.sra', '.fla', '.
 $runtimeFiles = @('DKR-R.exe', 'SDL2.dll', 'dxcompiler.dll', 'dxil.dll')
 $experimentalRaceTest = (Test-Path -LiteralPath (Join-Path $resolvedBuild 'CMakeCache.txt')) -and
     (Select-String -LiteralPath (Join-Path $resolvedBuild 'CMakeCache.txt') -Pattern '^DKR_EXPERIMENTAL_RACE_TEST:BOOL=(ON|1|TRUE|YES)$' -Quiet)
-if ($experimentalRaceTest) {
+if ($experimentalRaceTest -and $Version -ne '1.0.5') {
     if ($Version -notmatch 'experimental|rollback-test|^1\.0\.5-beta\.15(?:-playtest\.(?:[23456789]|10|11|12|14|15(?:-fix\.[12])?|16(?:-fix\.[12])?))?$') { throw 'Experimental backend builds must use a distinctly labelled experimental version or an approved Beta 15 playtest candidate.' }
 }
 $inputHostFiles = @('DKR-R-InputHost.exe', 'SDL3.dll', 'DKR-R-ModWorker.exe')
@@ -110,11 +110,14 @@ foreach ($name in $inputHostFiles) {
 }
 $stagedRuntime = Join-Path $stage 'DKR-R.exe'
 $stagedInputHost = Join-Path $stagedInputHostDirectory 'DKR-R-InputHost.exe'
+if ($Version -eq '1.0.5') {
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\PUBLIC-1.0.5-NOTES.txt') -Destination (Join-Path $stage 'RELEASE-NOTES.txt')
+}
 if ($Version -eq '1.0.5-beta.15') {
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\BETA15-RELEASE.txt') -Destination (Join-Path $stage 'BETA15-NOTES.txt')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\BETA15-ONLINE-STABILITY-20261007.txt') -Destination (Join-Path $stage 'ONLINE-STABILITY-CORRECTION.txt')
 }
-if ($experimentalRaceTest) {
+if ($experimentalRaceTest -and $Version -ne '1.0.5') {
     # Current playtests have their own connection/scope guides. The older file
     # describes Playtest 2 and must not label this candidate as that release.
     if ($Version -notin @('1.0.5-beta.15', '1.0.5-beta.15-playtest.8', '1.0.5-beta.15-playtest.9', '1.0.5-beta.15-playtest.10', '1.0.5-beta.15-playtest.11', '1.0.5-beta.15-playtest.12', '1.0.5-beta.15-playtest.14', '1.0.5-beta.15-playtest.15', '1.0.5-beta.15-playtest.15-fix.1', '1.0.5-beta.15-playtest.15-fix.2', '1.0.5-beta.15-playtest.16', '1.0.5-beta.15-playtest.16-fix.1', '1.0.5-beta.15-playtest.16-fix.2')) {

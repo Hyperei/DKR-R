@@ -4,6 +4,7 @@
 #include "rev_a_asset_mutex.hpp"
 #include "runtime_magic_codes.hpp"
 #include "runtime_platform.hpp"
+#include "modern_camera.hpp"
 #include "runtime_portable.hpp"
 #include "runtime_netplay.hpp"
 #include "runtime_support.hpp"
@@ -1331,6 +1332,7 @@ int DkrMain(int argc, char** argv) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         runtime_thread.join();
+        dkr::runtime::modern_camera::reset_session();
 #if defined(DKR_EXPERIMENTAL_RACE_TEST)
         if(owned_launch) {
             dkr::runtime::netplay::bind_external_session(admitted_lobby);

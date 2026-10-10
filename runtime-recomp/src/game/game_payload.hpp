@@ -62,6 +62,8 @@ struct GamePayload {
     RecompiledEntrypoint leveltable_vehicle_usable;
     RecompiledEntrypoint set_level_default_vehicle;
     RecompiledEntrypoint set_time_trial_enabled;
+    // The Modern camera widens the one-player view with speed.
+    RecompiledEntrypoint cam_set_fov;
     void (*register_sections)();
 };
 

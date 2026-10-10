@@ -32,6 +32,7 @@
 #include "netplay/online_mod_sync_link.hpp"
 #include "runtime_enhancements.hpp"
 #include "enhanced_water_settings.hpp"
+#include "modern_camera.hpp"
 #include "runtime_hud_layout.hpp"
 #include "hud_layout_editor.hpp"
 #include "hud_basic_settings.hpp"
@@ -1684,6 +1685,10 @@ void SaveSettings() {
                << (dkr::runtime::enhancements::maximum_detail_requested() ? 1 : 0) << '\n';
         output << "modern_fov_offset="
                << dkr::runtime::enhancements::fov_offset() << '\n';
+        output << "modern_camera="
+               << (dkr::runtime::modern_camera::requested() ? 1 : 0) << '\n';
+        output << "modern_look_back="
+               << (dkr::runtime::modern_camera::look_back_requested() ? 1 : 0) << '\n';
         output << "magic_codes_persistent="
                << dkr::runtime::magic_codes::persistent_mask() << '\n';
         output << "modern_view_distance_multiplier="
@@ -2154,6 +2159,15 @@ void LoadSettings() {
                 break;
             }
             if (shortcut_setting) continue;
+            // Outside the long compatibility parser below (MSVC nesting limit).
+            if (key == "modern_camera") {
+                dkr::runtime::modern_camera::set_enabled(number != 0);
+                continue;
+            }
+            if (key == "modern_look_back") {
+                dkr::runtime::modern_camera::set_look_back_enabled(number != 0);
+                continue;
+            }
             if (key == "gpu_keep_awake") {
                 dkr::runtime::render_power::gpu_keep_awake.store(number != 0);
                 continue;
@@ -7816,6 +7830,7 @@ std::string FormatRecordTime(std::uint16_t frames) {
 
 #include "runtime_settings_ui.inl"
 #include "runtime_sound_ui.inl"
+#include "runtime_camera_tuning_ui.inl"
 #include "runtime_graphics_ui.inl"
 #include "runtime_saves_ui.inl"
 #include "runtime_details_ui.inl"
@@ -8186,6 +8201,7 @@ void dkr::runtime::ui::configure(const std::filesystem::path& config_directory) 
         config_directory / "netplay" / "replays");
     RefreshCrtFilters();
     LoadSettings();
+    LoadCameraTuning();
     dkr::runtime::netplay::friend_service().configure(
         config_directory, g_online_player_name);
     const std::string profile_name =
@@ -9267,6 +9283,7 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
         online_session_view.launch_countdown_remaining_ms > 0U;
     const bool show_online_waiting = OnlineWaitingActive(online_session_view);
     const bool show_mipmap_loading = RT64::mipLoadingVisible();
+    const bool show_camera_tuning = CameraTuningVisible();
     const bool keep_owned_ui = dkr::runtime::netplay::experimental::owned_runtime_active();
     if (
 #if defined(__ANDROID__)
@@ -9276,7 +9293,7 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
         !show_online_failure_modal &&
         !show_online_notification &&
         !show_network && !show_controller_input && !show_online_countdown &&
-        !show_online_waiting && !show_mipmap_loading && !keep_owned_ui) {
+        !show_online_waiting && !show_mipmap_loading && !show_camera_tuning && !keep_owned_ui) {
         if (application.presentQueue->inspector != nullptr) {
             detach(application);
         }
@@ -9521,6 +9538,8 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
         DrawPaddockLegacyModImportModal();
         DrawTextEntryKeyboard();
     }
+    // Over the race, not the menu: the panel is for tuning while driving.
+    if (show_camera_tuning && !show_overlay) DrawCameraTuningPanel();
     DrawFpsOverlay(application);
     DrawNetworkOverlay();
     DrawControllerInputOverlay();
@@ -9537,6 +9556,10 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
     dkr::runtime::mobile::editor();
 #endif
     inspector->endFrame();
+}
+
+void dkr::runtime::ui::update_camera_mouse() {
+    UpdateCameraMouseOrbit();
 }
 
 bool dkr::runtime::ui::handle_runtime_event(SDL_Event* event) {
@@ -9567,6 +9590,14 @@ bool dkr::runtime::ui::handle_runtime_event(SDL_Event* event) {
     if (!dkr::runtime::hud::editor::active() && event->type == SDL_KEYDOWN && event->key.repeat == 0 &&
         event->key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
         toggle_overlay();
+        return true;
+    }
+    if (HandleCameraMouseOrbit(*event)) {
+        return true;
+    }
+    if (!dkr::runtime::hud::editor::active() && event->type == SDL_KEYDOWN && event->key.repeat == 0 &&
+        event->key.keysym.scancode == SDL_SCANCODE_F7) {
+        ToggleCameraTuning();
         return true;
     }
     if (g_overlay_visible.load(std::memory_order_acquire) &&

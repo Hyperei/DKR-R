@@ -503,7 +503,9 @@ class InstrumentationTests(unittest.TestCase):
             # and local matrix bindings; no simulation/checkpoint writes.
             # Preserve the already-shipped water camera-root/time metadata.
             # These are bounded renderer sidecars, not guest simulation writes.
-            "runtime-recomp/src/game/presentation_identity.cpp":"a07c70710997d02d87247b1592209dfd9c42a6371d32e4c00df28ee03386f7d8",
+            # The local Modern camera's look-back adds a one-shot camera epoch
+            # cut here; it is never set in owned or replayed frames.
+            "runtime-recomp/src/game/presentation_identity.cpp":"bcfa277012ccca66123351a50a97ca77c3123f3011a97cd4d02b483bcd77e29a",
             "runtime-recomp/src/game/widescreen_policy.hpp":"b926703163fa542f8fbd7af1aee297595c1a58a74c61a82d457c8fbae4ccbb62",
             "extern/dkr-decomp/src/save_data.c":"898df1a185c17e1d6ba11302fc5c140a1d7bd10ff3d8b86ff937c834bb13a607",
             "extern/dkr-decomp/src/thread3_main.c":"437434837706ee88e91578ce9e1aa2cd960e65e1e3a6f1aa47ae3b6289892d8e",
