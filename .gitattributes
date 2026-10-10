@@ -5,3 +5,6 @@
 *.png binary
 *.ico binary
 *.zip binary
+# Unified diffs prefix blank context lines with a space. Do not trim their
+# checksum-pinned bytes or treat nested patch syntax as source whitespace.
+*.patch -whitespace
