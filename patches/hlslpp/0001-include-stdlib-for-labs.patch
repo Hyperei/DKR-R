@@ -1,0 +1,11 @@
+diff --git a/include/hlsl++/platforms/scalar.h b/include/hlsl++/platforms/scalar.h
+--- a/include/hlsl++/platforms/scalar.h
++++ b/include/hlsl++/platforms/scalar.h
+@@ -2,6 +2,7 @@
+
+ #include <math.h>
+ #include <stdint.h>
++#include <stdlib.h>
+
+ namespace hlslpp
+ {

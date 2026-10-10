@@ -24,7 +24,7 @@ must not be edited.
 
 The release build consumes two internal engines but exposes one application.
 Windows embeds the private Rev A engine in `DKR-R.exe`; Linux keeps it inside
-the single AppImage and macOS inside `DKR-R.app`. The existing protected
+the single AppImage. macOS links both into the local executable. The existing protected
 `RecompiledFuncs` tree remains the v1.0/v77 output. Generate v1.1/v80 into a
 separate build workspace, translate the versioned policy with
 `scripts/generate_revision_policy.py`, create the N64Recomp configuration with
@@ -96,15 +96,14 @@ packagers reject a release containing more than one public executable.
 
 ## macOS
 
-On an Apple host with Xcode command-line tools, CMake and Ninja:
+With Xcode setup complete and [Homebrew](https://brew.sh/) installed:
 
 ```bash
-./Setup-macOS.sh
-./Build-macOS.sh
+./Build-macOS.sh --rom-v77 "/path/to/US 1.0.z64" --rom-v80 "/path/to/US Rev A.z64"
 ```
 
-RT64 uses Metal on macOS. See `packaging/MACOS-BUILD-README.md` for the handoff
-and validation checklist.
+This installs tools, prepares both ROMs, builds and tests the Metal runtime.
+Launch with `./Run-macOS.sh`. Playing requires only one supported ROM.
 
 ## Release safety
 

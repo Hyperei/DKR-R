@@ -203,6 +203,17 @@
       ]
     },
     {
+      "name": "hlslpp",
+      "repositoryPath": "extern/rt64/src/contrib/hlslpp",
+      "expectedCommit": "6f5274c66132e8f951c400103d897582b8f21491",
+      "patches": [
+        {
+          "path": "patches/hlslpp/0001-include-stdlib-for-labs.patch",
+          "sha256": "70df4c069accd54520819a091fab425acf155ef82fa77e3ba7a2b6bf64636557"
+        }
+      ]
+    },
+    {
       "name": "GekkoNet",
       "repositoryPath": "extern/gekkonet",
       "expectedCommit": "5924b5c7abb5b1156c3c5609c9c36e9bede58c1c",

@@ -26,6 +26,7 @@
 #include <mutex>
 #include <set>
 #include <thread>
+#include <type_traits>
 #include <system_error>
 #include <utility>
 
@@ -117,21 +118,19 @@ std::string DisplayName(const std::filesystem::path& path) {
 }
 
 std::string FileTimeText(std::filesystem::file_time_type time) {
-#if defined(__ANDROID__)
-    // libc++ uses a 128-bit timestamp representation on Android. Preserve
-    // every bit in the cache key rather than narrowing it to std::to_string.
+    // Decimal of the raw rep, written by hand: libc++ (Android, Apple) uses a
+    // 128-bit rep that std::to_string cannot take, and every bit belongs in
+    // the cache key.
     const auto ticks = time.time_since_epoch().count();
+    using Unsigned = std::make_unsigned_t<decltype(ticks)>;
     const bool negative = ticks < 0;
-    auto magnitude = static_cast<unsigned __int128>(ticks);
-    if (negative) magnitude = 0 - magnitude;
+    auto magnitude = static_cast<Unsigned>(ticks);
+    if (negative) magnitude = Unsigned{0} - magnitude;
     std::string text;
     do { text.push_back(static_cast<char>('0' + magnitude % 10)); magnitude /= 10; } while (magnitude);
     if (negative) text.push_back('-');
     std::reverse(text.begin(), text.end());
     return text;
-#else
-    return std::to_string(time.time_since_epoch().count());
-#endif
 }
 
 std::string FileSignature(const std::filesystem::path& path) {

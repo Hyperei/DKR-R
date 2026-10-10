@@ -133,6 +133,8 @@ The Linux build uses the already generated recompilation sources:
 ./Build-Linux.sh
 ```
 
+For macOS setup, building and playing, see [the build guide](docs/BUILDING.md#macos).
+
 Dependency revisions are pinned in `dependencies.lock.json`; all dependency
 changes are reproducible patches listed in `patches/manifest.json`.
 

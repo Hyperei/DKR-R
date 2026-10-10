@@ -1,6 +1,8 @@
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include "launcher_panel_cache.hpp"
+#include "imgui.h"
+#include "backends/imgui_impl_sdlrenderer2.h"
 
 #include <algorithm>
 #include <array>
@@ -102,6 +104,38 @@ int main() {
         mesh[1].position.x = 600;
         check(cache.find(renderer, mesh) == nullptr, "clear retained renderer resource");
     }
+    // Exercise the actual launcher backend at normal and Retina scales.
+    ImGui::CreateContext();
+    ImGui_ImplSDLRenderer2_Init(renderer);
+    auto& io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    for (float scale : {1.0F, 2.0F}) {
+        io.DisplaySize = ImVec2(320 / scale, 200 / scale);
+        io.DisplayFramebufferScale = ImVec2(scale, scale);
+        ImGui_ImplSDLRenderer2_NewFrame();
+        ImGui::NewFrame();
+        auto* draw = ImGui::GetBackgroundDrawList();
+        draw->PushClipRect(ImVec2(40, 20), ImVec2(100, 60));
+        draw->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(255, 0, 0, 255));
+        draw->PopClipRect();
+        ImGui::Render();
+        SDL_RenderSetScale(renderer, scale, scale);
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+        ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
+        SDL_RenderPresent(renderer);
+        const auto red_at = [&](int x, int y) {
+            Uint8 red, green, blue;
+            const auto* row = static_cast<const Uint8*>(surface->pixels) + y * surface->pitch;
+            SDL_GetRGB(reinterpret_cast<const Uint32*>(row)[x], surface->format, &red, &green, &blue);
+            return red == 255 && green == 0 && blue == 0;
+        };
+        check(red_at(int(99 * scale), int(59 * scale)), "scaled geometry missed clip edge");
+        check(!red_at(int(39 * scale), int(40 * scale)), "scaled clip leaked left");
+        check(!red_at(int(100 * scale), int(40 * scale)), "scaled clip leaked right");
+    }
+    ImGui_ImplSDLRenderer2_Shutdown();
+    ImGui::DestroyContext();
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_FreeSurface(surface);

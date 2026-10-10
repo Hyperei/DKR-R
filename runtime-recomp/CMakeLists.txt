@@ -758,6 +758,10 @@ if(DKR_RUNTIME_BUILD_GENERATED)
     endif()
     if(DKR_EXPERIMENTAL_RACE_TEST)
         list(APPEND DKR_GAME_SOURCES src/game/netplay/experimental_runtime.cpp)
+    else()
+        # save_manager.cpp uses the online Controller Pak codec; the owned
+        # rollback build provides it through ExperimentalOwnedGame instead.
+        list(APPEND DKR_GAME_SOURCES src/game/netplay/experimental_pak.cpp)
     endif()
     if(DKR_RUNTIME_BUILD_RT64)
         list(APPEND DKR_GAME_SOURCES
@@ -930,22 +934,6 @@ if(DKR_RUNTIME_BUILD_GENERATED)
         OUTPUT_NAME "DKR-R"
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     )
-    if(APPLE)
-        # CMake supplies the platform Info.plist and places the executable in
-        # Contents/MacOS. RT64 selects its native Metal backend on Apple
-        # platforms; the release packager adds artwork and notices before
-        # applying an ad-hoc signature for local testing.
-        set_target_properties(DKRPortGame PROPERTIES
-            MACOSX_BUNDLE TRUE
-            MACOSX_BUNDLE_BUNDLE_NAME "DKR-R"
-            MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.thatguymcd.dkr-r"
-            MACOSX_BUNDLE_INFO_STRING "Diddy Kong Racing - Recompiled"
-            MACOSX_BUNDLE_LONG_VERSION_STRING "${DKR_RELEASE_VERSION}"
-            MACOSX_BUNDLE_SHORT_VERSION_STRING "${DKR_RELEASE_VERSION_NUMERIC}"
-            MACOSX_BUNDLE_BUNDLE_VERSION "${DKR_RELEASE_BUILD_NUMBER}"
-            MACOSX_BUNDLE_COPYRIGHT "Copyright 2026 ThatGuyMcd and DKR-R contributors"
-        )
-    endif()
     if(WIN32)
         set_target_properties(DKRPortGame PROPERTIES WIN32_EXECUTABLE TRUE)
     endif()
@@ -1264,6 +1252,25 @@ foreach(config Debug Release RelWithDebInfo MinSizeRel)
 endforeach()
 
 if(BUILD_TESTING)
+    # Build tooling: dependency patch pipeline, reviewed-ELF digest and the
+    # shell entry-point contracts. Needs only git and Python, so it runs in
+    # every configuration including the policy-only CI builds.
+    find_package(Python3 COMPONENTS Interpreter)
+    find_package(Git)
+    if(Python3_Interpreter_FOUND AND GIT_FOUND)
+        add_test(NAME DKRBuildTooling
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/tests/build_tooling_tests.py")
+    endif()
+    if(APPLE)
+        # Compiled directly so the policy-only CI configuration, which has no
+        # DKRLegacyModProcess target, still runs the sandbox regression test.
+        add_executable(DKRLegacyModSandboxTests tests/legacy_mod_sandbox_tests.cpp
+            src/game/mods/legacy_mod_process.cpp)
+        target_include_directories(DKRLegacyModSandboxTests PRIVATE src/game/mods)
+        target_compile_features(DKRLegacyModSandboxTests PRIVATE cxx_std_20)
+        target_compile_options(DKRLegacyModSandboxTests PRIVATE -UNDEBUG)
+        add_test(NAME DKRLegacyModSandbox COMMAND DKRLegacyModSandboxTests)
+    endif()
     add_executable(DKRRenderIdlePolicyTests tests/render_idle_policy_tests.cpp)
     add_executable(DKRRenderPassPolicyTests tests/render_pass_policy_tests.cpp)
     target_compile_features(DKRRenderPassPolicyTests PRIVATE cxx_std_20)
@@ -2297,8 +2304,12 @@ if(BUILD_TESTING)
     target_include_directories(DKRLauncherRenderPolicyTests PRIVATE src/game)
     add_test(NAME DKRLauncherRenderPolicy COMMAND DKRLauncherRenderPolicyTests)
     if(DKR_RUNTIME_BUILD_RT64 AND TARGET rt64)
-        add_executable(DKRLauncherSoftwarePixelsTests tests/launcher_software_pixels_tests.cpp)
+        add_executable(DKRLauncherSoftwarePixelsTests tests/launcher_software_pixels_tests.cpp
+            "${DKR_RT64_SOURCE}/src/contrib/imgui/backends/imgui_impl_sdlrenderer2.cpp")
         target_include_directories(DKRLauncherSoftwarePixelsTests PRIVATE src/game)
+        target_include_directories(DKRLauncherSoftwarePixelsTests PRIVATE
+            "${DKR_RT64_SOURCE}/src/contrib/imgui")
+        target_link_libraries(DKRLauncherSoftwarePixelsTests PRIVATE rt64)
         if(WIN32)
             target_include_directories(DKRLauncherSoftwarePixelsTests PRIVATE
                 "${DKR_RT64_SOURCE}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/include")

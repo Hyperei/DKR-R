@@ -180,14 +180,22 @@ bool DatagramSocket::receive(PeerAddress& source,
     std::array<std::uint8_t, 2048> buffer{};
 #if defined(_WIN32)
     int source_size = static_cast<int>(source.storage.size());
-    constexpr int receive_flags = 0;
-#else
-    socklen_t source_size = static_cast<socklen_t>(source.storage.size());
-    constexpr int receive_flags = MSG_TRUNC;
-#endif
+    // An oversized datagram fails with WSAEMSGSIZE, handled below.
     const int received = ::recvfrom(impl_->handle,
-        reinterpret_cast<char*>(buffer.data()), static_cast<int>(buffer.size()), receive_flags,
+        reinterpret_cast<char*>(buffer.data()), static_cast<int>(buffer.size()), 0,
         address_ptr(source), &source_size);
+#else
+    // MSG_TRUNC as an input flag (return the real length) is Linux-only.
+    // recvmsg reports truncation portably through msg_flags.
+    iovec segment{buffer.data(), buffer.size()};
+    msghdr message{};
+    message.msg_name = address_ptr(source);
+    message.msg_namelen = static_cast<socklen_t>(source.storage.size());
+    message.msg_iov = &segment;
+    message.msg_iovlen = 1;
+    const auto received = ::recvmsg(impl_->handle, &message, 0);
+    const socklen_t source_size = message.msg_namelen;
+#endif
     if (received < 0) {
         const int code = last_error();
         // These errors do not invalidate this unconnected UDP socket.
@@ -208,10 +216,12 @@ bool DatagramSocket::receive(PeerAddress& source,
         error = socket_error("Receiving a UDP datagram", code);
         return false;
     }
-    if (static_cast<std::size_t>(received) > buffer.size()) {
+#if !defined(_WIN32)
+    if ((message.msg_flags & MSG_TRUNC) != 0) {
         error.clear();
         return false;
     }
+#endif
     source.size = static_cast<std::uint32_t>(source_size);
     bytes.assign(buffer.begin(), buffer.begin() + received);
     error.clear();

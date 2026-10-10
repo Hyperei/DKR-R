@@ -42,9 +42,10 @@
 #include "netplay/friend_service.hpp"
 #include "netplay/netplay_build_identity.hpp"
 #include "netplay/experimental_runtime_admission.hpp"
+#include "netplay/experimental_runtime_presence.hpp"
+#include "netplay/experimental_latency.hpp"
 #if defined(DKR_EXPERIMENTAL_RACE_TEST)
 #include "netplay/experimental_runtime.hpp"
-#include "netplay/experimental_latency.hpp"
 #include "netplay/experimental_performance.hpp"
 #include "netplay/secure_channel.hpp"
 #endif
@@ -9016,6 +9017,13 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(
         const auto launcher_present_started = launcher_ui_build_finished;
         SDL_SetRenderDrawColor(renderer, 6, 9, 14, 255);
         SDL_RenderClear(renderer);
+#if defined(__APPLE__)
+        // The SDL ImGui backend scales clips, but SDL must scale geometry.
+        // Refresh each frame for Retina displays and window/display changes.
+        if (launcher_draw_data != nullptr)
+            SDL_RenderSetScale(renderer, launcher_draw_data->FramebufferScale.x,
+                               launcher_draw_data->FramebufferScale.y);
+#endif
         RenderLauncherDrawData(renderer, launcher_draw_data, launcher_profile,
                                launcher_panel_cache, bounded_software_return);
         // SDL's software backend normally executes its queued drawing inside
@@ -9188,12 +9196,7 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
         online_session_view.launch_countdown_remaining_ms > 0U;
     const bool show_online_waiting = OnlineWaitingActive(online_session_view);
     const bool show_mipmap_loading = RT64::mipLoadingVisible();
-    const bool keep_owned_ui =
-#if defined(DKR_EXPERIMENTAL_RACE_TEST)
-        dkr::runtime::netplay::experimental::runtime_view().active;
-#else
-        false;
-#endif
+    const bool keep_owned_ui = dkr::runtime::netplay::experimental::owned_runtime_active();
     if (
 #if defined(__ANDROID__)
         false && // Touch Menu remains available, even when all other overlays are off.
