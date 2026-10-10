@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import apply_dependency_patches as patches  # noqa: E402
 import legacy_character_presentation_policy as presentation  # noqa: E402
+import validate_release_metadata as release_metadata  # noqa: E402
 
 
 # Hermetic: the developer's global config (signing, hooks, autocrlf) must not
@@ -37,6 +38,22 @@ def git(repo, *args):
 def write(path, text):
     # Byte-exact: Windows text mode would otherwise turn \n into \r\n.
     path.write_text(text, newline="\n")
+
+
+class ReleaseMetadataTests(unittest.TestCase):
+    def test_current_release_metadata(self):
+        self.assertEqual(release_metadata.main(), 0)
+
+    def test_invalid_version_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for version in ("1.0.5-beta.0", "1.0.5-beta.15-playtest.0",
+                            "1.0.5-beta.15-playtest.15-fix.0", "1.0.5-garbage"):
+                with self.subTest(version=version):
+                    (root / "VERSION").write_text(version)
+                    with patch.object(release_metadata, "ROOT", root):
+                        with self.assertRaisesRegex(RuntimeError, "semantic version"):
+                            release_metadata.main()
 
 
 class PatchPipelineTests(unittest.TestCase):
