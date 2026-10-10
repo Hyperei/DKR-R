@@ -7,6 +7,17 @@
 using namespace dkr::runtime::enhancements;
 
 int main() {
+    // A fixed sky direction and a world direction must move by the same
+    // horizontal screen distance for the same camera turn at every aspect.
+    // RT64 divides projected X by the expansion factor for both draws.
+    for (const float aspect : {4.0F / 3.0F, 16.0F / 9.0F,
+                               21.0F / 9.0F, 32.0F / 9.0F}) {
+        const float cover = aspect / kOriginalPresentationAspect;
+        const float world_motion = (std::tan(0.2F) - std::tan(0.1F)) / cover;
+        const float sky_motion = world_motion * sky_projection_column_scale(cover, 0);
+        assert(std::fabs(sky_motion - world_motion) < 0.0001F);
+        assert(sky_projection_column_scale(cover, 1) == sky_vertical_cover_scale(cover));
+    }
     static_assert(sky_vertical_cover_scale(1.0F) == 1.0F);
     static_assert(sky_vertical_cover_scale(4.0F / 3.0F) == 4.0F / 3.0F);
     static_assert(!is_split_screen_sky_layout(0));

@@ -1510,11 +1510,8 @@ extern "C" void dkr_skybox_cover_begin(std::uint8_t* rdram,
 
     // This hook runs after mtx_world_origin() has rebuilt the current camera
     // projection and immediately before render_object() builds skydome-only
-    // matrices. Preserve the accepted uniform cover through 21:9. At wider
-    // ratios, invert only the excess vertical zoom so the horizon moves back
-    // down while horizontal coverage continues to reach the viewport edges.
-    const float vertical_zoom =
-        dkr::runtime::enhancements::sky_vertical_cover_scale(cover_zoom);
+    // matrices. Keep the world's horizontal projection so camera turns move
+    // sky and scenery at the same rate; retain the vertical coverage policy.
     for (std::uint32_t row = 0; row < 4U; ++row) {
         for (std::uint32_t column = 0; column < 2U; ++column) {
             const std::uint32_t slot = row * 2U + column;
@@ -1523,7 +1520,8 @@ extern "C" void dkr_skybox_cover_begin(std::uint8_t* rdram,
             g_saved_sky_projection_columns[slot] = ReadRdramFloat(rdram, address);
             WriteRdramFloat(rdram, address,
                             g_saved_sky_projection_columns[slot] *
-                                (column == 0U ? cover_zoom : vertical_zoom));
+                                dkr::runtime::enhancements::sky_projection_column_scale(
+                                    cover_zoom, column));
         }
     }
     g_sky_cover_active = true;

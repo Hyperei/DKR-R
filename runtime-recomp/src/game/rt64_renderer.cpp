@@ -1080,7 +1080,8 @@ void dkr::runtime::RT64Renderer::present_owned(
                 std::memcpy(&whole,workspace->bytes().data()+(p^2U),2);
                 std::memcpy(&fraction,workspace->bytes().data()+((p+32)^2U),2);
                 const double value=(double(whole)+double(fraction)/65536.0)*
-                    (column==0||event.kind==DKR_OWNED_TRANSITION?cover:enhancements::sky_vertical_cover_scale(cover));
+                    (event.kind==DKR_OWNED_TRANSITION?cover:
+                        enhancements::sky_projection_column_scale(cover,column));
                 if(!std::isfinite(value))continue;
                 const auto fixed=std::int32_t(std::clamp(std::round(value*65536.0),double(INT32_MIN),double(INT32_MAX)));
                 const auto integer=std::int16_t(std::uint32_t(fixed)>>16);

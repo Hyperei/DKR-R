@@ -139,6 +139,15 @@ constexpr float sky_vertical_cover_scale(float horizontal_cover) {
         cover;
 }
 
+// The skydome shares the world's camera yaw and RT64's horizontal aspect
+// expansion. Magnifying its X projection cancels that expansion and makes
+// the sky pan faster than the world as the window gets wider. Only the
+// separate vertical coverage correction belongs in its projection.
+constexpr float sky_projection_column_scale(float horizontal_cover,
+                                            unsigned column) {
+    return column == 1U ? sky_vertical_cover_scale(horizontal_cover) : 1.0F;
+}
+
 constexpr float split_sky_horizontal_cover_scale(float horizontal_cover,
                                                   int viewport_layout) {
     if (!is_split_screen_sky_layout(viewport_layout)) {
