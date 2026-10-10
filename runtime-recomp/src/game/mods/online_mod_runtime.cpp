@@ -11,6 +11,9 @@
 #define NOMINMAX
 #endif
 #include <Windows.h>
+#elif defined(__APPLE__)
+#include <mach/mach.h>
+#include <sys/sysctl.h>
 #else
 #include <sys/sysinfo.h>
 #endif
@@ -30,6 +33,15 @@ std::uint64_t retention_budget() {
 #ifdef _WIN32
     MEMORYSTATUSEX memory{};memory.dwLength=sizeof(memory);
     return GlobalMemoryStatusEx(&memory)?resource_cache_budget(memory.ullTotalPhys,memory.ullAvailPhys,false):0;
+#elif defined(__APPLE__)
+    // Available approximates Linux free+buffers: free, inactive and speculative pages.
+    std::uint64_t physical=0;std::size_t size=sizeof(physical);
+    vm_statistics64_data_t vm{};mach_msg_type_number_t count=HOST_VM_INFO64_COUNT;
+    if(sysctlbyname("hw.memsize",&physical,&size,nullptr,0)!=0 ||
+        host_statistics64(mach_host_self(),HOST_VM_INFO64,reinterpret_cast<host_info64_t>(&vm),&count)!=KERN_SUCCESS)
+        return 0;
+    const std::uint64_t available=(std::uint64_t(vm.free_count)+vm.inactive_count+vm.speculative_count)*vm_page_size;
+    return resource_cache_budget(physical,available,false);
 #else
     struct sysinfo memory{};
     if(sysinfo(&memory)!=0)return 0;
