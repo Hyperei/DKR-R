@@ -410,8 +410,7 @@ diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuf
 diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
 --- a/src/hle/rt64_workload_queue.cpp
 +++ b/src/hle/rt64_workload_queue.cpp
-@@ -854,7 +854,12 @@
-             // Update the GPU profiler with the results from the timestamps of the frame.
+@@ -855,6 +855,11 @@
              queryPool->queryResults();
              const uint64_t *frameTimestamps = queryPool->getResults();
 -            rendererGPUProfiler.log(double(frameTimestamps[1] - frameTimestamps[0]) / 1000000.0);

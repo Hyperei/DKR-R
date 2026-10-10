@@ -23,13 +23,10 @@ diff --git a/src/shared/rt64_water_params.h b/src/shared/rt64_water_params.h
 diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
 --- a/src/render/rt64_framebuffer_renderer.cpp
 +++ b/src/render/rt64_framebuffer_renderer.cpp
-@@ -3,6 +3,7 @@
- //
- 
- #include "rt64_framebuffer_renderer.h"
-+#include "WaterProjection.h"
+@@ -6,3 +6,4 @@
  #include "rt64_generated_mip_config.h"
  #include "rt64_generated_mip_scope.h"
++#include "WaterProjection.h"
  
 @@ -1849,21 +1850,21 @@
                      wp.camera = {camera.x, camera.y, camera.z, t};
