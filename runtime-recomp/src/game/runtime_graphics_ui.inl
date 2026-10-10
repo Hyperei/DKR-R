@@ -79,8 +79,12 @@ void DrawGraphicsPage(float available_width, bool live) {
 
     GraphicsConfig config = ultramodern::renderer::get_graphics_config();
     bool changed = false;
+#if defined(DKR_EXPERIMENTAL_RACE_TEST)
     const bool owned_camera_settings_deferred =
         dkr::runtime::netplay::experimental::runtime_view().active;
+#else
+    const bool owned_camera_settings_deferred = false;
+#endif
     int profile = static_cast<int>(enh::presentation_profile());
     int window = static_cast<int>(config.wm_option);
     int resolution = static_cast<int>(config.res_option);
@@ -487,6 +491,37 @@ void DrawGraphicsPage(float available_width, bool live) {
                               "and cutscenes keep their original framing.")) {
                 enh::set_fov_offset(fov_offset);
                 SaveSettings();
+            }
+            PaddockGap(16.0F);
+            namespace cam = dkr::runtime::modern_camera;
+            bool modern_camera = cam::requested();
+            if (SettingsCheck("##modern-camera", "Modern camera", &modern_camera, inner,
+                              "A chase camera that swings into corners, opens up with speed, shows the "
+                              "side of your kart in a drift and reacts to boosts and landings. The right "
+                              "stick (or the mouse with its right button held) turns it around your "
+                              "racer and RT accelerates. During a race the "
+                              "right stick then stops sending C-buttons (camera distance, course arrows, "
+                              "minimap). Local play only.")) {
+                cam::set_enabled(modern_camera);
+                SaveSettings();
+            }
+            PaddockGap(16.0F);
+            bool look_back = cam::look_back_requested();
+            if (SettingsCheck("##look-back", "Look back", &look_back, inner,
+                              "Hold Look back (right stick click by default, rebind under Controls) to "
+                              "see behind your racer. Local play only.")) {
+                cam::set_look_back_enabled(look_back);
+                SaveSettings();
+            }
+            if (live) {
+                PaddockGap(12.0F);
+                if (SettingsButton("Tune the Modern camera (F7)")) {
+                    OpenCameraTuning();
+                    g_overlay_visible.store(false, std::memory_order_release);
+                }
+                PaddockGap(6.0F);
+                SettingsHelp("A panel over the race that adjusts the camera while you drive, with "
+                             "presets such as Comfort. Use the mouse; the controller keeps driving.", inner);
             }
             ImGui::EndDisabled();
             PaddockGap(16.0F);

@@ -996,6 +996,9 @@ int dkr_probe_native(const char* name, uint8_t* ram, struct recomp_context* cont
     dkr_probe_checkpoint();
     uint64_t mod_result=0;
     if(dkr_probe_mod_dispatch(name,ram,context,0,0,0,0,&mod_result))return (int)mod_result;
+    /* modern_camera.cpp: the local Modern camera never moves an owned or
+       replayed frame, so there is no pose to hand back here. */
+    if(strcmp(name,"dkr_modern_camera_restore")==0)return 0;
     if (offline) {
         if(DKR_PROBE_HAS_FULL_SCENES && canonical_presentation &&
            owned_presentation_hook(name,ram,context))return 0;

@@ -51,3 +51,15 @@ def verify_camera_obstruction_policy(policy, elf):
     if sum(int(h['beforeVram'],0)==site for h in policy['functionHooks']) != 1 or any(
             int(p['vram'],0)==site for p in policy.get('instructionPatches', [])):
         raise ValueError('Conflicting camera return owner')
+    # The local Modern camera replaces the pose after the hook above and puts
+    # the retail pose back here, at the first instruction, before the next update.
+    restore = [h for h in policy['functionHooks']
+               if 'dkr_modern_camera_restore' in h.get('text', '')]
+    restore_text = ('extern void dkr_modern_camera_restore(uint8_t*, recomp_context*); '
+                    'dkr_modern_camera_restore(rdram, ctx);')
+    if len(restore) != 1 or restore[0]['function'] != 'update_player_camera' or \
+            int(restore[0]['beforeVram'], 0) != start or restore[0]['text'] != restore_text:
+        raise ValueError('Modern-camera restore must own the camera-update entry')
+    if sum(int(h['beforeVram'],0)==start for h in policy['functionHooks']) != 1 or any(
+            int(p['vram'],0)==start for p in policy.get('instructionPatches', [])):
+        raise ValueError('Conflicting camera entry owner')

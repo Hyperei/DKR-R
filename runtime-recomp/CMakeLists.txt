@@ -601,6 +601,7 @@ if(DKR_RUNTIME_BUILD_GENERATED)
         set(REQUIRED_INPUT_HOOKS
             "dkr_scheduler_keep_host_tasks"
             "dkr_resolve_follow_camera"
+            "dkr_modern_camera_restore"
             "dkr_netplay_prepare_controller_init"
             "dkr_netplay_resolve_authored_input_frame"
             "dkr_legacy_scene_begin"
@@ -715,6 +716,8 @@ if(DKR_RUNTIME_BUILD_GENERATED)
         src/game/renderer_snapshot.cpp
         src/game/runtime_enhancements.cpp
         src/game/camera_obstruction.cpp
+        src/game/modern_camera.cpp
+        src/game/modern_cam/modern_cam.c
         src/game/runtime_hud_layout.cpp
         src/game/runtime_audio_controls.cpp
         src/game/runtime_input.cpp
@@ -755,6 +758,11 @@ if(DKR_RUNTIME_BUILD_GENERATED)
     if(DKR_REPLAY_QUALIFICATION)
         set_property(SOURCE src/game/runtime_netplay.cpp src/game/custom_tracks_hooks.cpp
             APPEND PROPERTY COMPILE_DEFINITIONS DKR_REPLAY_QUALIFICATION=1)
+    endif()
+    if(NOT DKR_EXPERIMENTAL_RACE_TEST)
+        # save_manager.cpp reads the online MemPak image in every build; the
+        # experimental build gets this source from ExperimentalOwnedGame.cmake.
+        list(APPEND DKR_GAME_SOURCES src/game/netplay/experimental_pak.cpp)
     endif()
     if(DKR_EXPERIMENTAL_RACE_TEST)
         list(APPEND DKR_GAME_SOURCES src/game/netplay/experimental_runtime.cpp)
@@ -1839,6 +1847,25 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_LIST_DIR}/src/game"
     )
     add_test(NAME DKRModernCameraPolicy COMMAND DKRModernCameraPolicyTests)
+
+    add_executable(DKRModernCameraDkrTests
+        tests/modern_camera_dkr_tests.cpp
+        src/game/modern_cam/modern_cam.c
+    )
+    target_include_directories(DKRModernCameraDkrTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game"
+    )
+    add_test(NAME DKRModernCameraDkr COMMAND DKRModernCameraDkrTests)
+
+    # The modern_cam library's own behaviour suite, unchanged.
+    add_executable(DKRModernCamTests
+        tests/modern_cam_example_test.c
+        src/game/modern_cam/modern_cam.c
+    )
+    target_include_directories(DKRModernCamTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game/modern_cam"
+    )
+    add_test(NAME DKRModernCam COMMAND DKRModernCamTests)
 
     add_executable(DKRWidescreenPolicyTests
         tests/widescreen_policy_tests.cpp

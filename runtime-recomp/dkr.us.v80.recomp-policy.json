@@ -82,6 +82,12 @@
   "functionHooks": [
     {
       "function": "update_player_camera",
+      "beforeVram": "0x80057A80",
+      "text": "extern void dkr_modern_camera_restore(uint8_t*, recomp_context*); dkr_modern_camera_restore(rdram, ctx);",
+      "reason": "At update_player_camera entry, before its stack frame exists, hand the retail camera update its own previous pose. The local Modern camera replaces gCameraObject's pose only after the update (with the clearance hook below); this restores, member by member, the retail position, rotation, boom length and segment it replaced, so DKR's camera smoothing never integrates the orbited pose. Members another writer changed in between (respawn, door, reset) are left alone. No argument register is read."
+    },
+    {
+      "function": "update_player_camera",
       "beforeVram": "0x800580E8",
       "text": "extern void dkr_resolve_follow_camera(uint8_t*, recomp_context*, uint32_t); dkr_resolve_follow_camera(rdram, ctx, (uint32_t)MEM_W(0x38, ctx->r29));",
       "reason": "Rev A equivalent of the checked common follow-camera return. Resolve camera placement before visibility/matrix generation, without touching racer physics, scripted cameras or the retail void-cover fallback."

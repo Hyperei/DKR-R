@@ -499,7 +499,9 @@ class InstrumentationTests(unittest.TestCase):
             "runtime-recomp/src/game/runtime_hud_layout.cpp":"9ec1d648e835dfb6b61495f888a6685d10ce75daf3137c7308e368709ab4d7ad",
             # Audited camera-clearance metadata: read-only guest observations
             # and local matrix bindings; no simulation/checkpoint writes.
-            "runtime-recomp/src/game/presentation_identity.cpp":"b145359db534a8ac4aa2d2c3a39a2dde91a0ef409b1b77e6e19fc10679297a42",
+            # The local Modern camera's look-back adds a one-shot camera epoch
+            # cut here; it is never set in owned or replayed frames.
+            "runtime-recomp/src/game/presentation_identity.cpp":"769e7de053808ae26536103bcac762b5791f4747aa56613214332d7b1ef9c670",
             "runtime-recomp/src/game/widescreen_policy.hpp":"b926703163fa542f8fbd7af1aee297595c1a58a74c61a82d457c8fbae4ccbb62",
             "extern/dkr-decomp/src/save_data.c":"898df1a185c17e1d6ba11302fc5c140a1d7bd10ff3d8b86ff937c834bb13a607",
             "extern/dkr-decomp/src/thread3_main.c":"437434837706ee88e91578ce9e1aa2cd960e65e1e3a6f1aa47ae3b6289892d8e",

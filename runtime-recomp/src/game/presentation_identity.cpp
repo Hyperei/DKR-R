@@ -2,6 +2,7 @@
 #include "retained_metadata_table.hpp"
 #include "netplay/experimental_performance.hpp"
 #include "custom_music.hpp"
+#include "modern_camera.hpp"
 #include "revision_addresses.hpp"
 #include "water_scroll_policy.hpp"
 
@@ -633,9 +634,13 @@ void RegisterCameraMatrix(std::uint8_t* rdram,
     };
     const std::uint32_t task = ReadU32(rdram, kSpTaskNumberAddress);
     CameraContinuityState& continuity = g_camera_continuity[camera_id];
-    const bool forced_discontinuity =
-        g_finish_camera_shots[camera_id].sample(
-            ReadS16(rdram, camera + kCameraModeOffset));
+    // Both are evaluated every sample: the finish shot tracks its own state,
+    // and a Modern camera look-back toggle is a one-shot cut.
+    const bool finish_cut = g_finish_camera_shots[camera_id].sample(
+        ReadS16(rdram, camera + kCameraModeOffset));
+    const bool look_back_cut =
+        dkr::runtime::modern_camera::consume_cut(camera_id);
+    const bool forced_discontinuity = finish_cut || look_back_cut;
     if (!continuity.valid || continuity.scene != scene) {
         continuity = CameraContinuityState{sample, scene, task, 1U, true};
         if (forced_discontinuity) {
