@@ -9,7 +9,7 @@ jobs:
         shell: pwsh
         run: |
           python scripts/bootstrap_dependencies.py --only n64-modern-runtime --only rt64 --only gekkonet --only monocypher --only libdatachannel --only mbedtls --only sdl3
-          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Apply-Dependency-Patches.ps1
+          python scripts/apply_dependency_patches.py
       - name: Configure
         shell: pwsh
         run: cmake -S runtime-recomp -B build/policy-windows -G "Visual Studio 17 2022" -A x64 -DDKRPORT_ROOT="$pwd" -DDKR_RUNTIME_BUILD_GENERATED=OFF -DDKR_RUNTIME_BUILD_RT64=OFF
