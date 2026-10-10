@@ -9,8 +9,12 @@
 /.vs/
 /.vscode/
 /--portable/
-/unified-mod-test-902561023969800/
-/unified-mod-test-902924382217100/
+/unified-mod-test-*/
+# Release downloads/packages belong in external staging, not source history.
+/DKR-R-*.zip
+/DKR-R-*.AppImage
+/DKR-R-*.apk
+/DKR-R-*.aab
 CMakeUserPresets.json
 
 # Build-system and compiler intermediates
@@ -46,6 +50,7 @@ _deps/
 /cache/
 /saves/
 /screenshots/
+/portable.txt
 mods/*
 !mods/.gitkeep
 
@@ -81,6 +86,7 @@ Desktop.ini
 /.idea/
 
 # Local diagnostics, caches and temporary files
+/failure.json
 /runtime-recomp/imgui.ini
 /runtime-recomp/src/game/imgui.ini
 *.dmp
