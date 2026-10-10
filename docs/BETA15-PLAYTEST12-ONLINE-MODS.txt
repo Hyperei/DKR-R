@@ -1,0 +1,84 @@
+DKR-R v1.0.5 Beta 15 Playtest 12 - Host-managed online custom content
+
+CRASH-FIX REBUILD (5 OCTOBER)
+All five supplied Playtest 11 dumps captured the texture cache beyond its
+700-entry retail allocation (701-741 entries). Additive characters/AI exceeded
+the fixed cache, overwrote adjacent guest memory, and race setup subsequently
+dereferenced a failed racer spawn. This rebuild sizes texture/sprite/model cache
+metadata from the frozen asset namespace, updates the matching limits, and
+checks bounds BEFORE writes. Stock games retain their original allocations.
+A failed racer allocation now stops at the guest termination boundary instead
+of writing through a null address. The same safeguards cover ordinary gameplay
+and the owned experimental rollback path. Existing mods, Track Lab, HUD,
+launcher and online content-transfer work are retained.
+
+Install this complete replacement package, not only the EXE, and use the same
+build on every peer. Visual/gameplay confirmation remains with playtesters.
+
+HOW TO USE
+1. Everyone installs this exact build. Older builds are not compatible with the
+   new admission protocol. Import the host's original Game Pak revision locally.
+2. The host enables the desired tracks/characters in My mods, including any
+   installed Track Lab courses, then creates the lobby normally. The existing
+   Backend dropdown, save options, countdown and game startup remain in use.
+3. Host preparation freezes an immutable session mod list. A progress modal
+   reports preparation and supports cancellation. Large sets can take longer
+   on their first preparation; verified cached profiles are revalidated/reused.
+4. Approve a joining racer's request as before. A modded lobby asks the client
+   to review and consent to its required content before lobby admission.
+5. DOWNLOAD & JOIN transfers verified patch/package files from the host using
+   the existing encrypted peer connection. Decline leaves offline files intact.
+6. Clients reconstruct assets against locally imported original ROMs in a
+   separate bounded importer. If a patch needs another source revision, import
+   it first. The application never sends or downloads original/patched ROMs.
+7. Once preparation and the existing online save check complete, ready up and
+   start normally. The lobby identifies its temporary host-managed mod set.
+   Custom courses remain under CUSTOM TRACKS and characters use the normal
+   additive animated stage, including L/R browsing and scoped portraits/voices.
+8. Leave the lobby to restore the offline selection. Session mods do not toggle
+   or remove entries in your offline library or alter local texture-pack choices.
+
+SAVE OWNERSHIP
+Clients keep using isolated authenticated online-session saves. Host progress
+for a modded lobby is separate from vanilla online progress and keyed by the
+exact frozen mod manifest. Copy my single-player save only copies it; Start fresh
+only seeds the online folder; Continue previous requires that exact mod set's
+previous online save. Single-player files are not written by online gameplay.
+
+SAFETY / CURRENT LIMITS
+Only content already supported by the native track/character/Track Lab adapters
+is supported online. This is not arbitrary executable ROM-hack or Lua execution.
+Invalid data, oversized resources, missing ROM revisions, changed content and
+unsafe heap/display budgets are refused before readiness, not silently bypassed.
+EXPANDED-ROSTER REBUILD
+The fixed 16-character enable limit is removed. Four visible stage slots remain;
+L/R browses your enabled collection and skips characters in the other slots.
+Portraits and voices load on demand; verified identical resources share storage.
+Queued audio retains its original character identity. Native u16 audio supports
+1,536 enabled identities; guest memory, asset IDs and total package bytes can
+limit a resource-heavy collection sooner. Unsafe sets are refused before play,
+not silently truncated. This is a large bounded collection, not literal infinity.
+Appended Track Lab IDs remain within the game's native menu range.
+Downloaded patch/package payloads have a 256 MiB whole-session transfer limit.
+Original ROMs, native executables, private profile data and offline saves are
+excluded from mod transfers. Received data still requires explicit user consent;
+only accept custom content from hosts you trust.
+Experimental Rollback retains its existing US v1.0 engine gate. Other currently
+supported native revisions can use the existing Host Prediction/Strict Input Sync
+paths. Renderer settings and texture packs remain local, not host-enforced mods.
+
+VERIFICATION AND PLAYTEST REQUEST
+Headless checks cover manifest/bundle validation, bounded transfer, dropped
+packets/retries, consent/cancellation, host-to-three-client coordination, rejoin,
+local reconstruction, independent replay-owned state, custom music correction,
+legacy adapter regressions and online/offline save isolation. No visible game
+tests were launched for this change; real Quick Join gameplay remains unverified.
+Please test 2/3/4-player Quick Join/friend-invite sessions with each backend:
+- a client missing all host mods; another with conflicting offline selections;
+- custom character selection, L/R, AI, portraits and voices;
+- original AND custom tracks, previews, vehicles, finish/results and return;
+- Track Lab music, where supplied, plus Adventure and boss transitions;
+- decline/cancel, dropped connection, leave/rematch/rejoin and a vanilla lobby;
+- restart single-player afterward and confirm saves/mod selection stayed intact.
+Send runtime.log from each affected peer if a session fails. Do not manually edit
+cache/profile receipts or mix different executables between racers.

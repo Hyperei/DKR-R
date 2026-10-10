@@ -1,0 +1,144 @@
+DKR-R 1.0.5 beta 15 - enhanced-water preview (2026-10-08)
+
+Enable it
+---------
+Graphics -> Modern presentation -> Ray tracing & water.
+Water quality: Original / Enhanced / High.
+Reflections: Sky / Screen-space / Hardware ray tracing (experimental).
+Racer wakes and water spray are separate switches.
+The same controls are available in the launcher and in-game overlay.
+Original remains the default, and existing resolution/texture settings are
+not reduced. Returning to Original selects the normal game water draws.
+
+What the new renderer does
+-------------------------
+Horizontal liquid surfaces get continuously moving surface detail, lighting,
+depth-dependent colour/transmission, foreground-safe refraction, reflections,
+shallow-water caustic detail and foam. Wakes use bounded visual contact for up
+to eight racers, including AI. No collision, buoyancy or water physics changes.
+Waterfalls/fountains keep their original texture, transparency and fog, with
+flowing detail rather than being treated as horizontal ocean surfaces.
+
+Screen-space reflections use the visible colour/depth of the scene, including
+texture packs and moving actors. They are NOT hardware ray tracing. Hardware
+mode additionally traces opaque static level geometry using DXR 1.1 inline
+queries or Vulkan ray queries. Unsupported GPUs/drivers use screen-space
+reflections. Shader/resource failure retains the normal water draw; geometry
+over its safety budget uses screen-space reflections rather than a truncated
+ray-traced world. GPU capability is reported after the renderer starts.
+
+Important experimental limits
+-----------------------------
+Hardware reflections outside the visible image currently shade level vertex
+colours, not the full original texture/combiner or high-resolution texture-pack
+material. Moving racers, scenery objects, cutouts and translucent geometry use
+the screen-space path rather than an animated hardware acceleration structure.
+Waterfalls/fountains preserve their artwork; they are not ray-traced oceans.
+This is a hybrid renderer, not a path tracer or a claim of complete reflective
+material parity. Enhanced water adds GPU work; it is not a performance fix.
+
+Custom tracks and Track Lab
+--------------------------
+Compatible liquid surfaces are found from actual model/texture/surface data,
+not a whitelist of track names. Lava, fog, ice, signs and hidden reference
+geometry are explicitly excluded. Unusual custom materials can be classified
+with optional enhancedWater version-1 metadata in the .dkrmap manifest.
+Track Lab -> Water -> Custom water appearance exposes colour, sky/sun,
+absorption, roughness, visibility, ripple and foam controls, plus material
+overrides. An override's Entry is a texture-table ordinal in the exported
+level model (0-255), NOT a ROM texture ID. Kinds are automatic, not water,
+calm, waves, waterfall and fountain. Duplicate entries are rejected on export.
+The metadata does not modify the level header's wave/physics fields. Older
+tracks without metadata keep working. Online peers use the verified track's
+metadata; each person's water quality/reflection preferences remain local.
+
+Audited stock water coverage (level geometry)
+-------------------------------------------
+Races: Ancient Lake (5), Fossil Canyon (3), Jungle Falls (29), Frosty Village
+(28), Whale Bay (8), Crescent Island (10), Pirate Lagoon (4), Treasure Caves
+(30), Windmill Plains (20), Boulder Canyon (19), Haunted Woods (31).
+Hubs: Timber's Island (0), Dino Domain (12), Sherbet Island (14).
+Bosses: both Bubbler races (40/53), first Wizpig race (37).
+Minigames: Smokey Castle (25), Darkwater Beach (26).
+Other scenes: title (23), opening (36), Wizpig mouth (42), rocket (45), party
+(56), Wizpig/Bubbler sequences (60/61), endings (63/64), Dino Domain and
+Sherbet Island trophy sequences (47/49). Track Select uses the same level
+geometry. Only actual liquid is changed; not every material in these scenes.
+Object-model waterfall/fountain artwork is recognized separately by reviewed
+texture identities and bounded texture-frame payloads.
+
+Animated-water correction
+------------------------
+The live texture cache uses bit 15 of each ID to select the 3D texture table.
+The water registry now decodes that namespace before comparing asset IDs;
+earlier previews incorrectly compared the encoded cache keys with plain IDs.
+That skipped untyped wave references (including Whale Bay/Pirate Lagoon) and
+other liquid artwork, while collision-typed calm water could still work.
+2D/UI identities, freed cache slots and malformed keys are not normalized
+into 3D water assets. This fix also applies to waterfall/fountain recognition.
+
+Wave meshes are recognized from their live graphics-task triangle buffers,
+not an optional interpolation tag. Both frame parities, both two-player
+viewports and the distant low-density quads use the liquid reference's optics.
+Reviewed v1.0/v1.1 addresses differ for data arrays and the wave controller.
+Freed, misaligned, malformed or out-of-range buffers retain original rendering;
+lava does not acquire a water material. This does not change wave animation,
+physics, interpolation ownership or the static ray-geometry cache.
+Bounded runtime.log [water][waves] lines report actual dynamic material coverage
+and camera provenance to support user-run visual checks. Those checks are still
+required in Whale Bay/Pirate Lagoon; headless policy tests cannot prove the
+appearance of reflections in a real scene.
+
+Safety and verification
+-----------------------
+Widescreen/adventure correction (projection-recovery candidate)
+-------------------------------------------------------------
+Reflection/refraction projection now composes DKR's interpolated camera MVP
+with RT64's final raster aspect adjustment. Geometry/normal decoding keeps its
+separate original-camera inverse: wide reflections no longer distort the
+physical water surface. Sprite spray uses the same corrected pixel mapping.
+
+Scratch targets are reused only while needed; inactive menu targets, obsolete
+mode-specific buffers and resized attachments are reclaimed at workload-safe
+boundaries. Framebuffer objects are reused when their attachments are unchanged.
+The 256 MiB intermediate payload budget remains unchanged. A target rejected
+by that budget keeps its original water without discarding other accepted
+targets or disabling the rest of the session. Allocation/field failures revert
+the current workload and use a 120-workload retry cooldown, not a permanent
+off switch or an allocation loop every frame. Resolution and image quality
+preferences are unchanged.
+
+Dependency changes are authored patch-pipeline inputs. Original dependency
+checkouts and generated recompiled functions/patches were not edited.
+Water observes immutable graphics-task memory and submitted presentation time.
+Scene changes, replay rewinds, teleports and long gaps reset visual history.
+Split-screen captures are bounded to each viewport and share scratch storage.
+The optional hardware world is immutable, shared across cameras, and rebuilt
+only when its geometry changes. Caps: 65,536 ray triangles, 64 MiB ray resources,
+256 MiB water intermediates, 2,048 optical draw parameters. Failure falls back.
+Eight-racer wake coordinates retain full precision in the existing per-step
+draw buffer. Wake dispatch uses only 32 bytes of shader push constants, below
+Vulkan's guaranteed 128-byte budget; no extra coordinate buffer is allocated.
+
+Headless checks cover surface classification, malformed geometry/metadata,
+history resets, immutable ownership, custom-track metadata and real GPU ray
+hit/miss, reuse and scene replacement on the available Windows DX12/Vulkan
+GPU. Platform build/package results are recorded in the delivery report.
+An additional local asset audit relocates all 55 locally extracted stock v1.0
+level models into a realistic word-swapped snapshot, with encoded 3D cache
+keys. All expected liquid batches and dynamic wave references passed. Wave
+buffer checks exercise both v1.0 and v1.1 address layouts; this is not a
+claim of visual qualification on either revision. ROM assets are not shipped.
+No autonomous game-window or gameplay testing was performed for this feature.
+Appearance, MSAA, split-screen, rollback, custom-track and device performance
+qualification remain user playtests. No frame-rate or universal visual-parity
+claim is made without those results.
+
+Credits
+-------
+Water renderer adapted from Elliott Tate's Wave Race 64 recompilation:
+https://github.com/elliotttate/wave-race-64-recomp
+Reference commit: 9041cc8024f6d2015859f88f5a0307b36cd4e50a.
+That reference uses screen-space reflections. The optional hardware query
+adapter, DKR surface bridge, budgets and Track Lab integration are new work.
+See WAVE-RACE-WATER-LICENSE.txt and THIRD_PARTY.md for attribution/license.

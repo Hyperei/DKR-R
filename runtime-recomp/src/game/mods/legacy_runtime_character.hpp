@@ -20,4 +20,9 @@ inline unsigned character_presentation_slot(unsigned player,unsigned racer_index
 void dispatch_character_event(CharacterRoster& roster,std::span<std::uint8_t> guest,
     recomp_context& ctx,unsigned event,std::uint32_t roster_address,
     std::optional<std::pair<std::uint32_t,unsigned>> ai_spawn=std::nullopt);
+std::uint32_t character_stat(const CharacterRoster&,std::span<std::uint8_t> guest,
+    unsigned stat,std::uint32_t racer,std::uint32_t native_bits);
+// Reviewed rebuilt obj_tex_animate profile. Called only for an immutable
+// admitted custom header; all phase/direction/RNG state stays in guest RAM.
+void animate_character_textures(std::span<std::uint8_t>,const recomp_context&,OriginalPiHandler texture);
 }

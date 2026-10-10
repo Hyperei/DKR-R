@@ -19,6 +19,9 @@ void begin_online(std::shared_ptr<const mods::online::RuntimeResources> resource
 // asset/cache ownership into a separately constructed private replay world.
 mods::Bytes online_bootstrap_checkpoint();
 bool frozen_online_resources();
+// Renderer reads the pinned catalogue, never the private replay world's
+// mutable adapters. The catalogue stays alive until render workers retire.
+std::optional<water::enhanced::Metadata> renderer_water_for_level(std::int32_t);
 bool frozen_course_hook(const char*,std::uint8_t*,recomp_context*);
 bool frozen_music_hook(const char*,std::uint8_t*,recomp_context*);
 bool frozen_music_volume(std::uint8_t*,recomp_context*);
@@ -41,7 +44,8 @@ public:
         RecompiledEntrypoint animation_override,
         std::shared_ptr<const custom_tracks::PreparedTracks>,bool custom_ai,
         RecompiledEntrypoint private_random=nullptr,
-        std::shared_ptr<const mods::online::MusicLibrary> music=nullptr);
+        std::shared_ptr<const mods::online::MusicLibrary> music=nullptr,
+        RecompiledEntrypoint private_texture_animation=nullptr);
     ~ModWorld();
     ModWorld(const ModWorld&)=delete;
     ModWorld& operator=(const ModWorld&)=delete;

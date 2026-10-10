@@ -1,0 +1,264 @@
+diff --git a/src/hle/rt64_state.h b/src/hle/rt64_state.h
+--- a/src/hle/rt64_state.h
++++ b/src/hle/rt64_state.h
+@@ -3,6 +3,7 @@
+ //
+ 
+ #pragma once
++#include "enhanced_water_ray_geometry.hpp"
+ 
+ #include "xxHash/xxh3.h"
+ 
+@@ -85,6 +86,7 @@
+         std::unique_ptr<RenderTarget> dummyDepthTarget;
+         DrawCall drawCall;
+         interop::WaterMaterial waterMaterial{};
++        std::shared_ptr<const dkr::runtime::water::enhanced::RayGeometry> waterRayGeometry;
+         DrawStatus drawStatus;
+         SpriteCommand activeSpriteCommand;
+         bool addLightsOnFlush;
+diff --git a/src/hle/rt64_workload.h b/src/hle/rt64_workload.h
+--- a/src/hle/rt64_workload.h
++++ b/src/hle/rt64_workload.h
+@@ -3,6 +3,7 @@
+ //
+ 
+ #pragma once
++#include "enhanced_water_ray_geometry.hpp"
+ 
+ #include "render/rt64_buffer_uploader.h"
+ #include "shared/rt64_extra_params.h"
+@@ -221,6 +222,7 @@
+         std::vector<CommandWarning> commandWarnings;
+         std::vector<SpriteCommand> spriteCommands;
+         std::vector<interop::WaterMaterial> waterMaterials;
++        std::shared_ptr<const dkr::runtime::water::enhanced::RayGeometry> waterRayGeometry;
+         std::vector<interop::PointLight> pointLights;
+         uint32_t fbPairCount;
+         uint32_t fbPairSubmitted;
+diff --git a/src/hle/rt64_workload.cpp b/src/hle/rt64_workload.cpp
+--- a/src/hle/rt64_workload.cpp
++++ b/src/hle/rt64_workload.cpp
+@@ -28,6 +28,7 @@
+         commandWarnings.clear();
+         spriteCommands.clear();
+         waterMaterials.clear();
++        waterRayGeometry.reset();
+         pointLights.clear();
+         fbChangePool.reset();
+         fbStorage.reset();
+diff --git a/src/hle/rt64_state.cpp b/src/hle/rt64_state.cpp
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -491,6 +491,7 @@
+                 std::memcmp(&workload.waterMaterials.back(), &waterMaterial, sizeof(waterMaterial)) != 0)
+                 workload.waterMaterials.push_back(waterMaterial);
+             drawCall.waterMaterialIndex = uint32_t(workload.waterMaterials.size() - 1);
++            if(waterMaterial.effects.w>0.5f)workload.waterRayGeometry=waterRayGeometry;
+         }
+         GameCall gameCall;
+         gameCall.callDesc = drawCall;
+diff --git a/src/render/rt64_water_renderer.h b/src/render/rt64_water_renderer.h
+--- a/src/render/rt64_water_renderer.h
++++ b/src/render/rt64_water_renderer.h
+@@ -1,4 +1,5 @@
+ #pragma once
++#include "WaterRayScene.h"
+ #include "rt64_buffer_uploader.h"
+ #include "rt64_shader_library.h"
+ #include "shared/rt64_water_params.h"
+@@ -107,6 +108,11 @@
+     std::unique_ptr<RenderPipelineLayout> layout;
+     std::unique_ptr<RenderShader> vertexShader;
+     std::unique_ptr<RenderShader> pixelShader, classicShader, classicMSShader;
++    std::unique_ptr<RenderShader> rayShader;
++    std::unique_ptr<RenderPipelineLayout> rayLayout;
++    WaterRayScene rays;
++    bool rayUnavailable=false;
++    bool prepareRays(RenderWorker *worker,RenderShaderFormat format,std::shared_ptr<const dkr::runtime::water::enhanced::RayGeometry> geometry);
+     std::unique_ptr<RenderShader> surfaceShader, sprayVertexShader, sprayPixelShader, sprayMSPixelShader;
+     std::unique_ptr<RenderPipelineLayout> sprayLayout;
+     std::map<uint32_t,std::unique_ptr<RenderPipeline>> sprayPipelines;
+@@ -205,6 +211,6 @@
+     void beginSurface(RenderWorker *worker,uint32_t drawIndex);
+     void beginColor(RenderWorker *worker,uint32_t drawIndex);
+     void drawSpray(RenderWorker *worker,uint32_t drawIndex);
+-    RenderPipeline *pipeline(RenderDevice *device, const RenderMultisampling &samples, bool zCompare, bool zWrite, bool wireframe, bool surface=false, bool classic=false, bool selfDepth=false);
++    RenderPipeline *pipeline(RenderDevice *device, const RenderMultisampling &samples, bool zCompare, bool zWrite, bool wireframe, bool surface=false, bool classic=false, bool selfDepth=false, bool hardware=false);
+ };
+ }
+diff --git a/src/render/rt64_water_renderer.cpp b/src/render/rt64_water_renderer.cpp
+--- a/src/render/rt64_water_renderer.cpp
++++ b/src/render/rt64_water_renderer.cpp
+@@ -7,6 +7,7 @@
+ #include <stdexcept>
+ #include "shaders/WaterVS.hlsl.spirv.h"
+ #include "shaders/WaterPS.hlsl.spirv.h"
++#include "shaders/WaterHardwarePS.hlsl.spirv.h"
+ #include "shaders/WaterClassicPS.hlsl.spirv.h"
+ #include "shaders/WaterClassicMSPS.hlsl.spirv.h"
+ #include "shaders/WaterNormalsCS.hlsl.spirv.h"
+@@ -24,6 +25,7 @@
+ #ifdef _WIN32
+ #include "shaders/WaterVS.hlsl.dxil.h"
+ #include "shaders/WaterPS.hlsl.dxil.h"
++#include "shaders/WaterHardwarePS.hlsl.dxil.h"
+ #include "shaders/WaterClassicPS.hlsl.dxil.h"
+ #include "shaders/WaterClassicMSPS.hlsl.dxil.h"
+ #include "shaders/WaterNormalsCS.hlsl.dxil.h"
+@@ -184,6 +186,7 @@
+ 
+ void WaterRenderer::reset() {
+     draws.clear(); normalGroups.clear(); sceneKeys.clear(); drawScenes.clear();
++    rays.resetFrame();
+     wireIndices.clear(); wireStarts.clear();
+     profileKinds.clear();
+     for (auto &scene : scenes) { scene.captured=false; scene.surfaceCleared=false; }
+@@ -681,8 +684,8 @@
+     return bytes;
+ }
+ 
+-RenderPipeline *WaterRenderer::pipeline(RenderDevice *device, const RenderMultisampling &samples, bool zCompare, bool zWrite, bool wireframe, bool surface, bool classic, bool selfDepth) {
+-    uint32_t key = uint32_t(samples.sampleCount) | (uint32_t(zCompare) << 16) | (uint32_t(zWrite) << 17) | (uint32_t(wireframe) << 18) | (uint32_t(surface) << 19) | (uint32_t(classic) << 20) | (uint32_t(selfDepth) << 21);
++RenderPipeline *WaterRenderer::pipeline(RenderDevice *device, const RenderMultisampling &samples, bool zCompare, bool zWrite, bool wireframe, bool surface, bool classic, bool selfDepth, bool hardware) {
++    uint32_t key = uint32_t(samples.sampleCount) | (uint32_t(zCompare) << 16) | (uint32_t(zWrite) << 17) | (uint32_t(wireframe) << 18) | (uint32_t(surface) << 19) | (uint32_t(classic) << 20) | (uint32_t(selfDepth) << 21) | (uint32_t(hardware) << 22);
+     auto it = pipelines.find(key);
+     if (it != pipelines.end()) return it->second.get();
+     const RenderInputSlot slots[] = {{0, 16}, {1, 8}, {2, 16}, {3, 16}, {4,16}};
+@@ -695,10 +698,10 @@
+     };
+     RenderGraphicsPipelineDesc desc;
+     desc.primitiveTopology=wireframe ? RenderPrimitiveTopology::LINE_LIST : RenderPrimitiveTopology::TRIANGLE_LIST;
+-    desc.pipelineLayout = layout.get();
++    desc.pipelineLayout = hardware ? rayLayout.get() : layout.get();
+     desc.vertexShader = vertexShader.get();
+     desc.pixelShader = surface ? surfaceShader.get() : classic ?
+-        (samples.sampleCount>1 ? classicMSShader.get() : classicShader.get()) : pixelShader.get();
++        (samples.sampleCount>1 ? classicMSShader.get() : classicShader.get()) : hardware ? rayShader.get() : pixelShader.get();
+     desc.inputSlots = slots;
+     desc.inputSlotsCount = 5;
+     desc.inputElements = elements;
+@@ -717,6 +720,27 @@
+     auto *ptr = result.get();
+     pipelines.emplace(key, std::move(result));
+     return ptr;
++}
++
++bool WaterRenderer::prepareRays(RenderWorker *worker,RenderShaderFormat format,std::shared_ptr<const dkr::runtime::water::enhanced::RayGeometry> geometry) {
++    if(rayUnavailable || !worker->device->getCapabilities().rayQuery)return false;
++    try {
++        if(!rayShader || !rayLayout) {
++            // Do not keep a shader if its companion layout creation failed.
++            rayShader.reset();rayLayout.reset();
++            rayShader=checkedWaterResource(worker->device->createShader(CREATE_SHADER_INPUTS(WaterHardwarePSBlobDXIL,WaterHardwarePSBlobSPIRV,WaterHardwarePSBlobMSL,"PSMain",format)));
++            WaterRaySet raySet;
++            RenderPipelineLayoutBuilder builder;builder.begin(false,true);
++            builder.addPushConstant(0,0,sizeof(interop::WaterPushConstants),RenderShaderStageFlag::VERTEX|RenderShaderStageFlag::PIXEL);
++            builder.addDescriptorSet(*descriptorSet);builder.addDescriptorSet(raySet);builder.end();
++            rayLayout=checkedWaterResource(builder.create(worker->device));
++        }
++        return rays.prepare(worker,std::move(geometry));
++    } catch(const std::exception &error) {
++        rayUnavailable=true;
++        std::fprintf(stderr,"[water][rays] retaining screen-space reflections: %s\n",error.what());
++        return false;
++    }
+ }
+ 
+ void WaterRenderer::collectNormals(const DrawData &data, uint32_t start, uint32_t count, uint64_t group) {
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -628,13 +628,18 @@
+                         worker->commandList->setScissors(triangles.scissor);
+                         worker->commandList->setIndexBuffer(triangles.vertexTestZ ? &testZIndexBufferView : &indexBufferView);
+                     }
+-                    worker->commandList->setGraphicsPipelineLayout(waterRenderer->layout.get());
++                    const bool hardware=waterRenderer->draws[drawCall.waterIndex].material.effects.w>0.5f;
++                    worker->commandList->setGraphicsPipelineLayout(hardware ? waterRenderer->rayLayout.get() : waterRenderer->layout.get());
++                    if(hardware)worker->commandList->setGraphicsDescriptorSet(waterRenderer->rays.set->get(),1);
+                     worker->commandList->setGraphicsDescriptorSet(waterRenderer->materialSet(drawCall.waterIndex), 0);
+                     const RenderVertexBufferView views[] = {indexedVertexViews[0], indexedVertexViews[1], indexedVertexViews[2], waterRenderer->worldView, waterRenderer->normalView};
+                     const RenderInputSlot slots[] = {{0,16}, {1,8}, {2,16}, {3,16}, {4,16}};
+                     worker->commandList->setVertexBuffers(0, views, 5, slots);
+                     interop::WaterPushConstants pc{drawCall.waterIndex};
+                     worker->commandList->setGraphicsPushConstants(0, &pc);
++                    worker->commandList->setGraphicsPipelineLayout(waterRenderer->layout.get());
++                    worker->commandList->setGraphicsDescriptorSet(waterRenderer->materialSet(drawCall.waterIndex),0);
++                    worker->commandList->setGraphicsPushConstants(0,&pc);
+                     waterRenderer->beginSurface(worker,drawCall.waterIndex);
+                     worker->commandList->setViewports(framebuffer.viewport);
+                     worker->commandList->setScissors(triangles.scissor);
+@@ -651,6 +656,10 @@
+                     }
+                     worker->commandList->setViewports(framebuffer.viewport);
+                     worker->commandList->setScissors(triangles.scissor);
++                    worker->commandList->setGraphicsPipelineLayout(hardware ? waterRenderer->rayLayout.get() : waterRenderer->layout.get());
++                    worker->commandList->setGraphicsDescriptorSet(waterRenderer->materialSet(drawCall.waterIndex),0);
++                    if(hardware)worker->commandList->setGraphicsDescriptorSet(waterRenderer->rays.set->get(),1);
++                    worker->commandList->setGraphicsPushConstants(0,&pc);
+                     worker->commandList->setPipeline(triangles.pipeline);
+                     activeWaterDraw=drawCall.waterIndex;
+                     if (waterRenderer->draws[drawCall.waterIndex].material.identity.y==12) {
+@@ -1306,6 +1315,7 @@
+             rspProcessor->recordCommandList(worker, shaderLibrary, outputBuffers);
+         }
+ 
++        if (waterRenderer && !waterRenderer->draws.empty()) waterRenderer->rays.record(worker);
+         if (waterRenderer && !waterRenderer->draws.empty()) waterRenderer->recordNormals(worker, *outputBuffers);
+         if (waterRenderer && !waterRenderer->draws.empty()) waterRenderer->recordField(worker);
+ 
+@@ -1859,13 +1869,23 @@
+                     for (uint32_t row=0;row<4;row++) for (uint32_t col=0;col<4;col++) waterMatricesValid &= std::isfinite(wp.inverseViewProjection[row][col]);
+                     RenderPipeline *waterPipeline = nullptr;
+                     const bool classic=wp.material.optics.w>0.5f;
++                    bool hardware=!classic && wp.material.effects.w>0.5f &&
++                        waterRenderer->prepareRays(p.worker,p.rasterShaderCache->shaderFormat,p.curWorkload->waterRayGeometry);
++                    wp.material.effects.w=hardware ? 1.0f : 0.0f;
+                     // Originally opaque two-player water already owns scene
+                     // depth writes. Isolate only the translucent legacy path
+                     // whose Modern replacement now shades opaquely.
+                     const bool selfDepth=!classic && !call.callDesc.otherMode.zUpd();
+                     if (waterMatricesValid) {
+                         waterPipeline = waterRenderer->pipeline(p.worker->device,p.fbStorage->colorTarget->multisampling,
+-                            call.callDesc.otherMode.zCmp() || selfDepth,call.callDesc.otherMode.zUpd() && !selfDepth,wp.material.identity.y==12,false,classic,selfDepth);
++                            call.callDesc.otherMode.zCmp() || selfDepth,call.callDesc.otherMode.zUpd() && !selfDepth,wp.material.identity.y==12,false,classic,selfDepth,hardware);
++                        if(hardware && !waterPipeline) {
++                            // Failure of the optional hardware pipeline must
++                            // retain the software water, not remove the effect.
++                            hardware=false;wp.material.effects.w=0;waterRenderer->rayUnavailable=true;
++                            waterPipeline=waterRenderer->pipeline(p.worker->device,p.fbStorage->colorTarget->multisampling,
++                                call.callDesc.otherMode.zCmp() || selfDepth,call.callDesc.otherMode.zUpd() && !selfDepth,wp.material.identity.y==12,false,classic,selfDepth,false);
++                        }
+                         waterMatricesValid = waterPipeline && waterRenderer->pipeline(p.worker->device,p.fbStorage->colorTarget->multisampling,
+                             call.callDesc.otherMode.zCmp() || selfDepth,selfDepth,false,true,classic,selfDepth);
+                     }
+diff --git a/src/shaders/WaterPS.hlsl b/src/shaders/WaterPS.hlsl
+--- a/src/shaders/WaterPS.hlsl
++++ b/src/shaders/WaterPS.hlsl
+@@ -172,6 +172,10 @@
+     }
+     return 0;
+ }
++
++#ifdef HARDWARE_WATER
++#include "WaterRays.hlsli"
++#endif
+ 
+ float2 rippleCornerGradient(float2 cell) {
+     float2 gradient=float2(foamHash(cell),foamHash(cell+float2(73.19,19.73)))*2-1;
+@@ -332,6 +336,12 @@
+     float3 color = body * (0.55 + nl * 0.45) * m.sunColor.a * (1-fresnel)
+         + m.sunColor.rgb * m.sunDirection.a * specular;
+     float4 reflection=screenReflection(worldPosition,N,V,roughness,p);
++#ifdef HARDWARE_WATER
++    // SSR covers moving actors using their exact rendered colours; hardware
++    // rays add static off-screen world intersections, not a second game pass.
++    if(reflection.a<0.75) {
++        float4 hardwareReflection=hardwareWaterReflection(worldPosition,N,V,p);
++        if(hardwareReflection.a>reflection.a)reflection=hardwareReflection;
++    }
++#endif
+     float3 reflected=lerp(sky(reflect(-V,N),m),reflection.rgb,reflection.a);
+     float3 authoredReflection=0;
+     float authoredConfidence=0;

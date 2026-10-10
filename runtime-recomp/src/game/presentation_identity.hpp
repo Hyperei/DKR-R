@@ -2324,6 +2324,7 @@ struct MatrixInterpolation {
     bool procedural_water = false;
     std::uint8_t water_scroll_tag = 0U;
     WorldProjection world_projection{};
+    bool camera_root = false;
 };
 
 MatrixInterpolation matrix_interpolation(
@@ -2428,7 +2429,7 @@ public:
     explicit TaskIdentityScope(std::span<const LocatedPresentationMarker> owned_markers);
     TaskIdentityScope(std::span<const LocatedPresentationMarker> owned_markers,
         std::span<const OwnedMatrixBinding> matrices,std::span<const OwnedShadowBinding> shadows,
-        std::uint32_t scene,bool interpolation_allowed);
+        std::uint32_t scene,bool interpolation_allowed,double presentation_time=0.0);
     ~TaskIdentityScope();
 
     TaskIdentityScope(const TaskIdentityScope&) = delete;
@@ -2445,6 +2446,9 @@ bool task_is_owned();
 // Full scene generation captured with the graphics task currently being
 // decoded. Zero means no immutable presentation sidecar matched the task.
 std::uint32_t task_scene_generation();
+// Frozen source-frame time. Never consult live guest or wall-clock state for
+// a delayed/rollback task's water animation and wake simulation.
+double task_presentation_time();
 
 // Recording-thread continuity state for bounded visibility hysteresis. These
 // values are host metadata only and are never serialized into game state.

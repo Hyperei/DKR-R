@@ -593,6 +593,55 @@ void DrawGraphicsPage(float available_width, bool live) {
         });
     }
 
+#if defined(DKR_ENHANCED_WATER)
+    // Shared by launcher and in-game overlay; these are local renderer
+    // preferences, not synchronized water physics or guest settings.
+    PaddockGap(18.0F);
+    SettingsCard(width, [&](float inner) {
+        namespace water = dkr::runtime::water::enhanced;
+        SettingsCardHead("Ray tracing & water", "Optional water presentation. Original preserves the game's water.", inner);
+        ImGui::BeginDisabled(!enh::modern_options_visible(enh::presentation_profile()));
+        int quality=int(water::requested_quality.load());
+        if(SettingsDropdown("water-quality", "Water quality", &quality,
+            {"Original", "Enhanced", "High"}, inner)) {
+            water::set_quality(quality); SaveSettings();
+        }
+        PaddockGap(16.0F);
+        int reflections=int(water::requested_reflection.load());
+        ImGui::BeginDisabled(quality==0);
+        if(SettingsDropdown("water-reflections", "Reflections", &reflections,
+            {"Sky", "Screen-space", "Hardware ray tracing (experimental)"}, inner)) {
+            water::set_reflection(reflections); SaveSettings();
+        }
+        PaddockGap(16.0F);
+        bool wakes=water::wakes_enabled.load();
+        if(SettingsCheck("##water-wakes", "Racer wakes", &wakes, inner)) {
+            water::wakes_enabled.store(wakes); SaveSettings();
+        }
+        PaddockGap(16.0F);
+        bool spray=water::spray_enabled.load();
+        if(SettingsCheck("##water-spray", "Water spray", &spray, inner)) {
+            water::spray_enabled.store(spray); SaveSettings();
+        }
+        ImGui::EndDisabled();
+        ImGui::EndDisabled();
+        PaddockGap(16.0F);
+        if(reflections==int(water::Reflection::Hardware)) {
+            const int capability=water::hardware_ray_capability.load();
+            SettingsHelp(capability<0 ? "GPU capability is checked when you start the game." :
+                capability==0 ? "This renderer cannot use hardware ray queries. Screen-space reflections will be used." :
+                "GPU ray queries are available. Scenes exceeding the safety budget use screen-space reflections.", inner);
+            PaddockGap(8.0F);
+        }
+        SettingsHelp("Screen-space reflections use visible scene depth, not hardware ray tracing. "
+            "Hardware ray tracing needs a compatible GPU and driver; otherwise screen-space reflections are used. "
+            "The experimental hardware path traces opaque level geometry; moving racers use screen-space reflections. "
+            "Off-screen surfaces currently use their vertex colours, not their texture-pack detail. "
+            "Waterfalls and fountains preserve their authored appearance with added flowing detail. "
+            "These settings do not change collisions, buoyancy or online simulation.", inner);
+    });
+#endif
+
     // ------------------------------------------------------------ footer
     PaddockGap(18.0F);
     {

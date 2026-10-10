@@ -1,0 +1,83 @@
+diff --git a/src/shared/rt64_water_params.h b/src/shared/rt64_water_params.h
+--- a/src/shared/rt64_water_params.h
++++ b/src/shared/rt64_water_params.h
+@@ -53,7 +53,6 @@
+ struct WaterFieldPushConstants {
+-    float4 origins[WATER_CRAFT_COUNT];      // destination X/Z, source X/Z
+     uint drawIndex;
+     uint resolution;
+     uint reset;
+@@ -66,5 +65,6 @@
+ static_assert(sizeof(WaterDrawParams) == 1936, "DKR water shader ABI");
+ static_assert(sizeof(WaterDrawParams) <= 2048, "D3D structured-buffer stride limit");
+-static_assert(sizeof(WaterFieldPushConstants) == 160, "Water field shader ABI");
++static_assert(sizeof(WaterFieldPushConstants) == 32, "Portable water field shader ABI");
++static_assert(sizeof(WaterFieldPushConstants) <= 128, "Vulkan guaranteed push-constant budget");
+ }
+ #endif
+diff --git a/src/render/rt64_water_renderer.cpp b/src/render/rt64_water_renderer.cpp
+--- a/src/render/rt64_water_renderer.cpp
++++ b/src/render/rt64_water_renderer.cpp
+@@ -494,6 +494,7 @@
+     fieldSteps.clear();
+     statsStep=UINT32_MAX;
+     if (draws.empty()) return;
++    const auto presentationDrawCount=draws.size();
+     const auto horizontal=std::find_if(draws.begin(),draws.end(),[](const auto& d){return d.material.effects.z<3;});
+     const auto sourceDraw=horizontal==draws.end() ? draws.front() : *horizontal;
+     const auto m=sourceDraw.material;
+@@ -538,7 +539,6 @@
+         auto stepDraw=sourceDraw;
+         stepDraw.material=*input;
+         pc.drawIndex=uint32_t(draws.size());
+-        draws.push_back(stepDraw);
+         pc.resolution=resolution; pc.reset=clear;
+         pc.simulation={clear ? 0 : dt,fieldTime,nextTime,extent};
+         const auto &motion=*input;
+@@ -549,9 +549,13 @@
+             const float x=motion.craftPrevious[i].x+(motion.craftCurrent[i].x-motion.craftPrevious[i].x)*f;
+             const float z=motion.craftPrevious[i].z+(motion.craftCurrent[i].z-motion.craftPrevious[i].z)*f;
+             const float ox=std::floor((x-extent*0.5f)/cell)*cell, oz=std::floor((z-extent*0.5f)/cell)*cell;
+-            pc.origins[i]={ox,oz,clear ? ox : fieldOrigins[i].x,clear ? oz : fieldOrigins[i].y};
+-            fieldOrigins[i]=pc.origins[i];
++            // The existing immutable per-step draw already owns the motion.
++            // Keep its origins there too, rather than exceeding Vulkan's
++            // 128-byte push-constant minimum with eight float4 values.
++            stepDraw.fieldOrigins[i]={ox,oz,clear ? ox : fieldOrigins[i].x,clear ? oz : fieldOrigins[i].y};
++            fieldOrigins[i]=stepDraw.fieldOrigins[i];
+         }
++        draws.push_back(stepDraw);
+         stepSpray(motion,fieldTime,nextTime,clear);
+         if (statsSet && !clear && fieldTick%60==0) {
+             statsStep=uint32_t(fieldSteps.size());
+@@ -581,7 +585,10 @@
+         ++fieldTick;
+         step(float(double(fieldTick)/60),false);
+     }
+-    for (auto &draw:draws) {
++    // Only presentation draws use the final origins. Each compute step must
++    // retain its own source/destination pair, including the two reset steps.
++    for (size_t index=0;index<presentationDrawCount;++index) {
++        auto &draw=draws[index];
+         for (uint32_t i=0;i<WATER_CRAFT_COUNT;i++) draw.fieldOrigins[i]=fieldOrigins[i];
+         draw.flags.z=std::clamp(1-(fieldTime-desired)/dt,0.0f,1.0f);
+         draw.flags.w=float(resolution);
+diff --git a/src/shaders/WaterFieldCS.hlsl b/src/shaders/WaterFieldCS.hlsl
+--- a/src/shaders/WaterFieldCS.hlsl
++++ b/src/shaders/WaterFieldCS.hlsl
+@@ -23,11 +23,12 @@
+     if (pixel.x>=params.resolution*WATER_CRAFT_COUNT || pixel.y>=params.resolution) return;
+     uint tile=pixel.x/params.resolution;
+     uint2 local=uint2(pixel.x%params.resolution,pixel.y);
+-    WaterMaterial m=waterDraws[params.drawIndex].material;
++    WaterDrawParams draw=waterDraws[params.drawIndex];
++    WaterMaterial m=draw.material;
+     float cell=params.simulation.w/params.resolution;
+     float dt=params.simulation.x;
+-    float2 world=params.origins[tile].xy+(float2(local)+0.5)*cell;
+-    float2 previousPixel=(world-params.origins[tile].zw)/cell-0.5;
++    float2 world=draw.fieldOrigins[tile].xy+(float2(local)+0.5)*cell;
++    float2 previousPixel=(world-draw.fieldOrigins[tile].zw)/cell-0.5;
+     float4 center=filteredSource(previousPixel,tile);
+     float4 neighbors=filteredSource(previousPixel+float2(1,0),tile)+filteredSource(previousPixel-float2(1,0),tile)
+         +filteredSource(previousPixel+float2(0,1),tile)+filteredSource(previousPixel-float2(0,1),tile);

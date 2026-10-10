@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "legacy_behaviour.hpp"
 
 namespace dkr::mods {
 using Bytes = std::vector<std::uint8_t>;
@@ -59,12 +60,14 @@ struct Root {
     std::string name;
     std::string content_id;
     std::vector<std::string> blockers;
+    BehaviourContract behaviour;
 };
 struct CharacterRoot {
     std::string name,content_id;
     unsigned base_character=0,portrait=0;
     std::array<unsigned,3> headers{};
     std::vector<std::string> blockers;
+    BehaviourContract behaviour;
 };
 struct Analysis {
     std::string source_revision;
@@ -72,6 +75,7 @@ struct Analysis {
     std::string target_digest;
     std::string asset_digest;
     std::string profile;
+    BehaviourContract behaviour;
     std::vector<Root> tracks;
     std::vector<std::string> characters;
     std::vector<CharacterRoot> character_roots;
@@ -81,7 +85,9 @@ struct Analysis {
     // complete bank. Dummy deletions must never replace stock content.
     std::vector<std::pair<unsigned, unsigned>> changed_records;
 };
-Analysis analyze(View base, View target, const std::string& patch_digest);
+// Asset-only mode is an explicit frozen compatibility policy for artifacts
+// prepared before the behaviour ABI. It is never an automatic failure fallback.
+Analysis analyze(View base, View target, const std::string& patch_digest, bool behaviour_enabled=true);
 std::string analysis_json(const Analysis& analysis);
 
 struct PatchInput { std::string name; Bytes data; };

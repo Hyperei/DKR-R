@@ -1,0 +1,363 @@
+diff --git a/src/render/rt64_water_renderer.cpp b/src/render/rt64_water_renderer.cpp
+--- a/src/render/rt64_water_renderer.cpp
++++ b/src/render/rt64_water_renderer.cpp
+@@ -80,13 +80,13 @@
+ namespace RT64 {
+ namespace {
+ template <typename T> std::unique_ptr<T> checkedWaterResource(std::unique_ptr<T> resource) {
+-    if (!resource) throw std::runtime_error("water shader or pipeline creation failed");
++    if (!resource) throw std::runtime_error("water resource creation failed; retaining Original");
+     return resource;
+ }
+ }
+ WaterRenderer::WaterRenderer(RenderDevice *device, RenderShaderFormat format, bool hdr) : usesHDR(hdr) {
+     if (std::getenv("WR64_TEST_WATER_SHADER_FAILURE")) throw std::runtime_error("injected water shader failure");
+-    if (std::getenv("WR64_WATER_PROFILE") && device->getCapabilities().queryPools) profilePool = device->createQueryPool(128);
++    if (std::getenv("DKRR_WATER_PROFILE") && device->getCapabilities().queryPools) profilePool = device->createQueryPool(128);
+     descriptorSet = std::make_unique<WaterDescriptorSet>(device);
+     RenderPipelineLayoutBuilder builder;
+     builder.begin(false, true); // Water vertices use the input assembler on D3D12.
+@@ -154,7 +154,7 @@
+     fieldShader.pipelineLayout= checkedWaterResource(builder.create(device));
+     auto field= checkedWaterResource(device->createShader(CREATE_SHADER_INPUTS(WaterFieldCSBlobDXIL,WaterFieldCSBlobSPIRV,WaterFieldCSBlobMSL,"CSMain",format)));
+     fieldShader.pipeline= checkedWaterResource(device->createComputePipeline(RenderComputePipelineDesc(fieldShader.pipelineLayout.get(),field.get(),8,8,1)));
+-    if (std::getenv("WR64_WATER_STATS")) {
++    if (std::getenv("DKRR_WATER_STATS")) {
+         statsSet=std::make_unique<WaterStatsSet>(device);
+         builder.begin(); builder.addDescriptorSet(*statsSet); builder.end();
+         statsShader.pipelineLayout= checkedWaterResource(builder.create(device));
+@@ -193,6 +193,24 @@
+     const auto sceneKey=std::make_pair(key,selfDepth);
+     auto found = sceneKeys.find(sceneKey);
+     if (found != sceneKeys.end()) return found->second;
++    const uint64_t pixels=uint64_t(color->width)*color->height;
++    const uint32_t candidate=uint32_t(sceneKeys.size());
++    const uint32_t retainedOriginal=candidate<scenes.size() ? scenes[candidate].originalSamples : 0;
++    const uint64_t perPixel=16+4*color->multisampling.sampleCount+
++        (selfDepth ? 4*depth->multisampling.sampleCount : 0)+
++        8*std::max(retainedOriginal,classic ? color->multisampling.sampleCount : 0u);
++    uint64_t resident=pixels*perPixel;
++    for (uint32_t i=0;i<scenes.size();i++) if (i!=candidate) {
++        const auto &s=scenes[i];
++        resident+=uint64_t(s.width)*s.height*(16+4*s.surfaceSamples+8*s.originalSamples);
++        resident+=uint64_t(s.waterDepthWidth)*s.waterDepthHeight*4*s.waterDepthSamples;
++    }
++    // Bound intermediate memory without reducing game-image resolution.
++    // Unsupported/oversized targets retain authored water instead of OOM.
++    if (!color->width || !color->height || color->width>8192 || color->height>8192 ||
++        resident>256ULL*1024*1024 || sceneKeys.size()>=16)
++        throw std::runtime_error("water intermediate target exceeds its bounded budget");
++
+     const uint32_t index = uint32_t(sceneKeys.size());
+     sceneKeys.emplace(sceneKey,index);
+     if (index == scenes.size()) scenes.emplace_back();
+@@ -201,16 +219,16 @@
+     if (!scene.color || scene.width != color->width || scene.height != color->height) {
+         scene.width = color->width; scene.height = color->height;
+         scene.originalSet.reset(); scene.originalColorView.reset(); scene.originalColor.reset();
+-        scene.color = worker->device->createTexture(RenderTextureDesc::Texture2D(scene.width,scene.height,1,RenderFormat::R16G16B16A16_FLOAT,RenderTextureFlag::UNORDERED_ACCESS));
++        scene.color = checkedWaterResource(worker->device->createTexture(RenderTextureDesc::Texture2D(scene.width,scene.height,1,RenderFormat::R16G16B16A16_FLOAT,RenderTextureFlag::UNORDERED_ACCESS)));
+         scene.mipCount = std::min(6u,1u+uint32_t(std::floor(std::log2(float(std::min(scene.width,scene.height))))));
+-        scene.depth = worker->device->createTexture(RenderTextureDesc::Texture2D(scene.width,scene.height,scene.mipCount,RenderFormat::R32_FLOAT,RenderTextureFlag::UNORDERED_ACCESS));
+-        scene.colorView = scene.color->createTextureView(RenderTextureViewDesc::Texture2D(RenderFormat::R16G16B16A16_FLOAT));
+-        scene.depthView = scene.depth->createTextureView(RenderTextureViewDesc::Texture2D(RenderFormat::R32_FLOAT));
++        scene.depth = checkedWaterResource(worker->device->createTexture(RenderTextureDesc::Texture2D(scene.width,scene.height,scene.mipCount,RenderFormat::R32_FLOAT,RenderTextureFlag::UNORDERED_ACCESS)));
++        scene.colorView = checkedWaterResource(scene.color->createTextureView(RenderTextureViewDesc::Texture2D(RenderFormat::R16G16B16A16_FLOAT)));
++        scene.depthView = checkedWaterResource(scene.depth->createTextureView(RenderTextureViewDesc::Texture2D(RenderFormat::R32_FLOAT)));
+         scene.depthMipViews.clear(); scene.reduceSets.clear();
+         for (uint32_t mip=0;mip<scene.mipCount;mip++) {
+             auto view = RenderTextureViewDesc::Texture2D(RenderFormat::R32_FLOAT);
+             view.mipSlice = mip; view.mipLevels = 1;
+-            scene.depthMipViews.push_back(scene.depth->createTextureView(view));
++            scene.depthMipViews.push_back(checkedWaterResource(scene.depth->createTextureView(view)));
+             if (mip > 0) {
+                 auto set = std::make_unique<WaterDepthReduceSet>(worker->device);
+                 set->setTexture(set->input,scene.depth.get(),RenderTextureLayout::GENERAL,scene.depthMipViews[mip-1].get());
+@@ -228,16 +246,16 @@
+         scene.originalSamples=color->multisampling.sampleCount;
+         const uint32_t columns=scene.originalSamples>1 ? 2 : 1;
+         const uint32_t rows=(scene.originalSamples+1)/2;
+-        scene.originalColor = worker->device->createTexture(RenderTextureDesc::Texture2D(scene.width*columns,scene.height*rows,1,RenderFormat::R16G16B16A16_FLOAT,RenderTextureFlag::UNORDERED_ACCESS));
+-        scene.originalColorView = scene.originalColor->createTextureView(RenderTextureViewDesc::Texture2D(RenderFormat::R16G16B16A16_FLOAT));
++        scene.originalColor = checkedWaterResource(worker->device->createTexture(RenderTextureDesc::Texture2D(scene.width*columns,scene.height*rows,1,RenderFormat::R16G16B16A16_FLOAT,RenderTextureFlag::UNORDERED_ACCESS)));
++        scene.originalColorView = checkedWaterResource(scene.originalColor->createTextureView(RenderTextureViewDesc::Texture2D(RenderFormat::R16G16B16A16_FLOAT)));
+         scene.originalColor->setName("Water original palette and transparency");
+         scene.originalSet = std::make_unique<WaterOriginalSet>(worker->device);
+     }
+     if (!scene.surface || scene.surfaceWidth!=scene.width || scene.surfaceHeight!=scene.height || scene.surfaceSamples!=color->multisampling.sampleCount) {
+         scene.surfaceFramebuffer.reset();
+         scene.surfaceView.reset();
+-        scene.surface=worker->device->createTexture(RenderTextureDesc::ColorTarget(scene.width,scene.height,RenderFormat::R32_FLOAT,color->multisampling));
+-        scene.surfaceView=scene.surface->createTextureView(RenderTextureViewDesc::Texture2D(RenderFormat::R32_FLOAT));
++        scene.surface=checkedWaterResource(worker->device->createTexture(RenderTextureDesc::ColorTarget(scene.width,scene.height,RenderFormat::R32_FLOAT,color->multisampling)));
++        scene.surfaceView=checkedWaterResource(scene.surface->createTextureView(RenderTextureViewDesc::Texture2D(RenderFormat::R32_FLOAT)));
+         scene.surfaceSamples=color->multisampling.sampleCount;
+         scene.surfaceWidth=scene.width; scene.surfaceHeight=scene.height;
+         scene.surface->setName("Water view surface distance and mask");
+@@ -248,18 +266,18 @@
+         scene.surfaceFramebuffer.reset(); scene.waterColorFramebuffer.reset();
+         scene.waterDepthWidth=depth->width; scene.waterDepthHeight=depth->height;
+         scene.waterDepthSamples=depth->multisampling.sampleCount;
+-        scene.waterDepth=worker->device->createTexture(RenderTextureDesc::DepthTarget(depth->width,depth->height,RenderFormat::D32_FLOAT,depth->multisampling));
++        scene.waterDepth=checkedWaterResource(worker->device->createTexture(RenderTextureDesc::DepthTarget(depth->width,depth->height,RenderFormat::D32_FLOAT,depth->multisampling)));
+         scene.waterDepth->setName("Water isolated self-occlusion depth");
+     }
+     // The source target itself may be recreated without changing dimensions.
+     // Modern water owns its depth writes; later original translucent effects
+     // must still see the game's unchanged depth attachment.
+     const RenderTexture *surfaceAttachment=scene.surface.get();
+-    scene.surfaceFramebuffer=worker->device->createFramebuffer(RenderFramebufferDesc(&surfaceAttachment,1,
+-        scene.selfDepth ? scene.waterDepth.get() : depth->texture.get(),!scene.selfDepth));
++    scene.surfaceFramebuffer=checkedWaterResource(worker->device->createFramebuffer(RenderFramebufferDesc(&surfaceAttachment,1,
++        scene.selfDepth ? scene.waterDepth.get() : depth->texture.get(),!scene.selfDepth)));
+     if (scene.selfDepth) {
+         const RenderTexture *colorAttachment=color->texture.get();
+-        scene.waterColorFramebuffer=worker->device->createFramebuffer(RenderFramebufferDesc(&colorAttachment,1,scene.waterDepth.get(),true));
++        scene.waterColorFramebuffer=checkedWaterResource(worker->device->createFramebuffer(RenderFramebufferDesc(&colorAttachment,1,scene.waterDepth.get(),true)));
+     }
+     else scene.waterColorFramebuffer.reset();
+     scene.spraySet->setTexture(scene.spraySet->sceneDepth,scene.depth.get(),RenderTextureLayout::SHADER_READ,scene.depthMipViews[0].get());
+@@ -388,7 +406,7 @@
+ }
+ 
+ void WaterRenderer::stepSpray(const interop::WaterMaterial &m,float fromTime,float toTime,bool reset) {
+-    if (reset || m.identity.x<2) {
++    if (reset || m.identity.x<2 || m.effects.x<0.5f) {
+         particles.clear(); sprayDistance.fill(0); sprayHeading.fill({0,0,0,0});
+         spraySeed=0x57A064u^uint32_t(m.identity.w);
+         return;
+@@ -463,14 +481,14 @@
+     if (draws.empty()) return;
+     const auto sourceDraw=draws.front();
+     const auto m=sourceDraw.material;
+-    const uint32_t resolution=m.identity.x>=2 ? 512 : 256;
++    const uint32_t resolution=m.identity.x>=3 ? 512 : 256;
+     constexpr float extent=4096, dt=1.0f/60;
+     if (fieldResolution!=resolution) {
+         fieldResolution=resolution;
+         fieldGeneration=UINT32_MAX;
+         for (uint32_t i=0;i<2;i++) {
+-            fieldTextures[i]=worker->device->createTexture(RenderTextureDesc::Texture2D(resolution*4,resolution,1,RenderFormat::R16G16B16A16_FLOAT,RenderTextureFlag::UNORDERED_ACCESS));
+-            fieldViews[i]=fieldTextures[i]->createTextureView(RenderTextureViewDesc::Texture2D(RenderFormat::R16G16B16A16_FLOAT));
++            fieldTextures[i]=checkedWaterResource(worker->device->createTexture(RenderTextureDesc::Texture2D(resolution*4,resolution,1,RenderFormat::R16G16B16A16_FLOAT,RenderTextureFlag::UNORDERED_ACCESS)));
++            fieldViews[i]=checkedWaterResource(fieldTextures[i]->createTextureView(RenderTextureViewDesc::Texture2D(RenderFormat::R16G16B16A16_FLOAT)));
+             fieldSets[i]=std::make_unique<WaterFieldSet>(worker->device);
+             fieldTextures[i]->setName("Water persistent ripple and foam field "+std::to_string(i));
+         }
+@@ -480,7 +498,8 @@
+         }
+     }
+     const float desired=draws.front().camera.w;
+-    const bool reset=fieldGeneration!=uint32_t(m.identity.w) || desired<fieldTime-0.1f || desired>fieldTime+0.5f;
++    const bool reset=fieldGeneration!=uint32_t(m.identity.w) || desired<fieldDesired-0.00001f || desired>fieldDesired+0.25f;
++    fieldDesired=desired;
+     if (reset) fieldInputs.clear();
+     if (fieldInputs.empty() || m.animation.y>fieldInputs.back().animation.y) fieldInputs.push_back(m);
+     while (fieldInputs.size()>32) fieldInputs.pop_front();
+@@ -601,7 +620,7 @@
+         for (uint32_t i=64;i<128;i++) { shoreCount+=data[i].x;shoreSum+=data[i].y;shorePeak=std::max(shorePeak,data[i].z); }
+         statsReadback->unmap(); statsPending=false;
+         static FILE *f=[]() {
+-            FILE *file=std::fopen(std::getenv("WR64_WATER_STATS"),"w");
++            FILE *file=std::fopen(std::getenv("DKRR_WATER_STATS"),"w");
+             if (file) std::fprintf(file,"time,generation,course,quality,resolution,foam_pixels,foam_sum,foam_peak,particles,craft_speed,wet,shore_pixels,shore_sum,shore_peak\n");
+             return file;
+         }();
+@@ -622,7 +641,7 @@
+         if (times[i*2+1] >= times[i*2]) milliseconds[profileKinds[i]] += double(times[i*2+1]-times[i*2])/1000000.0;
+     }
+     static FILE *csv = []() {
+-        const char *name = std::getenv("WR64_WATER_PROFILE");
++        const char *name = std::getenv("DKRR_WATER_PROFILE");
+         FILE *file = name ? std::fopen(name,"w") : nullptr;
+         if (file) std::fprintf(file,"course,quality,debug,views,width,height,water_draws,normal_vertices,normal_ms,capture_ms,surface_ms,field_ms,frame_gpu_ms\n");
+         return file;
+@@ -689,12 +708,24 @@
+ 
+ void WaterRenderer::collectNormals(const DrawData &data, uint32_t start, uint32_t count, uint64_t group) {
+     wireStarts.push_back(uint32_t(wireIndices.size()));
++    const auto cameraInverse=hlslpp::inverse(hlslpp::float4x4(draws.back().material.cameraViewProjection));
+     for (uint32_t i=0; i+2<count; i+=3) {
+         interop::uint4 f{data.faceIndices[start+i],data.faceIndices[start+i+1],data.faceIndices[start+i+2],uint32_t(draws.size()-1)};
+         if (draws.back().material.identity.y==12) wireIndices.insert(wireIndices.end(),{f.x,f.y,f.y,f.z,f.z,f.x});
+         for (uint32_t j=0;j<3;j++) {
+             const uint32_t v = f[j];
+-            auto key = std::make_tuple(group,int(data.posFloats[v*3]),int(data.posFloats[v*3+1]),int(data.posFloats[v*3+2]));
++            const auto &material=draws.back().material;
++            hlslpp::float4 position(data.posFloats[v*3],data.posFloats[v*3+1],data.posFloats[v*3+2],1);
++            if (material.cameraPosition.w==1.0f) {
++                if (v>=data.worldIndices.size() || data.worldIndices[v]>=data.worldTransforms.size()) continue;
++                position=hlslpp::mul(position,hlslpp::float4x4(data.worldTransforms[data.worldIndices[v]]));
++                position=hlslpp::mul(position,cameraInverse);
++                if (!std::isfinite(float(position.w)) || std::abs(float(position.w))<0.000001f) continue;
++                position=position/float(position.w);
++            }
++            if (!std::isfinite(float(position.x)) || !std::isfinite(float(position.y)) || !std::isfinite(float(position.z)) ||
++                std::abs(float(position.x))>10000000 || std::abs(float(position.y))>10000000 || std::abs(float(position.z))>10000000) continue;
++            auto key = std::make_tuple(group,int(std::round(float(position.x)*4)),int(std::round(float(position.y)*4)),int(std::round(float(position.z)*4)));
+             auto &g = normalGroups[key];
+             g.vertices.insert(v);
+             g.faces.push_back(f);
+@@ -712,8 +743,8 @@
+     const uint64_t required = outputs.rasterWorldPosBuffer.allocatedSize;
+     if (!normalBuffer || required > normalBufferSize) {
+         normalBufferSize = required;
+-        normalBuffer = worker->device->createBuffer(RenderBufferDesc::DefaultBuffer(required,
+-            RenderBufferFlag::VERTEX | RenderBufferFlag::STORAGE | RenderBufferFlag::UNORDERED_ACCESS));
++        normalBuffer = checkedWaterResource(worker->device->createBuffer(RenderBufferDesc::DefaultBuffer(required,
++            RenderBufferFlag::VERTEX | RenderBufferFlag::STORAGE | RenderBufferFlag::UNORDERED_ACCESS)));
+     }
+     normalView = RenderVertexBufferView(RenderBufferReference(normalBuffer.get()),normalBufferSize);
+     uploads.push_back({normalVertices.data(),{0,normalVertices.size()},sizeof(interop::uint4),RenderBufferFlag::STORAGE,{},&normalVertexBuffer});
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -610,7 +610,7 @@
+                         waterProfileToken = waterRenderer->beginProfile(worker,2);
+                         waterProfileScene = waterScene;
+                     }
+-                    if (drawCall.originalWaterPipeline) {
++                    if (waterRenderer->draws[drawCall.waterIndex].material.optics.w>0.5f) {
+                         // Use the original texture combiner, opacity and fog as the
+                         // Classic base, at the same position in the game's draw order.
+                         switchToGraphicsPipeline();
+@@ -638,7 +638,7 @@
+                     waterRenderer->beginSurface(worker,drawCall.waterIndex);
+                     worker->commandList->setViewports(framebuffer.viewport);
+                     worker->commandList->setScissors(triangles.scissor);
+-                    const bool classic=drawCall.originalWaterPipeline!=nullptr;
++                    const bool classic=waterRenderer->draws[drawCall.waterIndex].material.optics.w>0.5f;
+                     const bool selfDepth=waterRenderer->scenes[waterRenderer->drawScenes[drawCall.waterIndex]].selfDepth;
+                     worker->commandList->setPipeline(waterRenderer->pipeline(worker->device,fbStorage->colorTarget->multisampling,
+                         otherMode.zCmp() || selfDepth,selfDepth,false,true,classic,selfDepth));
+@@ -1818,7 +1818,8 @@
+                 }
+                 const bool waterSamplesSupported = wantsWater &&
+                     (p.worker->device->getSampleCountsSupported(RenderFormat::R32_FLOAT) & p.fbStorage->colorTarget->multisampling.sampleCount);
+-                if (wantsWater && waterRenderer && waterSamplesSupported) {
++                if (wantsWater && waterRenderer && !waterUnavailable && waterSamplesSupported) {
++                    try {
+                     interop::WaterDrawParams wp{};
+                     wp.material = *waterMaterial;
+                     wp.material.surface.w=float(proj.transformsIndex);
+@@ -1831,9 +1832,18 @@
+                     wp.viewProjection = drawData.modViewProjTransforms[proj.transformsIndex];
+                     if (wp.material.cameraPosition.w == 1.0f) {
+                         wp.viewProjection = wp.material.cameraViewProjection;
+-                        wp.camera.x = wp.material.cameraPosition.x;
+-                        wp.camera.y = wp.material.cameraPosition.y;
+-                        wp.camera.z = wp.material.cameraPosition.z;
++                        // Match the matrix used by interpolated water vertices,
++                        // not the current simulation camera (DKR stores MVPs).
++                        const auto address=uint32_t(wp.material.effects.y);
++                        const auto &addresses=drawData.worldTransformPhysicalAddresses;
++                        for (uint32_t i=0;i<addresses.size();i++) if (addresses[i]==address) {
++                            if (i<drawData.lerpWorldTransforms.size()) wp.viewProjection=drawData.lerpWorldTransforms[i];
++                            break;
++                        }
++                        const auto eye=hlslpp::mul(hlslpp::float4(0,0,1,0),hlslpp::inverse(wp.viewProjection));
++                        wp.camera.x=float(eye.x/eye.w);
++                        wp.camera.y=float(eye.y/eye.w);
++                        wp.camera.z=float(eye.z/eye.w);
+                     }
+                     wp.inverseViewProjection = hlslpp::inverse(wp.viewProjection);
+                     const auto fc = call.callDesc.rdpParams.fogColor;
+@@ -1860,14 +1870,20 @@
+                             call.callDesc.otherMode.zCmp() || selfDepth,selfDepth,false,true,classic,selfDepth);
+                     }
+                     if (waterMatricesValid) {
++                        const auto waterScene=waterRenderer->prepareScene(p.worker,p.fbStorage->colorTarget,p.fbStorage->depthTarget,
++                            (uint64_t(framebufferCount) << 32) | proj.transformsIndex,classic,selfDepth);
++                        instanceDrawCall.originalWaterPipeline=triangles.pipeline;
+                         instanceDrawCall.waterIndex = uint32_t(waterRenderer->draws.size());
+                         waterRenderer->draws.push_back(wp);
+-                        waterRenderer->drawScenes.push_back(waterRenderer->prepareScene(p.worker,p.fbStorage->colorTarget,p.fbStorage->depthTarget,
+-                            (uint64_t(framebufferCount) << 32) | proj.transformsIndex,classic,selfDepth));
++                        waterRenderer->drawScenes.push_back(waterScene);
+                         waterRenderer->collectNormals(drawData, call.meshDesc.faceIndicesStart, call.callDesc.triangleCount * 3, (uint64_t(framebufferCount) << 32) | proj.transformsIndex);
+-                        if (wp.material.optics.w>0.5f) instanceDrawCall.originalWaterPipeline=triangles.pipeline;
++
+                         triangles.pipeline = waterPipeline;
+                         waterRenderer->worldView = RenderVertexBufferView(RenderBufferReference(outputBuffers.rasterWorldPosBuffer.buffer.get()), PosStride * vertexCount);
++                    }
++                    } catch (const std::exception &error) {
++                        waterUnavailable=true;
++                        std::fprintf(stderr,"[water] resource fallback to Original: %s\n",error.what());
+                     }
+                 }
+ 
+@@ -1998,9 +2014,23 @@
+ #   endif
+ 
+         if (waterRenderer && !waterRenderer->draws.empty()) {
+-            waterRenderer->prepareField(worker);
+-            waterRenderer->prepareNormals(worker, *outputBuffers, shaderUploads);
+-            shaderUploads.push_back({waterRenderer->draws.data(), {0,waterRenderer->draws.size()}, sizeof(interop::WaterDrawParams), RenderBufferFlag::STORAGE, {}, &waterRenderer->drawBuffer});
++            const auto uploadStart=shaderUploads.size();
++            try {
++                if (waterUnavailable) throw std::runtime_error("water preparation was incomplete");
++                waterRenderer->prepareField(worker);
++                waterRenderer->prepareNormals(worker, *outputBuffers, shaderUploads);
++                shaderUploads.push_back({waterRenderer->draws.data(), {0,waterRenderer->draws.size()}, sizeof(interop::WaterDrawParams), RenderBufferFlag::STORAGE, {}, &waterRenderer->drawBuffer});
++            } catch (const std::exception &error) {
++                shaderUploads.resize(uploadStart);
++                for (auto &draw : instanceDrawCallVector) if (draw.waterIndex!=UINT32_MAX) {
++                    draw.triangles.pipeline=draw.originalWaterPipeline;
++                    draw.originalWaterPipeline=nullptr;
++                    draw.waterIndex=UINT32_MAX;
++                }
++                waterRenderer->reset();
++                waterUnavailable=true;
++                std::fprintf(stderr,"[water] frame fallback to Original: %s\n",error.what());
++            }
+         }
+         shaderUploader->submit(worker, shaderUploads);
+         if (waterRenderer && !waterRenderer->draws.empty()) { waterRenderer->bindBuffer(); waterRenderer->bindNormals(*outputBuffers); }
+diff --git a/src/render/rt64_water_renderer.h b/src/render/rt64_water_renderer.h
+--- a/src/render/rt64_water_renderer.h
++++ b/src/render/rt64_water_renderer.h
+@@ -168,7 +168,7 @@
+     std::vector<std::pair<interop::WaterFieldPushConstants,uint32_t>> fieldSteps;
+     std::array<interop::float4,4> fieldOrigins{};
+     std::deque<interop::WaterMaterial> fieldInputs;
+-    float fieldTime = 0;
++    float fieldTime = 0, fieldDesired = 0;
+     int64_t fieldTick=0;
+     uint32_t fieldGeneration = UINT32_MAX, fieldResolution = 0, fieldCurrent = 0;
+     std::unique_ptr<RenderQueryPool> profilePool;
+diff --git a/src/shaders/WaterPS.hlsl b/src/shaders/WaterPS.hlsl
+--- a/src/shaders/WaterPS.hlsl
++++ b/src/shaders/WaterPS.hlsl
+@@ -131,7 +131,7 @@
+     float start = 5, distance = 16;
+     float3 origin = world + N*3;
+     float2 previousPixel = pixelFromWorld(origin,p).xy;
+-    [loop] for (uint step=0;step<36;step++) {
++    [loop] for (uint step=0;step<(p.material.identity.x>=3 ? 36u : 24u);step++) {
+         float3 rayPoint = origin+ray*distance;
+         float4 pixel = pixelFromWorld(rayPoint,p);
+         if (pixel.w <= 0 || any(pixel.xy < p.viewBounds.xy+2) || any(pixel.xy >= p.viewBounds.zw-2)) break;
+@@ -247,6 +247,23 @@
+     WaterDrawParams p = waterDraws[gConstants.drawIndex];
+     WaterMaterial m = p.material;
+     if (position.z < 0 || position.z > 1022.0/1024.0) discard;
++    if (m.effects.z>=3) {
++        // Preserve the original waterfall/fountain's transparency, palette
++        // and course fog. This is NOT a horizontal ocean plane. Continuous
++        // world-space streaks add detail without wrapping the authored UVs.
++        uint2 at=uint2(position.xy);
++#ifdef CLASSIC_MSAA
++        uint w,h; sceneColor.GetDimensions(w,h);
++        at+=uint2((sampleIndex&1)*w,(sampleIndex>>1)*h);
++#endif
++        float3 base=originalColor.Load(int3(at,0)).rgb;
++        float2 flow=float2(worldPosition.x+worldPosition.z,worldPosition.y+p.camera.w*90)*float2(0.09,0.035);
++        float filter=1-smoothstep(0.3,1.3,max(length(ddx(flow)),length(ddy(flow))));
++        float streak=smoothstep(0.67,0.91,foamNoise(flow))*filter*m.animation.w;
++        float visibility=p.fogColor.a>0.5 ? 1-saturate(sourceColor.a) : 1;
++        float3 result=lerp(base,base+float3(0.025,0.033,0.035),saturate(streak*visibility));
++        return float4(pow(saturate(result),1.0/2.2),1);
++    }
+     float3 geometric = normalize(surfaceNormal);
+     if (geometric.y < 0) geometric = -geometric;
+     float2 ripples = rippleGradient(worldPosition.xz, p.camera.w, m.animation.z,m.surface.yz);

@@ -859,6 +859,22 @@ class DKR_PT_water(DkrPanel, bpy.types.Panel):
         row.operator("dkr.select_water", text="Select", icon="RESTRICT_SELECT_OFF")
         row.operator("dkr.remove_water", text="Remove", icon="X")
 
+        appearance = context.scene.dkr_water
+        box = layout.box()
+        box.prop(appearance, "render_profile")
+        if appearance.render_profile:
+            for name in ("deep", "shallow", "sky", "sun", "absorption", "roughness", "visibility", "ripple", "foam"):
+                box.prop(appearance, "render_" + name)
+            _dim_label(box, "Enhanced rendering only; wave motion and collision are unchanged.", icon="INFO")
+            box.label(text="Material classification overrides")
+            for index, entry in enumerate(appearance.render_materials):
+                row = box.row(align=True)
+                row.prop(entry, "texture", text="Entry")
+                row.prop(entry, "kind", text="")
+                row.operator("dkr.render_water_material_remove", text="", icon="X").index = index
+            box.operator("dkr.render_water_material_add", icon="ADD")
+            _dim_label(box, "Entry is the exported model's texture-table ordinal, not the ROM texture ID.", icon="INFO")
+
         if not wavy:
             info_box(layout, context,
                      "Select the lake bed in Edit Mode, put the 3D cursor at the "

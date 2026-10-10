@@ -1,0 +1,35 @@
+DKR-R 1.0.5 Beta 15 Playtest 16 Fix 2 - Mod library
+
+Cards now show the name, source, supported vehicles/type, size, status and
+actions. Full compatibility/behaviour notes remain in Details. Short notices
+for hidden, unprepared or capacity-limited entries remain actionable.
+
+Enable/disable and hide/restore reuse display-only sizes and source labels
+from an unchanged, freshly verified preparation receipt. They no longer walk
+every payload tree or read source reviews twice on each toggle. Selection
+writes remain atomic and asynchronous; no speculative activation is shown.
+Launch still validates payloads in full. Import, Refresh and Remove perform
+full display scans. Sizes reflect the last full scan if files change externally.
+
+My mods has a Review duplicates button when candidates exist. This clears
+other filters and includes hidden copies. Filters > Duplicate review also
+offers Possible duplicates and Same source & slot. Track and character
+libraries remain separate. ROM revision variants of the same content ID are
+one card, not duplicates. A native DKR-R track can match a legacy track's name.
+
+Name matching ignores ASCII case, leading/trailing spaces and repeated
+whitespace; it is not proof of identical content. Same source & slot means
+the same patch digest and donor character/course slot, and may identify
+asset-only versus behaviour-enabled editions. Different editions can have
+different saves; do not remove one just because its name matches.
+
+Open Details > Compare possible duplicates to inspect related legacy copies.
+Use View this copy to switch Details, or compare native tracks from their
+cards. Remove mod always asks for confirmation with the exact content ID.
+Only that selected prepared entry and its ROM variants are removed; other
+mods (including entries in the same pack), retained source imports and all
+save files are preserved. There is no automatic name-based or bulk deletion.
+
+The preceding music queue fix, Track Lab, enhanced water, online mods and
+experimental rollback are retained. All online peers must use this build.
+No gameplay/visual/audio test session is launched automatically by this update.

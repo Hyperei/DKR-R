@@ -1,4 +1,5 @@
 #include "legacy_audio_bank.hpp"
+#include "../custom_music_sequence.hpp"
 #include <algorithm>
 #include <map>
 
@@ -108,6 +109,17 @@ SequenceDirectory inspect_sequence_directory(View bank) {
     }
     return result;
 }
+void validate_changed_sequences(View original,View prepared) {
+    const auto before=inspect_sequence_directory(original),after=inspect_sequence_directory(prepared);
+    if(before.records.size()!=after.records.size())throw Error("Prepared music changed the native sequence namespace.");
+    for(unsigned i=0;i<after.records.size();++i) {
+        if(before.records[i].digest==after.records[i].digest)continue;
+        const auto& record=after.records[i];
+        const auto check=dkr::runtime::custom_music::validate_sequence(
+            slice(prepared,record.offset,record.length),before.maximum_loaded_length,nullptr,true);
+        if(!check.ok())throw Error("Prepared legacy music is unsafe ("+check.code+"): "+check.message);
+    }
+}
 Bytes build_sequence_bank(View original,const std::map<unsigned,Bytes>& replacements,
     std::uint32_t capacity) {
     const auto directory=inspect_sequence_directory(original);
@@ -118,6 +130,8 @@ Bytes build_sequence_bank(View original,const std::map<unsigned,Bytes>& replacem
         if(((bytes.size()+1)&~std::size_t(1))>capacity)
             throw Error("Aligned music DMA exceeds its retained buffer capacity.");
         inspect_sequence_header(bytes);
+        const auto checked=dkr::runtime::custom_music::validate_sequence(bytes,capacity,nullptr,true);
+        if(!checked.ok())throw Error("Legacy music sequence is unsafe ("+checked.code+"): "+checked.message);
     }
     const auto header_size=4+directory.records.size()*8;
     Bytes output(original.begin(),original.begin()+header_size);

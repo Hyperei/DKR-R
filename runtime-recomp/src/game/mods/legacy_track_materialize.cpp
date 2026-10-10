@@ -5,9 +5,9 @@
 
 namespace dkr::mods {
 TrackMaterialization prepare_track_bank(Bytes original,View reconstructed,
-    const std::string& patch_digest,unsigned carrier,Bytes runtime_original) {
+    const std::string& patch_digest,unsigned carrier,Bytes runtime_original,bool behaviour_enabled) {
     canonicalize_rom(original);
-    const auto analysis=analyze(original,reconstructed,patch_digest);
+    const auto analysis=analyze(original,reconstructed,patch_digest,behaviour_enabled);
     if(!analysis.blockers.empty())
         throw Error("This package has no qualified offline preparation profile.");
     const auto found=std::find_if(analysis.tracks.begin(),analysis.tracks.end(),
@@ -42,8 +42,10 @@ TrackMaterialization prepare_track_bank(Bytes original,View reconstructed,
     std::set<AssetKey> selected;
     for(const auto& dependency : dependencies.records) {
         if(dependency.section==34) {
-            if(!std::ranges::equal(target.record(34,dependency.id),runtime->record(34,dependency.id)))
-                throw Error("Track object behaviour/header changes require a native adapter.");
+            const auto fields=object_parameter_fields(runtime->record(34,dependency.id),target.record(34,dependency.id));
+            if(fields && (!behaviour_enabled || (fields&~found->behaviour.header_fields)))
+                throw Error("Track object parameters exceed the selected behaviour adapter.");
+            if(fields)selected.emplace(34,dependency.id);
             continue;
         }
         if(dependency.changed || crossing)selected.emplace(dependency.section,dependency.id);

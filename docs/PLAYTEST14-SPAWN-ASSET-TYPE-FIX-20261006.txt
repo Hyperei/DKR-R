@@ -1,0 +1,56 @@
+Playtest 14: trophy scenery model loading and Windows launcher recovery
+====================================================================
+
+Evidence and scope
+------------------
+The supplied offline log stopped at model-reference operation 1: five slots,
+four NULL slots, slot four populated, and an alleged model pointer 0x00100010.
+The old crash dump failed when init_object_shading dereferenced that same word.
+
+The reviewed US v1.0 and US Rev A spawn_object code shares a defect in the
+BHV_ROCKET_SIGNPOST_2 branch. Its model-type stack local is reused to count
+completed trophies in the first four worlds. The remaining fifth-world bits
+then incorrectly select the resource loader. A 3D model ID can be passed to
+tex_load_sprite. A Sprite starts with frame/texture counts, not a model pointer.
+Stock header 161 is this behavior and has five model IDs, 319 through 323.
+Completed first-four-world progress selects only slot four, matching the log.
+With a smaller sprite bank the mistaken load can instead fail entirely.
+
+The headless fixture reproduced that routing defect with the previous pipeline
+for both ROM revisions: 1,536 Sprite/model failures per revision. It executes
+the actual regenerated spawn_object, with synthetic bounded resources; it is
+not a full scene test, a device test or an assertion that every crash is fixed.
+
+Correction
+----------
+scripts/legacy_spawn_asset_type_policy.py restores the object's real header
+modelType after the trophy-count loop, before resource loading. The reviewed
+ELF hash, function extent and exact instruction at 0x8000ED8C are checked.
+Trophy counting, selected model, sparse slots, saves and mod IDs are unchanged.
+Both normal runtime and owned rollback closures are regenerated from this
+authored Patch Pipeline. No generated C or submodule is manually edited.
+
+The existing model-reference fences remain enabled for unrelated damaged
+content. Windows content/save-error returns also use the existing fresh-window,
+non-D3D9 launcher recovery path. Successful legacy returns retain their previous
+behavior; no new renderer fallback is imposed on normal gameplay.
+
+Qualification
+-------------
+The corrected fixture covers all 1,024 valid trophy bitfields, direct and
+translated header selection, 3D/texture/sprite types and ordinary scenery.
+Per revision it passes 196,609 checks across 12,288 cases with zero model faults.
+The eight-case launcher recovery policy is checked on Windows and Linux.
+All 40 headless legacy suites pass on each platform, including importer,
+character menu, portrait/audio, heap/cache, online admission and transfer checks.
+Further build/package and rollback regression results are recorded alongside
+the packages. No gameplay or visual testing was performed; user playtesting is
+still required for the supplied scenario and general regression coverage.
+
+Distribution
+------------
+The candidate remains 1.0.5-beta.15-playtest.14, in a distinct spawn-type-fix
+folder. Replace the complete package, not only DKR-R.exe. All online peers must
+use the new candidate together: its rollback contract differs from earlier
+Playtest 14 builds. Mods need not be removed or reimported. No private ROMs,
+saves, original reports, logs or crash dumps are distributed in the packages.

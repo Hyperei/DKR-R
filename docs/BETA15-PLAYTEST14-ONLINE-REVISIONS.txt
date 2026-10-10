@@ -1,0 +1,78 @@
+DKR-R v1.0.5 Beta 15 Playtest 14
+
+REPAIRS
+The launcher identified ROMs as dkr.us.v77/dkr.us.v80, but the host mod
+catalogue and client resource preparation require us.v77/us.v80. A checked
+conversion from the verified revision now connects these contracts without
+changing existing ROM caches, installed mods or offline save paths. This
+repairs vanilla and modded lobby preparation for all three backends.
+
+Experimental Rollback now links separately isolated US v1.0 and US v1.1
+(Rev A) complete replay engines. Guest functions, native bridge state,
+input/EEPROM/Pak ownership and private audio helpers are revision-qualified.
+The accepted lobby revision selects the engine; exact ROM and bootstrap
+checks remain mandatory. No warning was bypassed, and no legacy backend is
+silently substituted. Startup still follows the normal game intro/menus.
+
+Each revision has a content-derived replay compatibility identity. Windows
+and Linux built from the same closure must agree on this identity. All racers
+must install this complete build and select the same supported game revision.
+Different ROM byte orders are normalized as before. This does not add ports
+for other regional revisions or support arbitrary executable ROM hacks.
+
+HOST-MANAGED MODS
+The host freezes the enabled character, legacy-track and Track Lab selection.
+Clients review and consent before downloads. Content is reconstructed against
+locally imported original ROMs, verified and prepared before lobby admission.
+DKR-R never transfers ROMs or native executable code. Cached content is reused;
+the separate online profile does not replace the client's offline selection.
+Existing transfer, asset and memory budgets remain enforced. The expanded
+character roster and its four animated stage positions are retained.
+
+If preparation fails, a persistent modal now shows the Game Pak, backend,
+preparation stage and full error. Dismiss it, correct the requirement and retry.
+The same failure is recorded in runtime.log instead of disappearing in a
+brief popup. Cancellation does not activate incomplete resources.
+
+Online course preparation also accepts the bounded asset tables expanded by
+larger character rosters. It uses the supplied vector length; retail pointer
+scan bounds, signed asset-ID limits and section memory budgets are unchanged.
+
+Rebuilt candidate: online staging now converts ordinary launcher paths to
+the existing private long-path form before creating nested worker directories.
+This fixes Windows "create_directory: The system cannot find the path specified"
+failures during reconstruction. Normalized paths are also used for host/cache
+queries and worker progress streams. No Windows policy change or cache reset
+is required; retained mods, content identities and offline saves are unchanged.
+
+Admission handoff correction: a rejected join now retains the authenticated
+host settings-sync offer and reports the original rejection/connection reason.
+The mod watcher no longer replaces it with a generic disconnect or clears the
+existing one-click settings-sync UI. Settings-sync eligibility accounts for
+host mods that will be downloaded later, without changing the client's actual
+mod identity or skipping consent, checksums, reconstruction or runtime proof.
+Client preparation stages no longer retain a previous host-ready label.
+Track Lab's reader and network package boundaries now use native paths and
+preferred separators, fixing nested payload names such as textures/0.bin
+under Windows long paths and non-ASCII course directory names.
+Its existing size limits and online content verification remain unchanged.
+
+PRESERVED
+Host Prediction and Strict Input Sync remain available and their gameplay
+algorithms are unchanged. Offline save isolation, existing rendering/HUD fixes,
+Track Lab/Blender support and independent local presentation settings remain.
+No protected submodule or RecompiledFuncs/RecompiledPatches source was edited
+manually; private payloads were generated into new Patch Pipeline directories.
+
+PLAYTEST REQUEST
+Use the same Playtest 14 package on every peer. Check US v1.0 and US v1.1
+separately: vanilla lobbies first, then host-enabled characters/custom tracks,
+client consent/download, character select, original/custom races and return
+to the lobby. Include two-, three- and four-racer matches and two-player
+Adventure/boss progression. After leaving, check that offline saves and mod
+selections are unchanged. If a stage fails, retain the complete modal message
+and newest runtime.log from every affected peer.
+
+Verification is headless; real WAN latency, rendered gameplay and device-
+specific performance still require team playtesting. No private ROM, game
+checkpoint, save or crash dump is included in either distribution.

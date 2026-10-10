@@ -1,14 +1,17 @@
-#include "recomp.h"
+#include "funcs.h"
 #include "probe_audio.h"
+#include "../../src/game/audio_event_queue.h"
 #include <string.h>
 
-// Private equivalent of runtime_stubs.cpp's healthy/empty/non-progressing
-// audio-event branches. No mutex/native thread/logger is linked. Guards belong
+// Same shared queue policy as runtime_stubs.cpp. No mutex/thread/logger. Guards belong
 // to the private audio world and are restored with RAM; they MUST NOT be shared
 // with a future live runtime. Malformed pointers remain fences, not recovery
 // successes which conceal an unowned memory access.
 static dkr_probe_audio_guard guards[8];
 void dkr_probe_audio_guards_initialize(void) { memset(guards,0,sizeof(guards)); }
+void dkr_probe_audio_guards_reset(void) {
+    for(unsigned i=0;i<8;++i)guards[i].immediate_events=guards[i].logged_empty=guards[i].logged_corrupt=0;
+}
 void dkr_probe_audio_guards_capture(dkr_probe_audio_guard out[8]) { memcpy(out,guards,sizeof(guards)); }
 void dkr_probe_audio_guards_restore(const dkr_probe_audio_guard in[8]) { memcpy(guards,in,sizeof(guards)); }
 static gpr address(uint32_t value) { return (gpr)(int32_t)value; }
@@ -24,46 +27,37 @@ static dkr_probe_audio_guard* guard_for(uint32_t queue) {
     for(unsigned i=0;i<8;++i) if(!guards[i].queue) { guards[i].queue=queue; return &guards[i]; }
     unsigned quietest=0;
     for(unsigned i=1;i<8;++i) if(guards[i].immediate_events<guards[quietest].immediate_events) quietest=i;
-    guards[quietest]=(dkr_probe_audio_guard){queue,0,0,0}; return &guards[quietest];
+    guards[quietest]=(dkr_probe_audio_guard){queue,0,0,0,0,0}; return &guards[quietest];
+}
+void dkr_probe_audio_queue_initialize(uint8_t* rdram,recomp_context* ctx) {
+    if(!dkr_probe_audio_enabled()) dkr_probe_block("unowned-audio-event-initialize");
+    const uint32_t queue=(uint32_t)ctx->r4,items=(uint32_t)ctx->r5,count=(uint32_t)ctx->r6;
+    if(count<2 || count>512 || !dkr_audio_range(queue,20) || !dkr_audio_range(items,count*28))
+        dkr_probe_block("invalid-owned-audio-pool");
+    range(rdram,queue,20); range(rdram,items,count*28);
+    dkr_probe_audio_guard* guard=guard_for(queue);
+    if(!dkr_audio_register_queue(guard,queue,items,count)) dkr_probe_block("overlapping-owned-audio-pool");
+}
+static void resume_sequence(void* user,uint8_t* rdram,uint32_t player) {
+    recomp_context next=*(recomp_context*)user;
+    next.f_odd=next.mips3_float_mode ? &next.f1.u32l : &next.f0.u32h;
+    next.r4=address(player);
+    __CSPPostNextSeqEvent(rdram,&next); /* isolated, checked native closure */
 }
 uint32_t dkr_probe_audio_event_next(uint8_t* rdram,recomp_context* ctx) {
     if(!dkr_probe_audio_enabled()) dkr_probe_block("unowned-audio-event-queue");
     const uint32_t queue=(uint32_t)ctx->r4,destination=(uint32_t)ctx->r5;
     range(rdram,queue,0x14); range(rdram,destination,0x10);
-    const gpr q=address(queue);
-    const uint32_t item=(uint32_t)MEM_W(8,q);
-    if(!item) {
-        dkr_probe_audio_guard* guard=guard_for(queue);
-        MEM_H(0,address(destination))=-1;
-        guard->immediate_events=0; guard->logged_empty=1;
-        return 16667;
-    }
-    range(rdram,item,0x1C);
-    const gpr p=address(item);
-    const uint32_t next=(uint32_t)MEM_W(0,p),previous=(uint32_t)MEM_W(4,p),sentinel=queue+8;
-    if(physical(previous)!=physical(sentinel)) dkr_probe_block("malformed-owned-audio-event-list");
-    if(next) {
-        range(rdram,next,8);
-        if(physical((uint32_t)MEM_W(4,address(next)))!=physical(item))
-            dkr_probe_block("malformed-owned-audio-event-backlink");
-    }
-    const uint32_t free_head=(uint32_t)MEM_W(0,q);
-    if(free_head) range(rdram,free_head,8);
-    // All ranges/list links validated BEFORE any guest or native write.
-    dkr_probe_audio_guard* guard=guard_for(queue);
-    MEM_W(8,q)=next;
-    if(next) MEM_W(4,address(next))=sentinel;
-    else MEM_W(12,q)=0;
-    for(unsigned b=0;b<16;b+=4) MEM_W(b,address(destination))=MEM_W(12+b,p);
-    const uint32_t delta=(uint32_t)MEM_W(8,p);
-    MEM_W(0,p)=free_head; MEM_W(4,p)=queue;
-    if(free_head) MEM_W(4,address(free_head))=item;
-    MEM_W(0,q)=item;
-    if(delta) { guard->immediate_events=0; guard->logged_empty=0; return delta; }
-    if(++guard->immediate_events<=256) return 0;
-    MEM_W(8,q)=0; MEM_W(12,q)=0; MEM_H(0,address(destination))=-1;
-    guard->immediate_events=0; guard->logged_corrupt=1;
-    return 16667;
+    dkr_probe_audio_guard value={queue,0,0,0,0,0};
+    for(unsigned i=0;i<8;++i)if(guards[i].queue==queue){value=guards[i];break;}
+    unsigned status=0;
+    const uint32_t globals=DKR_PROBE_REVISION==80 ? 0x800DCBA0U : 0x800DC630U;
+    const uint32_t delay=dkr_audio_queue_next(rdram,&value,destination,globals,resume_sequence,ctx,&status);
+    if(status==DKR_AUDIO_QUEUE_INVALID) dkr_probe_block("malformed-owned-audio-event-list");
+    if(status==DKR_AUDIO_QUEUE_EMPTY) dkr_audio_empty_event(rdram,destination);
+    value.logged_corrupt|=status;
+    *guard_for(queue)=value;
+    return delay;
 }
 static int retail_pointer(uint32_t value) { return value>=0x80000000U && value<0x80800000U; }
 int dkr_probe_audio_voice_guard(uint8_t* rdram,recomp_context* ctx) {

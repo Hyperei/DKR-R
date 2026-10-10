@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include "enhanced_water_policy.hpp"
 
 // Project-owned custom track support.
 //
@@ -302,6 +303,7 @@ struct Track {
     std::filesystem::path hd_pack_sibling;    // matched <track>-hd.zip, else empty
     bool hd_pack_sibling_mismatch = false;    // sibling present, digest differs
     std::optional<MusicInfo> music;           // manifest.music (schema 2)
+    std::optional<water::enhanced::Metadata> water; // Renderer-only appearance.
 };
 
 // Scans `directory` for *.dkrmap archives and parses their manifests. Invalid
@@ -384,6 +386,7 @@ void set_level_load_observer(LevelLoadObserver observer);
 // The recorded music of the enabled track that owns `level_id`, if it has any.
 // Asked at every level load, so it copies only the descriptor.
 [[nodiscard]] std::optional<MusicInfo> music_for_level(std::int32_t level_id);
+[[nodiscard]] std::optional<water::enhanced::Metadata> water_for_level(std::int32_t level_id);
 
 // WORLD_CUSTOM_TRACKS in the Blender addon. Track Select appends these races
 // to the same logical category as legacy courses, outside retail world arrays.

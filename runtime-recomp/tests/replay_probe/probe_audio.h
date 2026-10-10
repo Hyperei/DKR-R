@@ -17,13 +17,14 @@ void dkr_probe_audio_dmem_capture(uint8_t out[4096]);
 void dkr_probe_audio_dmem_restore(const uint8_t in[4096]);
 void dkr_probe_audio_rsp(uint8_t* rdram, uint32_t commands, unsigned bytes);
 /* Per-world native event guards are part of the audio checkpoint. */
-typedef struct dkr_probe_audio_guard {
-    uint32_t queue, immediate_events, logged_empty, logged_corrupt;
-} dkr_probe_audio_guard;
+#include "../../src/game/audio_event_queue_state.h"
+typedef dkr_audio_queue_guard dkr_probe_audio_guard;
 void dkr_probe_audio_guards_initialize(void);
+void dkr_probe_audio_guards_reset(void);
 void dkr_probe_audio_guards_capture(dkr_probe_audio_guard out[8]);
 void dkr_probe_audio_guards_restore(const dkr_probe_audio_guard in[8]);
 uint32_t dkr_probe_audio_event_next(uint8_t* rdram, struct recomp_context* ctx);
+void dkr_probe_audio_queue_initialize(uint8_t* rdram, struct recomp_context* ctx);
 int dkr_probe_audio_voice_guard(uint8_t* rdram, struct recomp_context* ctx);
 int dkr_probe_audio_bus_guard(uint8_t* rdram, struct recomp_context* ctx);
 #ifdef __cplusplus

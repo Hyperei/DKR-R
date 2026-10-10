@@ -31,6 +31,7 @@ std::shared_ptr<const AssetBank> AssetBank::derive(std::shared_ptr<const AssetBa
         // executable regions, a retail name bank or stock progression data.
         switch(key.first) {
         case 2:case 4:case 12:case 21:case 23:case 27:case 29:case 32:case 39:break;
+        case 34:object_parameter_fields(base->record(34,key.second),bytes);break;
         default:throw Error("This section has no scoped asset-bank adapter.");
         }
         if(key.second>=32768 || bytes.empty() || bytes.size()>MaxImage || bytes.size()>MaxStaged-total)

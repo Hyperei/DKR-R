@@ -1,5 +1,6 @@
 #include "legacy_mod_format.hpp"
 #include "legacy_mod_geometry.hpp"
+#include "legacy_mod_dependencies.hpp"
 #include <miniz/miniz.h>
 #include <mbedtls/sha256.h>
 #include <json/json.hpp>
@@ -247,7 +248,7 @@ View AssetImage::record(unsigned section, unsigned id) const {
     if (id >= entries.size()) throw Error("Track references an absent asset record.");
     return entries[id];
 }
-Analysis analyze(View base, View target, const std::string& patch_digest) {
+Analysis analyze(View base, View target, const std::string& patch_digest, bool behaviour_enabled) {
     Analysis result;
     result.source_revision = verified_revision(base);
     result.patch_digest = patch_digest;
@@ -263,18 +264,43 @@ Analysis analyze(View base, View target, const std::string& patch_digest) {
     if (community) result.profile = "community-track-pack";
     if (haunter) result.profile = "sixtyfour-haunter-2019";
     if (yooka) result.profile = "yooka-relocated-assets";
-    bool executable_change = false;
-    for (std::size_t i = 0; i < before.lut_start; ++i) {
-        if (i >= 0x10 && i < 0x18) continue; // N64 header CRC words, not executable behavior.
-        if (i>=target.size() || base[i] != target[i]) { executable_change = true; break; }
+    // Retain executable evidence independently of asset identity. A rebuilt
+    // image may relocate constants/functions; a byte count alone is NOT proof
+    // that it adds an ability. Only exact reviewed edits acquire permission.
+    Bytes evidence;std::set<std::size_t> covered;
+    if(after.lut_start==before.lut_start) {
+        for(unsigned i=0;i<BehaviourSites;++i) {
+            const auto& site=behaviour_sites()[i];
+            const auto pc=result.source_revision=="us.v77"?site.pc77:site.pc80;
+            const auto word=result.source_revision=="us.v77"?site.original77:site.original80;
+            if(!pc)continue;
+            const auto offset=std::size_t(pc-0x80000400U)+0x1000;
+            if(be32(base,offset)!=word)throw Error("The reviewed executable source signature changed.");
+            if(be32(target,offset)==site.replacement) {
+                result.behaviour.instructions[i]=site.replacement;
+                for(unsigned b=0;b<4;++b)covered.insert(offset+b);
+            }
+        }
     }
-    if (executable_change) {
-        if(yooka)
-            result.notes.push_back("Rebuilt executable and relocated asset directory detected; only reviewed character dependencies may be extracted. Rebuilt code is never executed.");
-        else if (community || haunter)
-            result.notes.push_back("Reviewed retail unlock conveniences detected; they must not be executed or applied globally.");
-        else result.notes.push_back("Executable/global-data changes are excluded. Extracted content inherits native game behaviour; custom code and unlock changes are not executed.");
+    for(std::size_t i=0;i<before.lut_start;++i) {
+        if(i>=0x10 && i<0x18)continue; // Header checksums are neither code nor behaviour.
+        if(i<target.size() && base[i]==target[i])continue;
+        ++result.behaviour.changed_bytes;
+        if(!covered.contains(i))++result.behaviour.unresolved_bytes;
+        for(unsigned b=0;b<4;++b)evidence.push_back(static_cast<std::uint8_t>(i>>(24-8*b)));
+        evidence.push_back(base[i]);evidence.push_back(i<target.size()?target[i]:0);
     }
+    if(result.behaviour.changed_bytes) {
+        result.behaviour.abi=BehaviourAbi;result.behaviour.evidence=sha256(evidence);
+        if(behaviour_enabled && result.source_revision=="us.v77") {
+            result.behaviour.native_profile=linked_behaviour_profile(slice(target,0,after.lut_start));
+            if(result.behaviour.native_profile) {
+                result.behaviour.unresolved_bytes=0;
+                result.behaviour.instructions.fill(0);
+            }
+        }
+    }
+    result.notes.push_back(behaviour_summary(result.behaviour));
     const unsigned data_sections[] = {0,2,4,6,8,10,12,15,17,18,19,21,23,25,27,29,30,32,34,35,37,39,41,43,44,47,49};
     std::set<std::pair<unsigned,unsigned>> changed;
     for (auto section : data_sections) {
@@ -321,7 +347,11 @@ Analysis analyze(View base, View target, const std::string& patch_digest) {
         };
         const auto visual_changed=[&](unsigned header) {
             const auto h=after.record(34,header),old=before.record(34,header);
-            if(!same(h,old) || h.size()<0x78 || h[0x53]!=0 || !h[0x55])return false;
+            if(!same(h,old)) {
+                if(!behaviour_enabled)return false;
+                try{if(object_parameter_fields(old,h))return true;}catch(const Error&){return false;}
+            }
+            if(h.size()<0x78 || h[0x53]!=0 || !h[0x55])return false;
             const auto model=be32(h,be32(h,0x10));
             const auto a=inflate_asset(before.record(29,model),4*MiB),b=inflate_asset(after.record(29,model),4*MiB);
             if(be16(a,0x24)!=be16(b,0x24))return true;
@@ -338,7 +368,12 @@ Analysis analyze(View base, View target, const std::string& patch_digest) {
         for(unsigned c=0;c<10;++c) {
             // A primary racing model, not incidental low-LOD/exporter bytes,
             // identifies the donor. All three vehicle graphs are then owned.
-            if(!visual_changed(roots[c]) && !visual_changed(roots[c]+10) && !visual_changed(roots[c]+20))continue;
+            bool stats_changed=false;
+            for(unsigned stat=0;stat<3;++stat) {
+                const auto a=before.record(15,9+stat),b=after.record(15,9+stat);
+                if(a.size()==b.size() && a.size()>=40 && be32(a,4*c)!=be32(b,4*c))stats_changed=true;
+            }
+            if(!visual_changed(roots[c]) && !visual_changed(roots[c]+10) && !visual_changed(roots[c]+20) && !(behaviour_enabled && stats_changed))continue;
             CharacterRoot root;root.base_character=c;root.portrait=portraits[c];
             root.name="Custom Racer "+std::to_string(c+1);
             root.headers={roots[c],roots[c]+10,roots[c]+20};
@@ -405,7 +440,85 @@ Analysis analyze(View base, View target, const std::string& patch_digest) {
     }
     if(result.target_digest=="4d4110b99653832dc810f175524e5d0bf4a9aecb5e07ea11adf506025068198b")identify_character(9,"Mario");
     if(result.target_digest=="737ca0cd721188d9ff32721eb8d8f7bd47e10f07fbab908a0ce8115537f06a6b")identify_character(9,"Dixie Kong");
+    // The ten title-name literals precede '?' / CREDITS.
+    // Decode the complete anchored table, not a lone matching word somewhere
+    // in rebuilt code. Ambiguous/structurally different layouts stay unnamed.
+    const auto title_names=[](View rom,std::size_t end)->std::vector<std::string> {
+        const std::string anchor="CREDITS";std::vector<std::string> found;
+        for(std::size_t at=0;at+32<=end;++at) {
+            if(!std::equal(anchor.begin(),anchor.end(),rom.begin()+at) || rom[at+7]!=0)continue;
+            auto p=at;std::vector<std::string> reverse;
+            for(unsigned n=0;n<11;++n) {
+                while(p && rom[p-1]==0)--p;
+                const auto last=p;while(p && rom[p-1]!=0 && last-p<=32)--p;
+                if(!p || last-p>32 || last==p)break;
+                std::string name(rom.begin()+p,rom.begin()+last);
+                if(std::any_of(name.begin(),name.end(),[](unsigned char c){return c<32 || c>126;}))break;
+                reverse.push_back(std::move(name));
+            }
+            if(reverse.size()!=11 || reverse.front()!="?")continue;
+            reverse.erase(reverse.begin());std::reverse(reverse.begin(),reverse.end());
+            constexpr const char* stock[]{"TIMBER","BUMPER","CONKER","TIPTUP","DRUMSTICK","PIPSY","BANJO","KRUNCH","WIZPIG","DIDDY"};
+            unsigned unchanged=0;for(unsigned i=0;i<10;++i)unchanged+=reverse[i]==stock[i];
+            if(unchanged<7)continue;
+            if(!found.empty())return {};found=std::move(reverse);
+        }
+        return found;
+    };
+    const auto native_names=title_names(base,before.lut_start),custom_names=title_names(target,after.lut_start);
+    constexpr unsigned name_index[]{7,1,3,2,4,6,5,0,10,9};
+    if(behaviour_enabled && native_names.size()==10 && custom_names.size()==10)for(auto& root:result.character_roots) {
+        const auto i=name_index[root.base_character];
+        if(i<10 && custom_names[i]!=native_names[i])root.name=custom_names[i];
+    }
+    result.characters.clear();
+    for(const auto& root:result.character_roots)result.characters.push_back(root.name);
+    if(behaviour_enabled) {
+        for(auto& root:result.tracks) {
+            root.behaviour=result.behaviour;
+            const auto dependencies=inspect_track_dependencies(before,after,root);
+            for(const auto& dependency:dependencies.records)if(dependency.section==34 && dependency.changed)try {
+                const auto fields=object_parameter_fields(before.record(34,dependency.id),after.record(34,dependency.id));
+                if(fields && !root.behaviour.abi) {root.behaviour.abi=BehaviourAbi;root.behaviour.evidence=sha256(evidence);}
+                root.behaviour.header_fields|=fields;
+            }catch(const Error& e){root.blockers.push_back(e.what());}
+            const auto behaviour_id=behaviour_identity(root.behaviour);
+            if(!behaviour_id.empty()) {
+                const auto identity="dkr-track-behaviour-1:"+root.content_id+":"+behaviour_id;
+                root.content_id=sha256(View(reinterpret_cast<const std::uint8_t*>(identity.data()),identity.size()));
+            }
+        }
+        for(auto& root:result.character_roots)root.behaviour=result.behaviour;
+    }
+    // MISC table values are copied only for the identified custom donor.
+    // Never overlay the shared ten-racer table: two mods can share a donor.
+    if(behaviour_enabled)for(auto& root:result.character_roots)for(unsigned stat=0;stat<3;++stat) {
+        const auto old=before.record(15,9+stat),replacement=after.record(15,9+stat);
+        if(old.size()!=replacement.size() || old.size()<40) {
+            root.blockers.push_back("Racer parameter table requires a native layout adapter.");break;
+        }
+        const auto at=root.base_character*4;
+        if(be32(old,at)==be32(replacement,at))continue;
+        if(!root.behaviour.abi) {
+            root.behaviour.abi=BehaviourAbi;
+            root.behaviour.evidence=sha256(evidence);
+        }
+        root.behaviour.stat_mask|=1U<<stat;root.behaviour.stat_bits[stat]=be32(replacement,at);
+        try{validate_behaviour(root.behaviour);}catch(const Error& e){root.blockers.push_back(e.what());}
+    }
+    if(behaviour_enabled)for(auto& root:result.character_roots) {
+        constexpr unsigned stage_headers[]{169,171,172,170,173,175,176,177,40,174};
+        for(auto id:{root.headers[0],root.headers[1],root.headers[2],stage_headers[root.base_character]})try {
+            const auto fields=object_parameter_fields(before.record(34,id),after.record(34,id));
+            if(fields && !root.behaviour.abi) {root.behaviour.abi=BehaviourAbi;root.behaviour.evidence=sha256(evidence);}
+            root.behaviour.header_fields|=fields;
+        }catch(const Error& e){root.blockers.push_back(e.what());}
+    }
     if (bigboo) result.notes.push_back("Includes custom music, projectile model and HUD textures; Greenwood Village deletion is excluded.");
+    for(const auto& [section,id]:result.changed_records) {
+        if(section==47)result.notes.push_back("GLOBAL_DATA record "+std::to_string(id)+" changed: whole-game state/layout changes are not transplanted into an additive mod.");
+        if(section==15 && (id<9 || id>11))result.notes.push_back("MISC record "+std::to_string(id)+" changed: this parameter needs an additional ownership/behaviour adapter.");
+    }
     if (result.tracks.empty() && result.character_roots.empty()) result.blockers.push_back("No identifiable track or character asset roots were found.");
     if (result.profile.empty()) result.notes.push_back("Structurally detected content; package intent and dependency closure need compatibility review.");
     return result;
@@ -416,14 +529,20 @@ std::string analysis_json(const Analysis& a) {
         {"target_sha256",a.target_digest},{"asset_sha256",a.asset_digest},{"profile",a.profile},
         {"notes",a.notes},{"blockers",a.blockers},{"characters",a.characters},
         {"changed_records",a.changed_records},{"tracks",json::array()},{"character_roots",json::array()}};
+    out["behaviour_contract"]=json::parse(encode_behaviour(a.behaviour));
+    out["behaviour_identity"]=behaviour_identity(a.behaviour);
     for(const auto& c:a.character_roots) out["character_roots"].push_back({
         {"id",c.content_id},{"name",c.name},{"base_character",c.base_character},
         {"portrait",c.portrait},{"headers",c.headers},{"blockers",c.blockers},
-        {"runtime_certified",false},{"behaviour","Inherited from original racer"}});
+        {"runtime_certified",false},{"behaviour",behaviour_summary(c.behaviour)},
+        {"behaviour_identity",behaviour_identity(c.behaviour)},
+        {"behaviour_contract",json::parse(encode_behaviour(c.behaviour))}});
     for (const auto& t : a.tracks) out["tracks"].push_back({{"id",t.content_id},{"name",t.name},
         {"carrier",t.carrier},{"geometry",t.geometry},{"object_map",t.object_map},
         {"collectables",t.collectables},{"race_type",t.race_type},{"vehicles",t.vehicles},
-        {"blockers",t.blockers}});
+        {"blockers",t.blockers},{"behaviour",behaviour_summary(t.behaviour)},
+        {"behaviour_identity",behaviour_identity(t.behaviour)},
+        {"behaviour_contract",json::parse(encode_behaviour(t.behaviour))}});
     return out.dump(2);
 }
 } // namespace dkr::mods

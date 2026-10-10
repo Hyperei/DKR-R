@@ -342,6 +342,28 @@ void distinct_modes() {
     for (int original : {0, 1}) {
         int stable = original;
         bool enabled = false;
+        bool automatic = true;
+        assert(host_backend_choice(stable, enabled, automatic) == 0);
+        assert(resolved_host_backend(stable, enabled, automatic) == SynchronizationMode::ExperimentalRollback);
+        for (int choice : {1, 2, 3, 0}) {
+            assert(select_host_backend(choice, stable, enabled, automatic));
+            assert(host_backend_choice(stable, enabled, automatic) == choice);
+            assert(resolved_host_backend(stable, enabled, automatic) ==
+                (choice == 0 ? SynchronizationMode::ExperimentalRollback :
+                 static_cast<SynchronizationMode>(choice - 1)));
+        }
+        const int retained = stable;
+        assert(!select_host_backend(-1, stable, enabled, automatic));
+        assert(!select_host_backend(4, stable, enabled, automatic));
+        assert(stable == retained && enabled && automatic);
+    }
+    static_assert(migrated_automatic_backend(false, false, false)); // clean profile
+    static_assert(!migrated_automatic_backend(false, true, true)); // preserve older explicit selection
+    static_assert(migrated_automatic_backend(true, true, true)); // key order independent
+    static_assert(!migrated_automatic_backend(true, false, false));
+    for (int original : {0, 1}) {
+        int stable = original;
+        bool enabled = false;
         assert(select_mode(2, stable, enabled));
         assert(stable == original && enabled);
         assert(selected_mode(stable, enabled) == SynchronizationMode::ExperimentalRollback);

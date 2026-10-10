@@ -1,0 +1,240 @@
+diff --git a/src/shared/rt64_water_params.h b/src/shared/rt64_water_params.h
+--- a/src/shared/rt64_water_params.h
++++ b/src/shared/rt64_water_params.h
+@@ -40,7 +40,8 @@
+     float4 viewBounds;      // pixel scissor, including the player viewport
+     float4 fieldOrigins[WATER_CRAFT_COUNT]; // current X/Z, previous X/Z, in world units
+     float4x4 viewProjection;
+-    float4x4 inverseViewProjection;
++    float4x4 inverseViewProjection; // inverse of final raster camera
++    float4x4 inverseWorldViewProjection; // decode DKR model MVP output only
+ };
+ 
+ struct WaterPushConstants {
+@@ -60,7 +61,7 @@
+ };
+ #ifdef HLSL_CPU
+ static_assert(sizeof(WaterMaterial) == 1552, "DKR water task ABI");
+-static_assert(sizeof(WaterDrawParams) == 1936, "DKR water shader ABI");
++static_assert(sizeof(WaterDrawParams) == 2000, "DKR water shader ABI");
+ static_assert(sizeof(WaterDrawParams) <= 2048, "D3D structured-buffer stride limit");
+ static_assert(sizeof(WaterFieldPushConstants) == 32, "Portable water field shader ABI");
+ static_assert(sizeof(WaterFieldPushConstants) <= 128, "Vulkan guaranteed push-constant budget");
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -3,6 +3,7 @@
+ //
+ 
+ #include "rt64_framebuffer_renderer.h"
++#include "WaterProjection.h"
+ #include "rt64_generated_mip_config.h"
+ #include "rt64_generated_mip_scope.h"
+ 
+@@ -1849,21 +1850,21 @@
+                     wp.camera = {camera.x, camera.y, camera.z, t};
+                     wp.viewProjection = drawData.modViewProjTransforms[proj.transformsIndex];
+                     if (wp.material.cameraPosition.w == 1.0f) {
+-                        wp.viewProjection = wp.material.cameraViewProjection;
++                        auto cameraViewProjection = hlslpp::float4x4(wp.material.cameraViewProjection);
+                         // Match the matrix used by interpolated water vertices,
+                         // not the current simulation camera (DKR stores MVPs).
+                         const auto address=uint32_t(wp.material.effects.y);
+                         const auto &addresses=drawData.worldTransformPhysicalAddresses;
+                         for (uint32_t i=0;i<addresses.size();i++) if (addresses[i]==address) {
+-                            if (i<drawData.lerpWorldTransforms.size()) wp.viewProjection=drawData.lerpWorldTransforms[i];
++                            if (i<drawData.lerpWorldTransforms.size()) cameraViewProjection=drawData.lerpWorldTransforms[i];
+                             break;
+                         }
+-                        const auto eye=hlslpp::mul(hlslpp::float4(0,0,1,0),hlslpp::inverse(wp.viewProjection));
+-                        wp.camera.x=float(eye.x/eye.w);
+-                        wp.camera.y=float(eye.y/eye.w);
+-                        wp.camera.z=float(eye.z/eye.w);
++                        setWaterCameraProjection(wp,cameraViewProjection,
++                            drawData.modViewProjTransforms[proj.transformsIndex]);
+                     }
+                     wp.inverseViewProjection = hlslpp::inverse(wp.viewProjection);
++                    if(wp.material.cameraPosition.w!=1.0f)
++                        wp.inverseWorldViewProjection=hlslpp::float4x4::identity();
+                     const auto fc = call.callDesc.rdpParams.fogColor;
+                     const bool fog = (call.callDesc.geometryMode & G_FOG) != 0;
+                     wp.fogColor = {std::pow(fc.x,2.2f), std::pow(fc.y,2.2f), std::pow(fc.z,2.2f), fog ? 1.0f : 0.0f};
+@@ -1874,7 +1875,9 @@
+                     wp.viewBounds = {float(triangles.scissor.left),float(triangles.scissor.top),float(triangles.scissor.right),float(triangles.scissor.bottom)};
+                     bool waterMatricesValid=std::isfinite(wp.camera.x) && std::isfinite(wp.camera.y) && std::isfinite(wp.camera.z)
+                         && std::abs(wp.viewportScale.z)>0.000001f && std::abs(wp.screenTransform.x)>0.000001f && std::abs(wp.screenTransform.y)>0.000001f;
+-                    for (uint32_t row=0;row<4;row++) for (uint32_t col=0;col<4;col++) waterMatricesValid &= std::isfinite(wp.inverseViewProjection[row][col]);
++                    for (uint32_t row=0;row<4;row++) for (uint32_t col=0;col<4;col++)
++                        waterMatricesValid &= std::isfinite(wp.inverseViewProjection[row][col]) &&
++                            std::isfinite(wp.inverseWorldViewProjection[row][col]);
+                     RenderPipeline *waterPipeline = nullptr;
+                     const bool classic=wp.material.optics.w>0.5f;
+                     bool hardware=!classic && wp.material.effects.w>0.5f &&
+diff --git a/src/shaders/WaterPS.hlsl b/src/shaders/WaterPS.hlsl
+--- a/src/shaders/WaterPS.hlsl
++++ b/src/shaders/WaterPS.hlsl
+@@ -1,4 +1,4 @@
+-#include "shared/rt64_water_params.h"
++#include "WaterProjection.hlsli"
+ [[vk::push_constant]] ConstantBuffer<WaterPushConstants> gConstants : register(b0);
+ StructuredBuffer<WaterDrawParams> waterDraws : register(t1);
+ Texture2D<float4> sceneColor : register(t2);
+@@ -96,32 +96,12 @@
+     return float4(color/max(coverage,0.000001),coverage);
+ }
+ 
+-float3 worldFromPixel(float2 pixel, float depth, WaterDrawParams p) {
+-    // Undo the actual raster screen transform, then the original N64 viewport.
+-    // Its Z scale/translate differ from a conventional 0..1 camera projection.
+-    float2 ndc = pixel / float2(p.viewportScale.w,p.viewportTranslate.w) * float2(2,-2) + float2(-1,1);
+-    ndc = (ndc-p.screenTransform.zw)/p.screenTransform.xy;
+-    float2 screen = (ndc * float2(0.5,-0.5)+0.5)*p.screen.xy;
+-    float3 projected = float3((screen-p.viewportTranslate.xy)/p.viewportScale.xy*float2(1,-1),
+-        (depth-p.viewportTranslate.z)/p.viewportScale.z);
+-    float4 world = mul(p.inverseViewProjection,float4(projected,1));
+-    return world.xyz / world.w;
+-}
+-
+ float opticalDepth(float2 pixel, float surfaceDepth, float3 world, WaterDrawParams p) {
+     float depth = sceneDepth.Load(int3(int2(boundPixel(pixel,p)),0));
+     if (depth >= 0.9999 || depth <= surfaceDepth+0.000001) return -1;
+-    float3 background = worldFromPixel(pixel,depth,p);
++    float3 background = waterWorldFromPixel(pixel,depth,p);
+     float distance = length(background-p.camera.xyz)-length(world-p.camera.xyz);
+     return distance > 0 && distance < 100000 ? min(distance,1600) : -1;
+-}
+-
+-float4 pixelFromWorld(float3 world, WaterDrawParams p) {
+-    float4 clip = mul(p.viewProjection,float4(world,1));
+-    float3 ndc = clip.xyz / clip.w;
+-    float3 screen = ndc*float3(1,-1,1)*p.viewportScale.xyz+p.viewportTranslate.xyz;
+-    float2 xy = (screen.xy/p.screen.xy*float2(2,-2)+float2(-1,1))*p.screenTransform.xy+p.screenTransform.zw;
+-    return float4((xy*float2(0.5,-0.5)+0.5)*float2(p.viewportScale.w,p.viewportTranslate.w),screen.z,clip.w);
+ }
+ 
+ float4 screenReflection(float3 world, float3 N, float3 V, float roughness, WaterDrawParams p) {
+@@ -130,10 +110,10 @@
+     float3 ray = reflect(-V,N);
+     float start = 5, distance = 16;
+     float3 origin = world + N*3;
+-    float2 previousPixel = pixelFromWorld(origin,p).xy;
++    float2 previousPixel = waterPixelFromWorld(origin,p).xy;
+     [loop] for (uint step=0;step<(p.material.identity.x>=3 ? 36u : 24u);step++) {
+         float3 rayPoint = origin+ray*distance;
+-        float4 pixel = pixelFromWorld(rayPoint,p);
++        float4 pixel = waterPixelFromWorld(rayPoint,p);
+         if (pixel.w <= 0 || any(pixel.xy < p.viewBounds.xy+2) || any(pixel.xy >= p.viewBounds.zw-2)) break;
+         float footprint = max(length(pixel.xy-previousPixel),1);
+         uint mip = min(uint(clamp(floor(log2(footprint)),0,5)),depthLevels-1);
+@@ -142,20 +122,20 @@
+         float minimum = sceneDepth.Load(int3(mipPixel,mip));
+         if (pixel.z >= minimum && minimum < 0.9999) {
+             float depth = sceneDepth.Load(int3(int2(pixel.xy),0));
+-            float3 background = worldFromPixel(pixel.xy,depth,p);
++            float3 background = waterWorldFromPixel(pixel.xy,depth,p);
+             float gap = length(rayPoint-p.camera.xyz)-length(background-p.camera.xyz);
+             if (depth < 0.9999 && gap >= 0) {
+                 float lo=start, hi=distance;
+                 [unroll] for (uint refine=0;refine<5;refine++) {
+                     float mid=(lo+hi)*0.5;
+-                    float4 at=pixelFromWorld(origin+ray*mid,p);
++                    float4 at=waterPixelFromWorld(origin+ray*mid,p);
+                     float z=sceneDepth.Load(int3(int2(boundPixel(at.xy,p)),0));
+                     if (at.z >= z) hi=mid; else lo=mid;
+                 }
+                 float3 hit=origin+ray*hi;
+-                float4 at=pixelFromWorld(hit,p);
++                float4 at=waterPixelFromWorld(hit,p);
+                 float z=sceneDepth.Load(int3(int2(boundPixel(at.xy,p)),0));
+-                float3 sampled=worldFromPixel(at.xy,z,p);
++                float3 sampled=waterWorldFromPixel(at.xy,z,p);
+                 float separation=length(hit-sampled);
+                 float edge=min(min(at.x-p.viewBounds.x,p.viewBounds.z-at.x),min(at.y-p.viewBounds.y,p.viewBounds.w-at.y));
+                 float confidence=saturate(1-separation/45)*saturate(edge/40)*saturate(1-hi/3000);
+@@ -303,7 +283,7 @@
+     // depth-validity branch. A branch crossing a shoreline otherwise leaves
+     // caustic receiver normals/filter widths undefined on some backends.
+     float bottomDepth=sceneDepth.Load(int3(int2(boundPixel(refractedPixel,p)),0));
+-    float3 bottom=worldFromPixel(refractedPixel,bottomDepth,p);
++    float3 bottom=waterWorldFromPixel(refractedPixel,bottomDepth,p);
+     float3 bottomNormal=cross(ddx(bottom),ddy(bottom));
+     bottomNormal*=rsqrt(max(dot(bottomNormal,bottomNormal),0.000001));
+     if (bottomNormal.y<0) bottomNormal=-bottomNormal;
+@@ -410,7 +390,7 @@
+     if (debug == 6) return float4(pow(saturate(backgroundColor(position.xy,p)),1.0/2.2),1);
+     if (debug == 7) return float4(thickness < 0 ? float3(0.8,0.1,0.1) : float3(0.1,0.8,0.2),1);
+     if (debug == 8) return float4(reflection.aaa,1);
+-    if (debug == 9) return float4(saturate(abs(worldFromPixel(position.xy,position.z,p)-worldPosition)*0.1),1);
++    if (debug == 9) return float4(saturate(abs(waterWorldFromPixel(position.xy,position.z,p)-worldPosition)*0.1),1);
+     if (debug == 10) {
+         float3 marker=float3(0,0,0);
+         [unroll] for (uint i=0;i<WATER_CRAFT_COUNT;i++) {
+diff --git a/src/shaders/WaterVS.hlsl b/src/shaders/WaterVS.hlsl
+--- a/src/shaders/WaterVS.hlsl
++++ b/src/shaders/WaterVS.hlsl
+@@ -1,4 +1,4 @@
+-#include "shared/rt64_water_params.h"
++#include "WaterProjection.hlsli"
+ [[vk::push_constant]] ConstantBuffer<WaterPushConstants> gConstants : register(b0);
+ StructuredBuffer<WaterDrawParams> waterDraws : register(t1);
+ 
+@@ -12,11 +12,7 @@
+     clip.xyz *= clip.w;
+     clip.xy = clip.xy * p.screenTransform.xy + p.screenTransform.zw * clip.w;
+     if (p.flags.x > 0.5) clip.z = p.flags.y * clip.w;
+-    if (p.material.cameraPosition.w == 1.0f) {
+-        world = mul(p.inverseViewProjection, world);
+-        world.xyz /= abs(world.w)>0.000001f ? world.w : 1.0f;
+-    }
+-    worldPosition = world.xyz;
++    worldPosition = waterDecodeWorld(world,p);
+     sourceColor = color;
+     surfaceNormal = normal.xyz;
+ }
+diff --git a/src/shaders/WaterNormalsCS.hlsl b/src/shaders/WaterNormalsCS.hlsl
+--- a/src/shaders/WaterNormalsCS.hlsl
++++ b/src/shaders/WaterNormalsCS.hlsl
+@@ -1,4 +1,4 @@
+-#include "shared/rt64_water_params.h"
++#include "WaterProjection.hlsli"
+ struct NormalPushConstants { uint vertexCount; };
+ [[vk::push_constant]] ConstantBuffer<NormalPushConstants> params : register(b0);
+ StructuredBuffer<float4> positions : register(t1);
+@@ -7,12 +7,7 @@
+ RWStructuredBuffer<float4> normals : register(u4);
+ StructuredBuffer<WaterDrawParams> waterDraws : register(t5);
+ float3 worldPoint(uint index, WaterDrawParams p) {
+-    float4 v = positions[index];
+-    if (p.material.cameraPosition.w == 1.0f) {
+-        v = mul(p.inverseViewProjection, v);
+-        v.xyz /= abs(v.w)>0.000001f ? v.w : 1.0f;
+-    }
+-    return v.xyz;
++    return waterDecodeWorld(positions[index],p);
+ }
+ 
+ [numthreads(64,1,1)]
+diff --git a/src/shaders/WaterSprayPS.hlsl b/src/shaders/WaterSprayPS.hlsl
+--- a/src/shaders/WaterSprayPS.hlsl
++++ b/src/shaders/WaterSprayPS.hlsl
+@@ -1,4 +1,4 @@
+-#include "shared/rt64_water_params.h"
++#include "WaterProjection.hlsli"
+ [[vk::push_constant]] ConstantBuffer<WaterPushConstants> gConstants : register(b0);
+ StructuredBuffer<WaterDrawParams> waterDraws : register(t1);
+ Texture2D<float> sceneDepth : register(t3);
+@@ -26,12 +26,8 @@
+     if (water>0) alpha*=saturate((water-fade.y)/12);
+     float depth=sceneDepth.Load(int3(pixel,0));
+     if (depth<0.9999) {
+-        float2 ndc=position.xy/float2(p.viewportScale.w,p.viewportTranslate.w)*float2(2,-2)+float2(-1,1);
+-        ndc=(ndc-p.screenTransform.zw)/p.screenTransform.xy;
+-        float2 screen=(ndc*float2(0.5,-0.5)+0.5)*p.screen.xy;
+-        float3 projected=float3((screen-p.viewportTranslate.xy)/p.viewportScale.xy*float2(1,-1),(depth-p.viewportTranslate.z)/p.viewportScale.z);
+-        float4 background=mul(p.inverseViewProjection,float4(projected,1));
+-        alpha*=saturate((length(background.xyz/background.w-p.camera.xyz)-fade.y)/12);
++        float3 background=waterWorldFromPixel(position.xy,depth,p);
++        alpha*=saturate((length(background-p.camera.xyz)-fade.y)/12);
+     }
+     float3 light=(p.material.skyColor.rgb*0.3+p.material.sunColor.rgb*0.7)*p.material.sunColor.a;
+     // Match the course haze without introducing a second exposure system.

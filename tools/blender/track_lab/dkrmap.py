@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -188,9 +189,44 @@ class TrackPackage:
         self.music: Optional[tuple] = None
         #: A native sequence's bytes (set_sequence), written as they are.
         self.sequence: Optional[bytes] = None
+        self.enhanced_water: Optional[Dict[str, object]] = None
         self.notes: List[str] = []
 
     # -- sources ---------------------------------------------------------
+
+    def set_render_water(self, profile: Dict[str, object], materials=None) -> None:
+        """Optional optical appearance only; never modifies wave/header physics."""
+        vectors = {"deep", "shallow", "sky", "sun"}
+        ranges = {"absorption": (0.00001, 1), "roughness": (0.02, 1),
+                  "visibility": (1, 100000), "ripple": (0, 4), "foam": (0, 4)}
+        if not isinstance(profile, dict) or set(profile) - vectors - set(ranges):
+            raise ValueError("Unknown enhanced water profile fields")
+        clean = {}
+        for name, value in profile.items():
+            if name in vectors:
+                if not isinstance(value, (list, tuple)) or len(value) != 3:
+                    raise ValueError(name + " needs three numbers")
+                value = [float(v) for v in value]
+                if not all(math.isfinite(v) and (name == "sun" or 0 <= v <= 16) for v in value):
+                    raise ValueError(name + " is outside its safe range")
+                if name == "sun" and not 0.00001 < sum(v*v for v in value) <= 100:
+                    raise ValueError("sun must be a non-zero bounded direction")
+            else:
+                value = float(value)
+                lo, hi = ranges[name]
+                if not math.isfinite(value) or not lo <= value <= hi:
+                    raise ValueError(name + " is outside its safe range")
+            clean[name] = value
+        hints = []
+        seen = set()
+        kinds = {"auto", "exclude", "calm", "waves", "waterfall", "fountain"}
+        for item in materials or []:
+            ordinal, kind = item.get("texture"), item.get("kind")
+            if type(ordinal) is not int or not 0 <= ordinal < 256 or ordinal in seen or kind not in kinds:
+                raise ValueError("Invalid or duplicate water material ordinal/kind")
+            seen.add(ordinal)
+            hints.append({"texture": ordinal, "kind": kind})
+        self.enhanced_water = {"version": 1, "profile": clean, "materials": hints}
 
     def write_object_map(self, object_map: ObjectMap, stem: str = "objects") -> str:
         """Write one map's glTF pair into ``source/``, named for its slot."""
@@ -567,6 +603,8 @@ class TrackPackage:
                 "file": self.hd_pack["file"],
                 "textureDigest": self.hd_pack["textureDigest"],
             }
+        if self.enhanced_water is not None:
+            manifest["enhancedWater"] = self.enhanced_water
         return manifest
 
     def missing_sections(self) -> List[str]:

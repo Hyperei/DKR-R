@@ -1,6 +1,7 @@
 #include "direct_session.hpp"
 #include "online_mod_sync_link.hpp"
 #include "mods/online_mod_manifest.hpp"
+#include "netplay_build_identity.hpp"
 #include <stdexcept>
 #include <iostream>
 namespace dkr::runtime::netplay {
@@ -25,6 +26,7 @@ struct DirectSessionTestAccess {
     static void run(Revision revision,SynchronizationMode mode) {
         DirectSession host;stop(host);std::string error;
         CompatibilityManifest m;m.release_version="test";m.build_fingerprint="test";
+        m.build_fingerprint=canonical_network_build_fingerprint(m.release_version);
         m.architecture="test";m.floating_point_mode="test";
         m.revision=revision;
         check(host.enable_owned_backend(true));
@@ -46,6 +48,16 @@ struct DirectSessionTestAccess {
         check(host.lobby_.create("room","modtest","Mods",Visibility::Private,"100","Host",host.manifest_,rules,error));
         host.state_=ConnectionState::Hosting;host.is_host_=true;host.sender_id_=100;host.match_id_=101;host.room_view_=host.lobby_.room();
         check(host.admission_incompatibility(m).empty());
+        auto old_build=m;
+        const auto tag=old_build.build_fingerprint.find("/mod-manifest-2/behaviour-1");
+        check(tag!=std::string::npos);
+        old_build.build_fingerprint.erase(tag,std::string("/mod-manifest-2/behaviour-1").size());
+        check(!host.admission_incompatibility(old_build).empty());
+        old_build=m;
+        const auto lifetime=old_build.build_fingerprint.find("/native-guest-lifetime-1");
+        check(lifetime!=std::string::npos);
+        old_build.build_fingerprint.erase(lifetime,std::string("/native-guest-lifetime-1").size());
+        check(!host.admission_incompatibility(old_build).empty());
         const auto original_candidate=m;
         check(session_content_sync_incompatibility(host.manifest_,m,true).empty());
         check(!session_content_sync_incompatibility(host.manifest_,m,false).empty());
@@ -80,8 +92,27 @@ struct DirectSessionTestAccess {
         check(host.handle_mod_packet_locked(999,data));check(host.mod_inbound_.empty());
         for(unsigned i=0;i<100;++i)check(host.handle_mod_packet_locked(201,data));
         check(host.pending_by_sender(201)->last_seen.time_since_epoch().count()!=0);
-        check(host.mod_inbound_.size()==32 && host.state_==ConnectionState::Hosting);
+        check(host.mod_inbound_.size()==100 && host.state_==ConnectionState::Hosting);
         DirectSession::ModPacket taken;check(host.take_mod_packet(taken)&&taken.sender==201&&!taken.data);
+        while(host.take_mod_packet(taken)){}
+        // A full advertised 256 KiB window must fit even on small MTU paths:
+        // 342 data envelopes at 768 bytes, not the old 32-packet ceiling.
+        for(const auto chunk:{768U,8192U}) {
+            data.header.type=protocol::MessageType::ModData;data.payload.assign(chunk+142,7);
+            const auto packets=(256U*1024+chunk-1)/chunk;
+            for(unsigned i=0;i<packets;++i)check(host.handle_mod_packet_locked(201,data));
+            check(host.mod_inbound_.size()==packets);
+            check(host.mod_inbound_bytes_==std::size_t(packets)*data.payload.size());
+            // Overflow remains bounded and cannot disconnect unrelated peers.
+            for(unsigned i=0;i<600;++i)check(host.handle_mod_packet_locked(201,data));
+            check(host.mod_inbound_bytes_<=512U*1024 && host.mod_inbound_.size()<=512);
+            const auto before=host.mod_inbound_bytes_;
+            check(host.handle_mod_packet_locked(201,data) && host.mod_inbound_bytes_==before);
+            check(host.state_==ConnectionState::Hosting);
+            while(host.take_mod_packet(taken)){}
+            check(host.mod_inbound_bytes_==0);
+        }
+        data.header.type=protocol::MessageType::ModControl;data.payload={1,2,3};
         check(host.complete_mod_admission(201,digest,error));check(host.occupied_players()==2);
         check(counters->retained==3); // retain exactly once across preparation -> admission
         check(host.complete_mod_admission(203,digest,error));check(host.occupied_players()==3);

@@ -1,0 +1,29 @@
+DKR-R 1.0.5 Beta 15
+
+Includes the latest Playtest 15 Track Select, session retry and expanded custom
+asset-cache fixes. Offline settings and saves are not bundled or overwritten.
+
+Host settings now offer four synchronization choices:
+  Auto
+  Host prediction (legacy Rollback)
+  Strict input sync (Lockstep)
+  Experimental rollback
+
+Auto is the default for fresh settings and selects Experimental rollback.
+Existing saved explicit backend selections remain unchanged. Auto is a host
+preference: lobbies still negotiate one of the three existing concrete backends.
+All racers should use the same Beta 15 build.
+
+The integrated Experimental rollback runtime is included on Windows x64,
+Linux x64, Linux ARM64 and Android ARM64. No separate game launcher is needed.
+Android touch input uses the selected local player profile. Moving the Android
+app into the background ends an active experimental match for all racers,
+instead of leaving other players waiting on a suspended input owner.
+
+The rollback arithmetic and negotiated content fingerprints use the same
+cross-platform policy. Headless replay checks cover both supported game
+revisions, checkpoint restoration and confirmed audio; they do not replace
+real-device, GPU-driver or cross-platform Quick Join playtesting.
+
+Experimental rollback remains experimental; headless regression checks are not
+a guarantee of real-world network stability or device performance.

@@ -4,7 +4,9 @@
 
 namespace dkr::runtime::netplay {
 namespace {
-constexpr std::size_t MaxModPacket=8192+142,MaxModQueue=128*1024;
+// One complete advertised window plus envelope/control headroom. Still bounded
+// per session; no admitted-game traffic is stored in this staging queue.
+constexpr std::size_t MaxModPacket=8192+142,MaxModQueue=512*1024;
 bool waiting(ConnectionState state){return state==ConnectionState::Hosting || state==ConnectionState::Lobby;}
 bool joining(ConnectionState state){return state==ConnectionState::Connecting || state==ConnectionState::AwaitingApproval;}
 }
@@ -92,7 +94,7 @@ bool DirectSession::handle_mod_packet_locked(std::uint64_t sender,const protocol
         if(type==protocol::MessageType::ModOffer || !pending || !pending->mods_approved || pending->mods_verified)return true;
     } else return true;
     // Drop/retry rather than grow a queue or terminate unrelated lobby peers.
-    if(packet.payload.empty() || packet.payload.size()>MaxModPacket || packet.payload.size()>MaxModQueue-mod_inbound_bytes_ || mod_inbound_.size()>=32)return true;
+    if(packet.payload.empty() || packet.payload.size()>MaxModPacket || packet.payload.size()>MaxModQueue-mod_inbound_bytes_ || mod_inbound_.size()>=512)return true;
     const auto* pending=is_host_?pending_by_sender(sender):nullptr;
     if(is_host_)pending_by_sender(sender)->last_seen=std::chrono::steady_clock::now();
     mod_inbound_bytes_+=packet.payload.size();

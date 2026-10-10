@@ -59,6 +59,9 @@ Manifest canonical(Manifest value) {
         const auto expected=c.kind==Kind::Character?CharacterAdapterVersion:c.kind==Kind::Track?TrackAdapterVersion:1U;
         if(c.adapter!=expected || payloads.at(c.payload)!=(c.kind==Kind::TrackLab?PayloadKind::TrackLab:PayloadKind::Xdelta))
             throw Error("This build cannot safely prepare the required online mod adapter.");
+        if((c.behaviour.empty() && c.behaviour_abi) ||
+           (!c.behaviour.empty() && (!valid_digest(c.behaviour) || c.behaviour_abi!=BehaviourAbi || c.kind==Kind::TrackLab)))
+            throw Error("This build cannot safely execute the lobby's legacy behaviour ABI.");
         used.insert(c.payload);
         if(c.kind==Kind::Character)++characters;else ++tracks;
     }
@@ -71,7 +74,7 @@ Bytes encode(const Manifest& input) {
     json doc={{"schema",value.schema},{"revision",value.revision},{"custom_ai",value.custom_ai},
               {"payloads",json::array()},{"content",json::array()}};
     for(const auto& p:value.payloads)doc["payloads"].push_back({{"kind",payload_kind(p.kind)},{"sha256",p.digest},{"source_revision",p.source_revision},{"size",p.size},{"source_label",p.source_label}});
-    for(const auto& c:value.content)doc["content"].push_back({{"kind",kind(c.kind)},{"id",c.id},{"name",c.name},{"payload",c.payload},{"artifact",c.artifact},{"bank",c.bank},{"adapter",c.adapter}});
+    for(const auto& c:value.content)doc["content"].push_back({{"kind",kind(c.kind)},{"id",c.id},{"name",c.name},{"payload",c.payload},{"artifact",c.artifact},{"bank",c.bank},{"adapter",c.adapter},{"behaviour",c.behaviour},{"behaviour_abi",c.behaviour_abi}});
     const auto text=doc.dump();if(text.size()>MaxManifestBytes)throw Error("Online mod manifest exceeds its byte limit.");
     return Bytes(text.begin(),text.end());
 }
@@ -99,12 +102,13 @@ Manifest decode(View bytes) {
         out.payloads.push_back({tag=="xdelta"?PayloadKind::Xdelta:PayloadKind::TrackLab,p.at("sha256").get<std::string>(),p.at("source_revision").get<std::string>(),p.at("size").get<std::uint64_t>(),p.at("source_label").get<std::string>()});
     }
     for(const auto& c:contents) {
-        keys(c,{"kind","id","name","payload","artifact","bank","adapter"});
+        keys(c,{"kind","id","name","payload","artifact","bank","adapter","behaviour","behaviour_abi"});
         const auto tag=c.at("kind").get<std::string>();
         if(tag!="track" && tag!="character" && tag!="tracklab")throw Error("Unknown online mod content.");
         out.content.push_back({tag=="track"?Kind::Track:tag=="character"?Kind::Character:Kind::TrackLab,
             c.at("id").get<std::string>(),c.at("name").get<std::string>(),c.at("payload").get<std::string>(),
-            c.at("artifact").get<std::string>(),c.at("bank").get<std::string>(),number(c.at("adapter"))});
+            c.at("artifact").get<std::string>(),c.at("bank").get<std::string>(),number(c.at("adapter")),
+            c.at("behaviour").get<std::string>(),number(c.at("behaviour_abi"))});
     }
     return canonical(std::move(out));
 }

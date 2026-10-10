@@ -108,7 +108,7 @@ static void camera(uint8_t* rdram,uint32_t ref,unsigned role,dkr_owned_identity_
     c->shot_owner=mode==7?c->owner:0;c->shot_node=mode==7?c->node:0;c->mode=mode;
     camera_identity=dkr_probe_camera_identity(s->scene,(unsigned)slot,c->epoch,2);
     uint32_t projection[3]={0};if(role==1)world_projection(rdram,projection);
-    matrix(p,dkr_probe_camera_identity(s->scene,(unsigned)slot,c->epoch,role),0,0,s->scene,0,projection,emit);
+    matrix(p,dkr_probe_camera_identity(s->scene,(unsigned)slot,c->epoch,role),role==1 ? 256U : 0U,0,s->scene,0,projection,emit);
 }
 static void hud_frame(uint8_t* rdram) {
     hud_layout=read32(rdram,a[5]);unsigned players=MEM_BU(0,addr(a[6])),session=read32(rdram,a[7]);

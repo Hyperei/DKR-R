@@ -1,6 +1,7 @@
 #include "custom_tracks.hpp"
 
 #include "custom_music_sequence.hpp"
+#include "enhanced_water_metadata.hpp"
 
 #include <algorithm>
 #include <array>
@@ -434,6 +435,16 @@ std::optional<MusicInfo> music_for_level(std::int32_t level_id) {
         }
     }
     return std::nullopt;
+}
+
+std::optional<water::enhanced::Metadata> water_for_level(std::int32_t level_id) {
+    std::scoped_lock lock(g_mutex);
+    for(const auto& track:g_tracks) {
+        const auto resolved=g_resolved_level_ids.find(track.id);
+        if(track.enabled && track.water && resolved!=g_resolved_level_ids.end() && resolved->second==level_id)
+            return track.water;
+    }
+    return {};
 }
 
 std::vector<TrackSelectEntry> track_select_entries() {
@@ -1910,6 +1921,14 @@ bool parse_track(const std::filesystem::path& root, Track& track,
                     " - its minimap would point nowhere";
             return false;
         }
+    }
+
+    if (manifest.contains("enhancedWater")) {
+        dkr::runtime::water::enhanced::Metadata appearance;
+        if(!dkr::runtime::water::enhanced::parse_metadata(manifest["enhancedWater"],appearance,error)) {
+            error="enhancedWater: "+error;return false;
+        }
+        track.water=appearance;
     }
 
     if (manifest.contains("music") &&

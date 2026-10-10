@@ -122,6 +122,7 @@ struct MatrixBinding {
     bool procedural_water = false;
     std::uint8_t water_scroll_tag = 0U;
     dkr::runtime::presentation::WorldProjection world_projection{};
+    bool camera_root = false;
 };
 
 struct SubmittedFrame {
@@ -129,6 +130,7 @@ struct SubmittedFrame {
     std::uint32_t task_number = 0;
     std::uint32_t scene_generation = 0;
     std::uint64_t submission_sequence = 0;
+    double presentation_time = 0.0;
     std::unordered_map<std::uint32_t, MatrixBinding> matrices;
     std::unordered_map<std::uint32_t,
         std::vector<dkr::runtime::presentation::PresentationMarker>> markers;
@@ -169,6 +171,7 @@ std::deque<SubmittedFrame> g_submitted_frames;
 bool g_submission_overflowed = false;
 std::atomic<std::uint32_t> g_scene_generation{1U};
 std::atomic<std::uint64_t> g_authored_frame_sequence{0U};
+std::atomic<std::uint64_t> g_presentation_ticks{0U};
 std::atomic<std::uint64_t> g_next_submission_sequence{1U};
 std::atomic<std::uint32_t> g_next_lifetime{1U};
 std::uint32_t g_next_presentation_token = 1U;
@@ -193,6 +196,7 @@ thread_local dkr::runtime::presentation::RetainedMetadataTable<std::uint32_t,
 thread_local dkr::runtime::presentation::RetainedMetadataTable<std::uint64_t,
     dkr::runtime::presentation::ShadowOwnerMotionSample> g_active_owned_shadow_motion;
 thread_local std::uint32_t g_active_task_scene_generation = 0U;
+thread_local double g_active_task_presentation_time = 0.0;
 thread_local std::unordered_map<std::uint32_t, MatrixBinding>
     g_active_matrix_map;
 thread_local std::unordered_map<std::uint32_t,
@@ -672,7 +676,7 @@ void RegisterCameraMatrix(std::uint8_t* rdram,
     g_matrix_maps[g_recording_buffer & 1U].insert_or_assign(
         Physical(matrix_address), MatrixBinding{identity, 0U, false, false,
             false, false, 0U, matrix_role == 1U ? ReadWorldProjection(rdram) :
-                dkr::runtime::presentation::WorldProjection{}});
+                dkr::runtime::presentation::WorldProjection{}, matrix_role == 1U});
     if (InterpolationTraceEnabled()) {
         g_interpolation_trace.camera_roots.fetch_add(
             1U, std::memory_order_relaxed);
@@ -708,6 +712,7 @@ dkr::runtime::presentation::matrix_interpolation(
             binding->procedural_water,
             binding->water_scroll_tag,
             binding->world_projection,
+            binding->camera_root,
         };
     }
     return {};
@@ -949,6 +954,7 @@ dkr::runtime::presentation::shadow_owner_motion_sample(
 
 dkr::runtime::presentation::TaskIdentityScope::TaskIdentityScope(
     std::uint8_t* rdram_snapshot, std::uint32_t display_list_address) {
+    g_active_task_presentation_time = 0.0;
     g_active_matrix_map.clear();
     g_active_marker_map.clear();
     g_active_shadow_owner_motion.clear();
@@ -1005,6 +1011,7 @@ dkr::runtime::presentation::TaskIdentityScope::TaskIdentityScope(
     g_active_shadow_owner_motion = std::move(frame.shadow_owner_motion);
     g_active_task_interpolation_allowed = frame.interpolation_allowed;
     g_active_task_scene_generation = frame.scene_generation;
+    g_active_task_presentation_time = frame.presentation_time;
     if (InterpolationTraceEnabled()) {
         g_interpolation_trace.sidecar_matches.fetch_add(
             1U, std::memory_order_relaxed);
@@ -1017,6 +1024,7 @@ dkr::runtime::presentation::TaskIdentityScope::~TaskIdentityScope() {
     g_active_shadow_owner_motion.clear();
     g_active_task_interpolation_allowed = false;
     g_active_task_scene_generation = 0U;
+    g_active_task_presentation_time = 0.0;
     g_active_owned_task=false;g_active_owned_shadow_policies.clear();
     g_active_owned_matrices.clear();g_active_owned_markers.clear();g_active_owned_shadow_motion.clear();
 }
@@ -1027,11 +1035,12 @@ dkr::runtime::presentation::TaskIdentityScope::TaskIdentityScope(
 
 dkr::runtime::presentation::TaskIdentityScope::TaskIdentityScope(
     std::span<const LocatedPresentationMarker> markers,std::span<const OwnedMatrixBinding> matrices,
-    std::span<const OwnedShadowBinding> shadows,std::uint32_t scene,bool allowed) {
+    std::span<const OwnedShadowBinding> shadows,std::uint32_t scene,bool allowed,double time) {
     dkr::runtime::netplay::experimental::performance::Scope identity_timing(
         dkr::runtime::netplay::experimental::performance::Stage::Identity);
     g_active_matrix_map.clear();g_active_marker_map.clear();g_active_shadow_owner_motion.clear();
     g_active_owned_task=true;
+    g_active_task_presentation_time=std::isfinite(time) && time>=0 ? time : 0;
     if(markers.size()>8192 || matrices.size()>8192 || shadows.size()>8192) {
         g_active_owned_matrices.clear();g_active_owned_markers.clear();
         g_active_owned_shadow_policies.clear();g_active_owned_shadow_motion.clear();
@@ -1047,7 +1056,7 @@ dkr::runtime::presentation::TaskIdentityScope::TaskIdentityScope(
     for(const auto& binding:matrices) {
         if(!ValidRange(binding.address,64))continue;
         const auto& i=binding.interpolation;
-        const MatrixBinding value{i.identity,0,i.interpolate_vertices,i.interpolate_texcoords,i.interpolate_tiles,i.procedural_water,i.water_scroll_tag,i.world_projection};
+        const MatrixBinding value{i.identity,0,i.interpolate_vertices,i.interpolate_texcoords,i.interpolate_tiles,i.procedural_water,i.water_scroll_tag,i.world_projection,i.camera_root};
         if(binding.weak)g_active_owned_matrices.try_emplace(Physical(binding.address),value);
         else g_active_owned_matrices.insert_or_assign(Physical(binding.address),value);
     }
@@ -1092,6 +1101,10 @@ bool dkr::runtime::presentation::task_is_owned() {
 
 std::uint32_t dkr::runtime::presentation::task_scene_generation() {
     return g_active_task_scene_generation;
+}
+
+double dkr::runtime::presentation::task_presentation_time() {
+    return g_active_task_presentation_time;
 }
 
 std::uint64_t dkr::runtime::presentation::authored_frame_sequence() {
@@ -1283,6 +1296,7 @@ extern "C" void dkr_presentation_scene_begin(std::uint8_t*, recomp_context*) {
     g_wave_block_valid = false;
     g_submission_overflowed = false;
     g_authored_frame_sequence.store(0U, std::memory_order_relaxed);
+    g_presentation_ticks.store(0U, std::memory_order_relaxed);
     g_submitted_frames.clear();
     g_active_matrix_map.clear();
     g_active_marker_map.clear();
@@ -1315,6 +1329,8 @@ extern "C" void dkr_presentation_frame_begin(std::uint8_t* rdram,
     dkr::runtime::hud::begin_authored_frame(rdram);
     dkr::runtime::presentation::postrace_presentation_begin_frame();
     dkr::runtime::custom_music::tick(rdram);
+    const auto visual_ticks=std::clamp(ReadU32(rdram,dkr::runtime::revision_addresses::LogicUpdateRate),1U,12U);
+    g_presentation_ticks.fetch_add(visual_ticks,std::memory_order_relaxed);
     const std::uint64_t frame =
         g_authored_frame_sequence.fetch_add(
             1U, std::memory_order_relaxed) + 1U;
@@ -1503,6 +1519,7 @@ extern "C" void dkr_presentation_task_submitted(std::uint8_t* rdram,
         g_scene_generation.load(std::memory_order_relaxed);
     frame.submission_sequence =
         g_next_submission_sequence.fetch_add(1U, std::memory_order_relaxed);
+    frame.presentation_time = double(g_presentation_ticks.load(std::memory_order_relaxed))/60.0;
     frame.interpolation_allowed = g_recording_interpolation_allowed;
     std::scoped_lock lock(g_identity_mutex);
     if (g_submission_overflowed) {

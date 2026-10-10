@@ -1,0 +1,14 @@
+diff --git a/src/gui/rt64_inspector.cpp b/src/gui/rt64_inspector.cpp
+--- a/src/gui/rt64_inspector.cpp
++++ b/src/gui/rt64_inspector.cpp
+@@ -17,1 +17,2 @@
+ #include "plume_vulkan.h"
++#include "android_imgui_rotation.hpp"
+ 
+@@ -306,2 +307,5 @@
+                 VulkanCommandList *interfaceCommandList = static_cast<VulkanCommandList *>(commandList);
++                // ImGui IO/touch coordinates stay logical. Transform only the
++                // draw snapshot, under frameMutex, and restore it exactly.
++                dkr::runtime::android_rotation::ImGuiDrawScope rotated(drawData, static_cast<const VulkanSwapChain*>(swapChain)->createInfo.preTransform);
+                 ImGui_ImplVulkan_RenderDrawData(drawData, interfaceCommandList->vk);
+                 break;

@@ -2,6 +2,77 @@
 #include "legacy_character_menu.hpp"
 
 namespace dkr::mods {
+void animate_character_textures(std::span<std::uint8_t> memory,const recomp_context& ctx,OriginalPiHandler animate) {
+    CharacterMenuFields fields;fields.fill(0x80000000U);CharacterMenuMemory g(memory,fields);
+    const auto object=std::uint32_t(ctx.r4),sp=std::uint32_t(ctx.r29);
+    const auto add=[](std::uint32_t p,unsigned n){if(p>UINT32_MAX-n)throw Error("Texture animation address overflow.");return p+n;};
+    const auto index=g.read(add(object,0x3a),1),header=g.read(add(object,0x40));
+    const auto count=g.read(add(header,0x55),1);
+    if(index>=count || index>=128 || !count || count>=128)throw Error("Custom animated model index exceeds its header.");
+    const auto instances=g.read(add(object,0x68));
+    const auto model=g.read(g.read(add(instances,index*4)));
+    if(static_cast<std::int16_t>(g.read(add(model,0x50),2))<=0)return;
+    const auto batches=g.read(add(model,0x38)),textures=g.read(model);
+    const auto n=static_cast<std::int16_t>(g.read(add(model,0x28),2));
+    const auto nt=static_cast<std::int16_t>(g.read(add(model,0x22),2));
+    if(n<=0)return;
+    if(nt<0 || nt>256 || !animate || (sp&7) || (sp&0xe0000000U)!=0x80000000U || (sp&0x1fffffffU)<0x200)
+        throw Error("Custom texture animation callback/range is invalid.");
+    g.read(sp-0x200);g.read(sp-1,1);g.read(add(batches,unsigned(n)*12-1),1);
+    if(nt)g.read(add(textures,unsigned(nt)*8-1),1);
+    // Validate every referenced texture BEFORE writing any batch. No malformed
+    // index can partially update animation or consume random numbers.
+    for(unsigned i=0;i<unsigned(n);++i) {
+        const auto row=add(batches,i*12),flags=g.read(row+8),id=g.read(row,1);
+        if(!(flags&0x10000) || id==255)continue;
+        if(id>=unsigned(nt))throw Error("Animated batch texture is outside its model table.");
+        const auto texture=g.read(textures+8*id);g.read(add(texture,0x1f),1);
+    }
+    // At most 255 different texture indexes. A fixed open-address table
+    // preserves the FIRST earlier random batch (including texture aliases),
+    // without the hacked ROM's quadratic scan or heap allocations per tick.
+    struct First {std::uint32_t texture=0,row=0;};std::array<First,512> first{};
+    for(unsigned i=0;i<unsigned(n);++i) {
+        const auto row=batches+i*12,flags=g.read(row+8),id=g.read(row,1);
+        if(!(flags&0x10000) || id==255)continue;
+        const auto texture=g.read(textures+8*id);
+        First* entry=nullptr;
+        if(flags&0x800000) {
+            unsigned slot=(texture>>2)*2654435761U & 511U;
+            while(first[slot].texture && first[slot].texture!=texture)slot=(slot+1)&511U;
+            entry=&first[slot];
+            if(entry->texture) {
+                g.write(row+7,g.read(entry->row+7,1),1);
+                g.write(row+8,(flags&~0x06000000U)|(g.read(entry->row+8)&0x06000000U));
+                continue;
+            }
+        }
+        const auto offset=sp-4;g.write(offset,g.read(row+7,1)<<6);
+        auto call=ctx;call.r29=static_cast<std::int32_t>(sp-0x200);
+        call.f_odd=call.mips3_float_mode?&call.f1.u32l:&call.f0.u32h;
+        call.r4=static_cast<std::int32_t>(texture);call.r5=static_cast<std::int32_t>(row+8);
+        call.r6=static_cast<std::int32_t>(offset);call.r7=ctx.r5;
+        animate(memory.data(),&call);
+        g.write(row+7,(g.read(offset)>>6)&255U,1);
+        if(entry)*entry={texture,row};
+    }
+}
+std::uint32_t character_stat(const CharacterRoster& roster,std::span<std::uint8_t> memory,
+    unsigned stat,std::uint32_t racer,std::uint32_t native_bits) {
+    if(stat>=3 || racer>UINT32_MAX-4)throw Error("Invalid custom-racer parameter call.");
+    CharacterMenuFields fields;fields.fill(0x80000000U);CharacterMenuMemory g(memory,fields);
+    const auto player=g.read(racer,2),index=g.read(racer+2,1),donor=g.read(racer+3,1);
+    const auto slot=character_presentation_slot(player,index);
+    const auto character=roster.entry(slot);
+    if(!character)return native_bits;
+    // Human controller and AI participant identities must not alias. Ghosts,
+    // boss racers and other objects keep the native lookup even with a donor
+    // ID matching an enabled mod elsewhere in this scene.
+    if((player<4 && roster.ai(slot)) || (player==0xffff && !roster.ai(slot)) ||
+       character->base_character!=donor)return native_bits;
+    if(!(character->behaviour.stat_mask&(1U<<stat)))return native_bits;
+    return character->behaviour.stat_bits[stat];
+}
 void dispatch_character_ai_event(CharacterRoster& roster,CharacterAiState& state,std::span<std::uint8_t> memory,
     const recomp_context& ctx,unsigned event,std::span<const std::uint8_t> unlocked,OriginalPiHandler random) {
     CharacterMenuFields fields;fields.fill(0x80000000U);CharacterMenuMemory g(memory,fields);

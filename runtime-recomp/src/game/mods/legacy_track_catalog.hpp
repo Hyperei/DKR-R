@@ -12,12 +12,16 @@ struct TrackCatalogItem {
     std::uint64_t managed_bytes=0,imported_at=0;
     unsigned carrier=0,vehicles=0,race_type=0,base_character=0;
     bool enabled=false,hidden=false;
+    std::string behaviour_identity;
+    unsigned behaviour_abi=0;
 };
 struct TrackCatalogView {
     bool busy=false,modal=false,succeeded=false;
     std::string stage,result;
     unsigned completed=0,total=0;
     std::vector<TrackCatalogItem> tracks;
+    // Display-only work counters. Cached labels/sizes are never asset proofs.
+    unsigned display_cache_hits=0,size_scans=0,source_reads=0;
 };
 // Exact frozen selection, independent of a library's mutable enabled/hidden UI.
 struct CatalogSource {std::filesystem::path library;TrackCatalogItem item;};

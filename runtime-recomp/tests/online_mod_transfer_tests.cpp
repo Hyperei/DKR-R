@@ -28,6 +28,8 @@ int main() {
         const auto metadata=encode(manifest);const auto digest=identity(manifest);
         Message status{Operation::Progress,digest,{},42,25001,Bytes{2,'D','o','w','n','l','o','a','d'}};
         check(decode_message(encode_message(status))==status);
+        auto legacy_wire=encode_message(status);legacy_wire[3]=1;
+        rejects([&]{decode_message(legacy_wire);});
         auto invalid_progress=status;invalid_progress.offset=25002;rejects([&]{encode_message(invalid_progress);});
         invalid_progress=status;invalid_progress.bytes[0]=5;rejects([&]{encode_message(invalid_progress);});
         invalid_progress=status;invalid_progress.bytes.push_back('\n');rejects([&]{encode_message(invalid_progress);});
@@ -124,6 +126,37 @@ int main() {
             }
         }
         check(ordered_bytes==payload && delayed && windows==4 && inbox.bytes()==0);
+        // Rolling credits must never resend an already transmitted tail. Lost
+        // gaps use explicit requests, so unordered/lost delivery stays safe.
+        for(const auto budget:{768U,8192U}) {
+            Download rolling;rolling.offer(digest,metadata.size());
+            check(rolling.manifest_chunk(response(rolling.request(budget),metadata,MaxChunkBytes)));rolling.consent();
+            Upload sender(bundle);sender.request({Operation::Consent,digest},budget);
+            sender.request(rolling.request(budget),budget);ChunkInbox pending;Bytes rebuilt;
+            std::uint32_t anchor=0;bool lost=false;unsigned credit_count=0,retry_count=0;
+            while(rolling.phase()==TransferPhase::Payloads) {
+                const auto chunk=sender.next();
+                if(!chunk) {sender.request(rolling.request(budget),budget);++retry_count;continue;}
+                sender.sent();
+                if(!lost && chunk->offset==budget){lost=true;continue;}
+                pending.push(*chunk,rolling.request(budget));
+                while(auto ready=pending.take(rolling.request(budget))) {
+                    check(rolling.accept_payload_chunk(*ready));
+                    rebuilt.insert(rebuilt.end(),ready->bytes.begin(),ready->bytes.end());rolling.persisted(ready->bytes.size());
+                    if(rolling.offset()==payload.size()){rolling.payload_verified();break;}
+                    if(rolling.offset()-anchor>=transfer_window_bytes(budget)/2) {
+                        auto credit=rolling.request(budget);credit.operation=Operation::PayloadCredit;
+                        check(decode_message(encode_message(credit))==credit);
+                        const auto before=sender.next();sender.request(credit,budget);
+                        if(before)check(sender.next()->offset==(std::max)(before->offset,credit.offset));
+                        anchor=rolling.offset();++credit_count;
+                    }
+                }
+            }
+            check(rebuilt==payload && credit_count>0 && retry_count==1 && pending.bytes()==0);
+            auto invalid=Message{Operation::PayloadCredit,digest,id,0,static_cast<std::uint32_t>(payload.size())};
+            rejects([&]{sender.request(invalid,budget);});
+        }
         const Message request{Operation::PayloadRequest,digest,hash,0,static_cast<std::uint32_t>(payload.size())};
         auto good=response(request,payload,768);check(inbox.push(good,request));check(!inbox.push(good,request));
         auto bad=good;bad.bytes[0]^=1;rejects([&]{inbox.push(bad,request);});

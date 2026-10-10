@@ -1,0 +1,25 @@
+DKR-R 1.0.5-beta.15-playtest.15-fix.2
+Custom-character cache allocation correction
+
+Includes all Playtest 15 and Fix 1 changes, including the Track Select
+checkpoint and fresh host/join retry corrections. All peers must update to
+this exact build before testing online together.
+
+The supplied log stopped an offline custom-character session with
+"Guest cache exceeds its allocated capacity." This was not evidence of the
+PC exhausting RAM. The native cache validator still enforced the vanilla
+700-texture / 100-sprite / 70-model limits despite the existing Patch Pipeline
+allocating larger metadata arrays for an additive boot asset namespace.
+
+Scene-transition validation and native rollback restore now use the exact
+cache allocation policy already used by the guest Patch Pipeline. Limits are
+derived once from verified boot content, not from a mutable scene, guest
+counts or checkpoint claims. Restores retain that boot allocation authority.
+Vanilla allocations and limits are unchanged. Over-capacity counts, invalid
+pointers, stale transactions and unadmitted assets still fail closed. The
+256 KiB native checkpoint budget and the guest's 8 MiB memory are not enlarged.
+Genuine future capacity failures report the cache kind, count and allocation.
+
+Validation is headless only; no gameplay, launcher, sound or UI tests are
+automatically launched. Real multiplayer gameplay remains a playtester check.
+Private ROM fixtures are not distributed in these packages.

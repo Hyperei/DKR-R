@@ -1,0 +1,56 @@
+DKR-R 1.0.5 beta 15 - Playtest 15
+Experimental Rollback: input delivery, pacing and CPU efficiency
+
+Use the existing Backend dropdown. Host Prediction and Strict Input Sync keep
+their existing simulation, input-delay calculation and game flow. There is no
+separate launcher and no forced test track.
+
+All participants must update to Playtest 15. The experimental input codec and
+owned CPU contract changed; mixed builds must not enter the same match.
+
+Changes:
+- Independent, paced live input publication during corrections and waits.
+  Two frames of bounded lead; historical final input is never overwritten.
+- Phase-preserving simulation cadence and at most two catch-up ticks per
+  bounded pump slice. Outages never create seconds of queued input/frame debt.
+- Host relay forwards the newest actual input without waiting for an earlier
+  packet gap. Selective receipts limit repair traffic to missing runs.
+  Unchanged input polls skip packet allocation/encryption; receipt maps update
+  only when actual input arrives, not on every poll for every peer and lane.
+- Per-owner replacement/expiry of unsent live input in the lobby transport.
+  Reliable repair, control, scene, save and checkpoint traffic stays retained.
+- Ordinary menu animation can predict/replay. Actual resource entry points
+  stop before mutation, restore the partial tick, and retry on agreed input.
+  Full vanilla flow, scene transactions, native participants, save isolation
+  and confirmed-only audio/rumble remain in place.
+  Menu ports explicitly ignored by the shared-control policy do not cause
+  needless state corrections; every owner's actual input is still confirmed.
+- Patch Pipeline checked-memory fast path removes function-call overhead,
+  retaining pointer/lane/alignment/range checks, operation budgets, nested
+  native ownership, watchpoints and source-address fault diagnostics.
+- Experimental automatic input delay accounts for the prediction window,
+  rather than using the legacy host-authoritative deadline. Manual settings
+  are not overridden. Automatic delay is fixed consistently for each launch.
+- Bounded five-second flow diagnostics distinguish prediction-window waits,
+  resource confirmation, replay, transport pressure and checkpoint memory.
+  The wait notification now distinguishes exhausted input from resource changes.
+
+The renderer image quality and confirmed state completeness are not reduced.
+An exhausted prediction window still MUST wait: unlimited prediction cannot
+guarantee synchronization during an outage or on a machine unable to keep up.
+Full-speed team gameplay, WAN latency, frame pacing and responsiveness must
+still be checked on real devices. Automated/headless checks are not evidence
+of universally smooth gameplay or an end-to-end physical input-latency result.
+
+Team checks requested:
+1. Two, three and four players, no mods first, same ROM revision and build.
+2. Normal intro/menus, independent character selection, Track Select previews,
+   standard races, race finishes/restarts, Adventure/boss wins and player exit.
+3. Repeat with the normal shared mod library and enabled texture packs.
+4. Start with automatic input delay and a rollback window of 10, then compare
+   the same session using your preferred manual settings. A two-frame window
+   may not absorb a long-distance route even when rollback is functioning.
+5. If a stall occurs, send logs from the same session on host and clients.
+   Look for [rollback][flow], [rollback][progress], and any owned fault.
+
+No ROM, personal save, private checkpoint or test executable is distributed.

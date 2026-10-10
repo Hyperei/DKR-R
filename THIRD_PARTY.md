@@ -12,6 +12,7 @@ N64ModernRuntime must also satisfy GPL-3.0; see
 | N64Recomp | Static CPU and RSP translation | MIT |
 | N64ModernRuntime | libultra-compatible host services | GPL-3.0 |
 | RT64 | RDP rendering and presentation | MIT |
+| elliotttate/wave-race-64-recomp | Enhanced-water renderer reference, adapted through DKR-R's patch pipeline | MIT |
 | GekkoNet | Pinned rollback research foundation; DKR-R currently uses its certified deterministic input-delay path while native host-stack rewind remains fail-closed | BSD-2-Clause |
 | Monocypher | Authenticated encryption for online multiplayer datagrams | BSD-2-Clause or CC0 (DKR-R uses BSD-2-Clause) |
 | libdatachannel | Optional WebRTC data channels and WebSocket signaling for five-character Quick Join | MPL-2.0 |
@@ -31,6 +32,11 @@ Exact dependency commits are recorded in `dependencies.lock.json`. Windows
 packages include applicable notices in `ThirdPartyLicenses`. Linux AppImages
 include project notices plus the copyright records and common licences for each
 deployed system library under `usr/share/doc/dkr-port`.
+
+The optional enhanced-water adapter derives renderer code from Wave Race 64
+Recomp at commit `9041cc8024f6d2015859f88f5a0307b36cd4e50a` (see the
+source patch provenance for the exact source revision). No game assets or ROM
+data are included. Its MIT notice is distributed as `WAVE-RACE-WATER-LICENSE.txt`.
 
 The complete GekkoNet licence is distributed as `GEKKONET-LICENSE.txt`.
 The complete Monocypher licence is distributed as `MONOCYPHER-LICENSE.txt`.

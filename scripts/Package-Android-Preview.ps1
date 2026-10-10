@@ -53,9 +53,21 @@ New-Item -ItemType Directory $notices | Out-Null
 foreach ($file in @('LICENSE.md','THIRD_PARTY.md','runtime-recomp/COPYING-NOTICE.md')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $file) -Destination $notices
 }
+if (Test-Path -LiteralPath (Join-Path $projectRoot 'docs/ENHANCED-WATER-BETA15.txt')) {
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/ENHANCED-WATER-BETA15.txt') -Destination $notices
+}
+if ((Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw).Trim() -eq '1.0.5-beta.15') {
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/BETA15-RELEASE.txt') -Destination $notices
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/BETA15-ONLINE-STABILITY-20261007.txt') -Destination $notices
+    $androidNotes = Join-Path $projectRoot 'docs/BETA15-ANDROID-RENDER-FLOW.txt'
+    if (Test-Path -LiteralPath $androidNotes) {
+        Copy-Item -LiteralPath $androidNotes -Destination $notices
+    }
+}
 Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging/licenses') -Destination (Join-Path $notices 'licenses') -Recurse
 Copy-Item -LiteralPath (Join-Path $SdlSource 'LICENSE.txt') -Destination (Join-Path $notices 'SDL2-LICENSE.txt')
 foreach ($entry in @(
+    @('patches/enhanced-water/LICENSE-WAVE-RACE.txt','WAVE-RACE-WATER-LICENSE.txt'),
     @('extern/rt64/LICENSE','RT64-LICENSE.txt'),
     @('extern/rt64/src/contrib/imgui/LICENSE.txt','Dear-ImGui-LICENSE.txt'),
     @('extern/n64-modern-runtime/COPYING','N64ModernRuntime-COPYING.txt'),

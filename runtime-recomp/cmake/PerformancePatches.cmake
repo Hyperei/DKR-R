@@ -12,7 +12,9 @@ function(dkr_stage_patch target source stage_name patch)
     execute_process(COMMAND "${GIT_EXECUTABLE}" init --quiet "${stage}"
         COMMAND_ERROR_IS_FATAL ANY)
     foreach(mode IN ITEMS check apply)
-        set(flags --recount --whitespace=error)
+        # Checkout EOLs differ between Windows and Linux. Ignore context-only
+        # whitespace; added lines still pass the strict whitespace check.
+        set(flags --recount --whitespace=error --ignore-space-change)
         if(mode STREQUAL "check")
             list(APPEND flags --check)
         endif()
@@ -48,11 +50,34 @@ dkr_stage_patch(ultramodern "${CMAKE_BINARY_DIR}/generated/host-task-lifetime" v
     "${DKRPORT_ROOT}/patches/performance/runtime-vi-bootstrap.patch" ultramodern/src/events.cpp)
 dkr_stage_patch(librecomp "${DKR_MODERN_RUNTIME_SOURCE}" session-bootstrap
     "${DKRPORT_ROOT}/patches/performance/runtime-session-bootstrap.patch" librecomp/src/recomp.cpp)
+dkr_stage_patch(ultramodern "${DKR_MODERN_RUNTIME_SOURCE}" guest-lifetime
+    "${DKRPORT_ROOT}/patches/performance/runtime-guest-lifetime.patch"
+    ultramodern/src/threads.cpp ultramodern/src/threadqueue.cpp ultramodern/src/scheduling.cpp)
+dkr_stage_patch(librecomp "${CMAKE_BINARY_DIR}/generated/session-bootstrap" guest-cancellation
+    "${DKRPORT_ROOT}/patches/performance/runtime-guest-cancellation.patch" librecomp/src/recomp.cpp)
 if(DKR_REPLAY_QUALIFICATION OR DKR_EXPERIMENTAL_RACE_TEST)
-    dkr_stage_patch(librecomp "${CMAKE_BINARY_DIR}/generated/session-bootstrap" experimental-quiesced-bootstrap
+    dkr_stage_patch(librecomp "${CMAKE_BINARY_DIR}/generated/guest-cancellation" experimental-quiesced-bootstrap
         "${DKRPORT_ROOT}/patches/netplay/experimental-quiesced-bootstrap.patch" librecomp/src/recomp.cpp)
 endif()
 if(BUILD_TESTING AND NOT ANDROID)
+    add_executable(DKRNativeGuestLifetimeTests "${DKRPORT_ROOT}/runtime-recomp/tests/native_guest_lifetime_tests.cpp")
+    target_compile_definitions(DKRNativeGuestLifetimeTests PRIVATE
+        DKR_THREADS_SOURCE="${CMAKE_BINARY_DIR}/generated/guest-lifetime/ultramodern/src/threads.cpp"
+        DKR_QUEUE_SOURCE="${CMAKE_BINARY_DIR}/generated/guest-lifetime/ultramodern/src/threadqueue.cpp"
+        DKR_SCHEDULING_SOURCE="${CMAKE_BINARY_DIR}/generated/guest-lifetime/ultramodern/src/scheduling.cpp")
+    target_include_directories(DKRNativeGuestLifetimeTests PRIVATE
+        "${DKR_MODERN_RUNTIME_SOURCE}/ultramodern/include"
+        "${DKR_MODERN_RUNTIME_SOURCE}/thirdparty"
+        "${DKR_MODERN_RUNTIME_SOURCE}/thirdparty/concurrentqueue"
+        "${DKRPORT_ROOT}/runtime-recomp/src/game")
+    if(NOT MSVC)
+        target_link_libraries(DKRNativeGuestLifetimeTests PRIVATE pthread)
+    endif()
+    add_test(NAME DKRNativeGuestLifetime COMMAND DKRNativeGuestLifetimeTests)
+    set_tests_properties(DKRNativeGuestLifetime PROPERTIES TIMEOUT 30)
+    add_executable(DKRRuntimeLogArchiveTests "${DKRPORT_ROOT}/runtime-recomp/tests/runtime_log_archive_tests.cpp")
+    target_include_directories(DKRRuntimeLogArchiveTests PRIVATE "${DKRPORT_ROOT}/runtime-recomp/src/game")
+    add_test(NAME DKRRuntimeLogArchive COMMAND DKRRuntimeLogArchiveTests)
     add_executable(DKRViBootstrapTests "${DKRPORT_ROOT}/runtime-recomp/tests/vi_bootstrap_tests.cpp")
     target_compile_definitions(DKRViBootstrapTests PRIVATE
         DKR_VI_SOURCE="${CMAKE_BINARY_DIR}/generated/vi-bootstrap/ultramodern/src/events.cpp")

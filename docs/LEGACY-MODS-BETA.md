@@ -1,4 +1,4 @@
-# v1.0.5 Beta 8 — offline custom tracks and characters
+# Custom tracks and characters — Beta 15 Playtest 12
 
 ## Import and play
 
@@ -25,6 +25,15 @@ Texture Packs and CRT Overlays now live in the **Textures** sidebar page, in
 both the launcher and overlay. Mods / Hacks opens with its four sections
 closed - **My mods**, **Magic Codes**, **Track Lab** and **Help & imports** -
 and shows one at a time.
+
+**Help & imports → Prepare all source imports again** rechecks retained patches
+for all installed legacy content, including hidden entries. It shows progress,
+supports cancellation and reports individual failures without aborting the
+remaining sources. Existing selections and saves stay unchanged. New reviewed
+editions are installed inactive; choose those editions in My mods when ready.
+The October 10 follow-up adds exact rebuilt-code profiles for the eighteen
+previously partial character packages and a scoped random-texture animation
+adapter for eight of them. Unknown code is not granted arbitrary execution.
 The sidebar sequence after Controls is **Save Manager → Textures → Mods / Hacks
 → DKR-R Online → About DKR-R**. Navigation and visible buttons use the same order.
 **My mods** shows one full-name card per mod. Legacy courses (marked
@@ -39,7 +48,10 @@ it on or off for the next launch.
 details and removal. Hidden mods are inactive; restoring never activates them.
 **Help & imports** lists every import with **Prepare this import again**, and
 can refresh the library or turn all legacy tracks or characters off.
-At most two custom characters can be active, regardless of search filters.
+Up to 16 custom characters can be active, regardless of search filters. Four
+appear on the original stage: two on the lower lawn and two on the upper shelf.
+With more than four enabled, highlight a custom character and use **L / R** to
+browse the rest. Other players' highlighted/confirmed choices stay visible.
 Changes to installed content are locked while a game/lobby or import owns it.
 
 Removing a card removes that content's prepared variants, not the other tracks
@@ -55,12 +67,20 @@ prepared receipts or removal journals.
 
 ## Clear beta limits
 
-- **Offline only.** Online games ignore custom activation and retain the stock
-  game, accepted network manifest and existing online-save system. There is no
-  automatic peer-to-peer mod sharing or online custom-content agreement yet.
-- **Two extra active characters maximum.** More can be stored, but disable an
-  active addition before enabling another. Larger same-stage rosters are not
-  included in this beta.
+- **Host-managed online mods.** The host's enabled legacy tracks, characters
+  and Track Lab courses are frozen when the lobby is created. Clients review
+  the required files and explicitly consent before downloading, reconstruction
+  and lobby admission. Received content lives in a separate online cache and
+  never replaces offline activation, ROMs or saves. Every racer needs this
+  build and the lobby's original Game Pak revision; patch reconstruction may
+  also require the original revision named by an xdelta. No ROM is shared.
+  Host Prediction and Strict Input Sync retain their existing flow. Experimental
+  Rollback owns and checkpoints the native mod state as well as guest memory;
+  its existing US v1.0 game-engine restriction remains. Real multiplayer visual
+  and gameplay qualification of this new feature is still a playtester task.
+- **16 enabled additions, four visible at a time.** More can be stored. Stage
+  replacement is transactional and bounded by the native model budget; if a
+  replacement cannot load, the previous choice remains intact.
 - **Exact patch source required for decoding, portable assets afterwards.** An
   xdelta cannot be decoded using the wrong source bytes. Import its required
   original Game Pak once. Preparation creates track variants for both imported
@@ -77,18 +97,22 @@ prepared receipts or removal journals.
   some tracks if the launch check reports that budget exceeded.
 - Normal race models and native selection animations are supported for the
   reviewed character families. Custom selection actors now use the same shared
-  animation clock as stock actors and face the actual selection camera.
+  animation clock as stock actors and share the selection camera's frontal
+  plane, without changing stock actor transforms.
 - Supplied custom portraits are used for the committed human racer's post-race,
   time-trial result, finishing-order, multiplayer result and trophy/ranking
   portraits. This changes portrait resources, not the established HUD layout.
-  In-race challenge/Adventure HUD portraits and saved ghost identity are not
-  remapped by this result-screen adapter.
+  The scoped challenge/Adventure HUD and trophy portrait hooks also use the
+  selected human's private assets. Saved ghost identity is not remapped. Mods
+  that retain the donor's face pixels intentionally retain that portrait; the
+  runtime log distinguishes supplied faces from that fallback.
 - Selection/cancel/confirm sounds and all eight positive/eight negative race
   voice variants plus the horn use isolated character sound banks. Original
   sound selection, repeat suppression and spatial mixing remain in charge.
   A mod that supplies no replacement for a cue still sounds like its donor;
   arbitrary hacked-code audio behaviour and replacement global music are not
-  implemented. AI and stock characters retain their original resources.
+  implemented. Custom AI selections use the same scoped portrait/voice routing;
+  stock selections retain their original resources.
 - Custom record/ghost identity is not a new, independently named record system
   yet. Retail carrier slots can share records inside a modded save. Treat custom
   time-trial records/ghosts as experimental, not verified comparable records.
@@ -137,6 +161,20 @@ between automated resource validation and visual/gameplay acceptance.
 
 ## Build boundary
 
+The Playtest 11 AI rebuild adds enabled custom characters to the offline AI
+pool alongside unlocked originals. Human identities are reserved and each AI
+draw is distinct. Native racer counts and inherited statistics are unchanged.
+Bosses, hub worlds, time trials/ghosts and demos do not receive custom AI
+identities. Playtest 12 also uses the frozen host-managed character pool for
+eligible online races; clients' offline selections are never consulted.
+L/R browsing stays in the current stage slot and skips the
+characters already displayed in the other three slots.
+
+`scripts/legacy_character_ai_policy.py` pins both original race-construction
+bodies and checks the topology, participant-index and primary-spawn ABI. Its
+four hooks are composed into the versioned policy and production generated
+payloads through the Patch Pipeline; no generated function is hand-edited.
+
 Normal builds include the checked scene, track-menu, character-resource and
 character-menu fragments for both revisions. Generate these with
 `scripts/generate_legacy_menu_qualification.py --characters --character-menu`
@@ -147,3 +185,41 @@ the local result-portrait and race-sound adapters.
 `DKR_LEGACY_QUALIFICATION` must be **OFF** for packaging. The package guards and
 required-hook checks remain enabled. No submodule or generated C source is
 hand-edited.
+
+## Online preparation reuse
+
+The Playtest 14 synchronization rebuild checks matching installed offline mods
+after consent, regardless of their local enablement or visibility. Patch hashes,
+prepared asset identities and the track's ROM revision must match the frozen
+host selection. Reuse populates a separate online transaction; it never copies
+host enablement over the offline catalogues or writes offline saves. Track Lab
+courses can also supply matching canonical package bytes locally.
+
+Completed per-payload preparation survives failure of a larger library job.
+Fresh imports share verified ROM data and a single patch reconstruction between
+review, track and character preparation. Bounded transfer bursts and reordering
+buffers reduce network stalls; batched disk flushes retain mandatory final
+length/hash verification. Progress continues during blocking local preparation
+without granting admission. See
+[synchronization rebuild notes](PLAYTEST14-MOD-SYNC-PERFORMANCE-20261006.txt)
+for measurements, installation instructions and qualification limits.
+# Shared-source online preparation (6 October 2026)
+
+Online host/client profiles now reference exact locally verified catalogue
+entries or independently completed importer caches. They do not copy complete
+multi-patch prepared/review groups into every payload cache or aggregate profile.
+The session index is local metadata, not wire-authorized filesystem access.
+Every root is checked against the host manifest, and runtime preparation still
+verifies selected records, native compatibility, portraits, voices and banks.
+
+Offline activation/visibility/save data is never copied from the host. Keeping
+new downloaded content deduplicates whole groups, publishes complete inactive
+copies, and skips already installed source trees. Track Lab supports direct
+installed-course reuse too. Stale source indexes are rebuilt without replacing
+existing offline files; corrupt content cannot satisfy admission.
+
+Runtime preparation retains a pristine verified world template. Fresh worlds
+use independent asset buses, mutable cache owners, resident generations and
+replay authority, with deterministic matching virtual addresses. One bounded
+in-process immutable cache accelerates unchanged retries/rematches; it is keyed
+by canonical original-ROM SHA and full manifest identity, never timestamps.

@@ -1,4 +1,5 @@
 #include "runtime_support.hpp"
+#include "runtime_log_archive.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -305,6 +306,16 @@ bool export_report(const std::string& report, std::filesystem::path& output,
         return false;
     }
     stream << report;
+    const auto diagnostic_directory=g_support_report_directory/output.stem();
+    std::filesystem::create_directories(diagnostic_directory, filesystem_error);
+    if (!filesystem_error) {
+        history::snapshot(g_log_directory/"runtime.log", diagnostic_directory/"runtime.log");
+        history::snapshot(g_log_directory/"runtime-previous.log", diagnostic_directory/"runtime-previous.log");
+        for (const auto& log:history::logs(g_log_directory/"history"))
+            history::snapshot(log, diagnostic_directory/log.filename());
+        stream << "\nRetained runtime log snapshots: " << diagnostic_directory.string()
+               << "\nLogs may contain local paths or session information. Review before sharing.\n";
+    }
     if (!stream.good()) {
         error = "The DKR-R support report could not be completed.";
         return false;

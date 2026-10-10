@@ -50,6 +50,12 @@ def main() -> int:
     policy = compose_model_references(policy, arguments.elf, revision)
     from legacy_spawn_asset_type_policy import compose_spawn_asset_type
     policy = compose_spawn_asset_type(policy, arguments.elf, revision)
+    from legacy_memory_safety_policy import compose_memory_safety
+    policy = compose_memory_safety(policy, arguments.elf, revision)
+    from legacy_behaviour_policy import compose_behaviour
+    policy = compose_behaviour(policy, arguments.elf, revision)
+    from audio_queue_policy import compose_audio_queue
+    policy = compose_audio_queue(policy, arguments.elf, revision)
     if arguments.water_profile:
         from water_profile_policy import compose_water_profile
         policy = compose_water_profile(policy, arguments.elf)

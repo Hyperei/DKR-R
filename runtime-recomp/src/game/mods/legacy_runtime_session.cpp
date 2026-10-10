@@ -79,8 +79,9 @@ void RuntimeSession::admit(PreparedTrack track) {
        track.bank->digest()!=track.root.content_id || track.artifact_digest.size()!=64)
         throw Error("Scene content does not match this session's verified Game Pak.");
     const auto id=track.root.content_id;
+    validate_behaviour(track.root.behaviour);
     if(auto found=admitted_.find(id);found!=admitted_.end()) {
-        if(found->second.track.bank->fingerprint()!=track.bank->fingerprint())
+        if(found->second.track.bank->fingerprint()!=track.bank->fingerprint() || found->second.track.root.behaviour!=track.root.behaviour)
             throw Error("Two different course banks claim the same content identity.");
         return;
     }
@@ -125,6 +126,14 @@ void RuntimeSession::begin_scene(std::span<std::uint8_t> guest,unsigned carrier,
 }
 ResidentAssetState::Lease RuntimeSession::acquire(){return resident_.acquire();}
 std::string RuntimeSession::current_content()const{std::lock_guard lock(mutex_);return current_;}
+std::uint32_t RuntimeSession::course_component(unsigned site,std::uint32_t native_value)const {
+    if(site>=3)throw Error("Course behaviour dispatch is outside its reviewed spawn scope.");
+    std::lock_guard lock(mutex_);
+    if(current_.empty())return native_value;
+    const auto found=admitted_.find(current_);
+    if(found==admitted_.end())throw Error("Current course behaviour has no immutable owner.");
+    return static_cast<std::uint32_t>(execute_behaviour_component(found->second.track.root.behaviour,site,native_value));
+}
 std::uint64_t RuntimeSession::published_scenes()const{std::lock_guard lock(mutex_);return scenes_;}
 std::vector<Root> RuntimeSession::tracks()const {
     std::lock_guard lock(mutex_);std::vector<Root> result;result.reserve(admitted_.size());

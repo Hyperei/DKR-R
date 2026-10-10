@@ -1,0 +1,32 @@
+diff --git a/src/render/rt64_vi_renderer.cpp b/src/render/rt64_vi_renderer.cpp
+--- a/src/render/rt64_vi_renderer.cpp
++++ b/src/render/rt64_vi_renderer.cpp
+@@ -7,2 +7,5 @@
+ #include "shared/rt64_hlsl.h"
+ #include "shared/rt64_video_interface.h"
++#include "android_rotation_policy.hpp"
++#include "android_video_constants.hpp"
++#include "plume_vulkan.h"
+ 
+@@ -72,8 +75,21 @@
+         getViewportAndScissor(p.swapChain, *p.vi, p.resolutionScale, p.downsamplingScale, p.removeBlackBorders, viewport, scissor);
++        const auto rotation = static_cast<const VulkanSwapChain*>(p.swapChain)->createInfo.preTransform;
++        const float logicalWidth = float(p.swapChain->getWidth()), logicalHeight = float(p.swapChain->getHeight());
++        const auto imageViewport = dkr::runtime::android_rotation::to_image(
++            dkr::runtime::android_rotation::Rect{viewport.x, viewport.y, viewport.x + viewport.width, viewport.y + viewport.height},
++            logicalWidth, logicalHeight, rotation);
++        const auto imageScissor = dkr::runtime::android_rotation::to_image(
++            dkr::runtime::android_rotation::Rect{float(scissor.left), float(scissor.top), float(scissor.right), float(scissor.bottom)},
++            logicalWidth, logicalHeight, rotation);
++        viewport = RenderViewport(imageViewport.left, imageViewport.top, imageViewport.right - imageViewport.left, imageViewport.bottom - imageViewport.top);
++        scissor = RenderRect(lround(imageScissor.left), lround(imageScissor.top), lround(imageScissor.right), lround(imageScissor.bottom));
+         p.commandList->setViewports(viewport);
+         p.commandList->setScissors(scissor);
+ 
+-        interop::VideoInterfaceCB pushConstants;
++        dkr::runtime::android_rotation::VideoConstants pushConstants;
+         pushConstants.videoResolution = computeHDSize(hlslpp::float2(p.vi->fbSize()), p.resolutionScale, p.downsamplingScale);
+         pushConstants.textureResolution = { float(p.textureWidth), float(p.textureHeight) };
+         pushConstants.gamma = p.vi->gamma();
++        pushConstants.rotation = rotation;
+ 

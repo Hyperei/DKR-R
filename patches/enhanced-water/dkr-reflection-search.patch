@@ -1,0 +1,35 @@
+diff --git a/src/shaders/WaterPS.hlsl b/src/shaders/WaterPS.hlsl
+--- a/src/shaders/WaterPS.hlsl
++++ b/src/shaders/WaterPS.hlsl
+@@ -108,11 +108,16 @@
+     float3 ray = reflect(-V,N);
+     float start = 5, distance = 16;
+     float3 origin = world + N*3;
+-    float2 previousPixel = waterPixelFromWorld(origin,p).xy;
++    // Homogeneous projection is affine until the perspective divide. Keep
++    // every search distance/refinement while removing a matrix multiply
++    // from each sample (full-resolution SSR, not a lower-quality trace).
++    const float4 rayOrigin=mul(p.viewProjection,float4(origin,1));
++    const float4 rayDirection=mul(p.viewProjection,float4(ray,0));
++    float2 previousPixel = waterPixelFromClip(rayOrigin,p).xy;
+     [loop] for (uint step=0;step<(p.material.identity.x>=3 ? 36u : 24u);step++) {
+         float3 rayPoint = origin+ray*distance;
+-        float4 pixel = waterPixelFromWorld(rayPoint,p);
++        float4 pixel = waterPixelFromClip(rayOrigin+rayDirection*distance,p);
+         if (pixel.w <= 0 || any(pixel.xy < p.viewBounds.xy+2) || any(pixel.xy >= p.viewBounds.zw-2)) break;
+         float footprint = max(length(pixel.xy-previousPixel),1);
+@@ -127,13 +132,13 @@
+                 float lo=start, hi=distance;
+                 [unroll] for (uint refine=0;refine<5;refine++) {
+                     float mid=(lo+hi)*0.5;
+-                    float4 at=waterPixelFromWorld(origin+ray*mid,p);
++                    float4 at=waterPixelFromClip(rayOrigin+rayDirection*mid,p);
+                     float z=sceneDepth.Load(int3(int2(boundPixel(at.xy,p)),0));
+                     if (at.z >= z) hi=mid; else lo=mid;
+                 }
+                 float3 hit=origin+ray*hi;
+-                float4 at=waterPixelFromWorld(hit,p);
++                float4 at=waterPixelFromClip(rayOrigin+rayDirection*hi,p);
+                 float z=sceneDepth.Load(int3(int2(boundPixel(at.xy,p)),0));
+                 float3 sampled=waterWorldFromPixel(at.xy,z,p);
+                 float separation=length(hit-sampled);

@@ -19,6 +19,7 @@ std::string write_character_artifact(const std::filesystem::path& folder,const P
         {"id",c.root.content_id},{"name",c.root.name},{"behaviour",c.root.base_character},{"portrait",c.root.portrait},
         {"headers",c.root.headers},{"stage_header",c.stage_header},{"records",json::array()},{"animations",json::array()}};
     std::set<std::string> written;
+    if(c.root.behaviour.abi)value["behaviour_contract"]=json::parse(encode_behaviour(c.root.behaviour));
     value["audio"]={{"control",sha256(c.audio.control)},{"samples",sha256(c.audio.samples)},
         {"control_size",c.audio.control.size()},{"sample_size",c.audio.samples.size()},{"cues",json::array()}};
     for(const auto* blob:{&c.audio.control,&c.audio.samples}) {
@@ -48,6 +49,7 @@ PreparedCharacter read_character_artifact(const std::filesystem::path& folder,co
     if(c.base_fingerprint!=revision_fingerprint(c.source_revision))throw Error("Character source provenance is invalid.");
     c.root.content_id=text(value,"id");c.root.name=text(value,"name");c.root.base_character=value.at("behaviour").get<unsigned>();
     c.root.portrait=value.at("portrait").get<unsigned>();
+    if(value.contains("behaviour_contract"))c.root.behaviour=decode_behaviour(value.at("behaviour_contract").dump());
     if(!value.at("headers").is_array() || value.at("headers").size()!=3)throw Error("Invalid vehicle roots.");
     c.root.headers=value.at("headers").get<std::array<unsigned,3>>();
     c.stage_header=value.at("stage_header").get<unsigned>();

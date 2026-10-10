@@ -7,6 +7,7 @@
 #include "runtime_portable.hpp"
 #include "runtime_netplay.hpp"
 #include "runtime_support.hpp"
+#include "runtime_log_archive.hpp"
 #include "save_manager.hpp"
 #include "runtime_save_routing.hpp"
 #include "startup_performance.hpp"
@@ -97,14 +98,7 @@ bool ConfigurePersistentRuntimeLog(
         return false;
     }
     const std::filesystem::path current = log_directory / "runtime.log";
-    const std::filesystem::path previous =
-        log_directory / "runtime-previous.log";
-    std::filesystem::remove(previous, error);
-    error.clear();
-    if (std::filesystem::exists(current, error)) {
-        error.clear();
-        std::filesystem::rename(current, previous, error);
-    }
+    if (!dkr::runtime::support::history::rotate(log_directory)) return false;
 #ifdef _WIN32
     FILE* stream = nullptr;
     if (_wfreopen_s(&stream, current.c_str(), L"w", stderr) != 0 ||
@@ -1346,6 +1340,12 @@ int DkrMain(int argc, char** argv) {
                 std::string owned_error;
                 bool owned_ok=false;
                 try {
+                    if (bootstrap.empty()) {
+                        const auto mod_error=dkr::runtime::legacy::failure();
+                        throw std::runtime_error(mod_error.empty()
+                            ? "Retail startup did not reach its safe handoff. No checkpoint or rollback session was started; retry from the lobby."
+                            : "Retail startup stopped before its safe handoff: "+mod_error);
+                    }
                     auto mod_bootstrap=online_mods?dkr::runtime::legacy::online_bootstrap_checkpoint():dkr::mods::Bytes{};
                     owned_ok=dkr::runtime::netplay::experimental::run_runtime(window_handle,rom_path,std::move(bootstrap),*admitted_lobby,*owned_descriptor,timeout_seconds,owned_error,owned_check,
                         online_mods,std::move(mod_bootstrap));

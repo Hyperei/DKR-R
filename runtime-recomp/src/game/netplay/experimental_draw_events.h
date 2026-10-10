@@ -36,7 +36,10 @@ static inline int dkr_owned_draw_event_valid(const dkr_owned_draw_event* e) {
         unsigned used=0;
         switch(e->kind) {
         case DKR_OWNED_MATRIX:
-            if(e->address>0x807FFFC0U || e->parameters[0]>15U || e->parameters[1]>1U || e->parameters[3]>255U)return 0;
+            /* Low four bits are interpolation flags; bit 8 identifies the
+               authored camera root for local renderer effects. No other
+               flags are accepted, and this remains presentation metadata. */
+            if(e->address>0x807FFFC0U || (e->parameters[0]&~0x10FU) || e->parameters[1]>1U || e->parameters[3]>255U)return 0;
             if(!dkr_world_projection_metadata_valid(e->parameters[4],e->parameters[5],e->parameters[6]))return 0;
             used=7;break;
         case DKR_OWNED_SKY_MATRIX:case DKR_OWNED_TRANSITION:

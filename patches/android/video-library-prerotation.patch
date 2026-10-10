@@ -1,0 +1,27 @@
+diff --git a/src/render/rt64_shader_library.cpp b/src/render/rt64_shader_library.cpp
+--- a/src/render/rt64_shader_library.cpp
++++ b/src/render/rt64_shader_library.cpp
+@@ -51,3 +51,6 @@
+ #include "shaders/VideoInterfacePSRegular.hlsl.spirv.h"
+ #include "shaders/VideoInterfacePSPixel.hlsl.spirv.h"
++#include "android-video/AndroidVideoRegular.spirv.h"
++#include "android-video/AndroidVideoPixel.spirv.h"
++#include "android_video_constants.hpp"
+ #include "shaders/FullScreenVS.hlsl.spirv.h"
+@@ -631,2 +634,2 @@
+         {
+-            std::unique_ptr<RenderShader> regularShader = device->createShader(CREATE_SHADER_INPUTS(VideoInterfacePSRegularBlobDXIL, VideoInterfacePSRegularBlobSPIRV, VideoInterfacePSRegularBlobMSL, "PSMain", shaderFormat));
+-            std::unique_ptr<RenderShader> pixelShader = device->createShader(CREATE_SHADER_INPUTS(VideoInterfacePSPixelBlobDXIL, VideoInterfacePSPixelBlobSPIRV, VideoInterfacePSPixelBlobMSL, "PSMain", shaderFormat));
++            std::unique_ptr<RenderShader> regularShader = device->createShader(AndroidVideoRegularBlobSPIRV, sizeof(AndroidVideoRegularBlobSPIRV), "PSMain", shaderFormat);
++            std::unique_ptr<RenderShader> pixelShader = device->createShader(AndroidVideoPixelBlobSPIRV, sizeof(AndroidVideoPixelBlobSPIRV), "PSMain", shaderFormat);
+ 
+@@ -637,1 +640,1 @@
+             layoutBuilder.begin();
+-            layoutBuilder.addPushConstant(0, 0, sizeof(interop::VideoInterfaceCB), RenderShaderStageFlag::PIXEL);
++            layoutBuilder.addPushConstant(0, 0, sizeof(dkr::runtime::android_rotation::VideoConstants), RenderShaderStageFlag::PIXEL);
+             layoutBuilder.addDescriptorSet(nearestDescriptorSet);
+@@ -652,1 +655,1 @@
+             layoutBuilder.begin();
+-            layoutBuilder.addPushConstant(0, 0, sizeof(interop::VideoInterfaceCB), RenderShaderStageFlag::PIXEL);
++            layoutBuilder.addPushConstant(0, 0, sizeof(dkr::runtime::android_rotation::VideoConstants), RenderShaderStageFlag::PIXEL);
+             layoutBuilder.addDescriptorSet(linearDescriptorSet);

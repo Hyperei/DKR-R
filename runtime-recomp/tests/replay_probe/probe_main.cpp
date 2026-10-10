@@ -445,9 +445,10 @@ void audio_event_services_test() {
     dkr_probe_offline_services(1); dkr_probe_audio_guards_initialize();
     assert(!dkr_probe_run(audio_event_service_entry,ram.data(),ram.size(),&context,10000).completed);
     dkr_probe_audio_configure(1);
-    word(queue,0x80000000U+free); word(queue+8,0x80000000U+item); word(queue+12,0x80000000U+next);
+    word(queue,0x80000000U+free); word(queue+8,0x80000000U+item);
     word(item,0x80000000U+next); word(item+4,0x80000000U+queue+8); word(item+8,1234);
     word(next+4,0x80000000U+item);
+    word(free+4,0x80000000U+queue);
     for(unsigned b=0;b<16;b+=4) word(item+12+b,0xABCD0000U+b);
     const auto initial=ram;
     for(unsigned fault=0;fault<6;++fault) {
@@ -469,12 +470,14 @@ void audio_event_services_test() {
     assert(read(queue)==0x80000000U+item && read(queue+8)==0x80000000U+next &&
            read(next+4)==0x80000000U+queue+8 && read(free+4)==0x80000000U+item);
     for(unsigned b=0;b<16;b+=4) assert(read(destination+b)==0xABCD0000U+b);
-    // Repeated zero-delta callbacks exercise the native counter across a
-    // checkpoint. The 257th applies the EXACT existing recovery policy.
-    for(unsigned count=0;count<257;++count) {
-        word(queue+8,0x80000000U+item); word(queue+12,0x80000000U+item); word(queue,0x80000000U+free);
+    // Valid bursts exceed the old 256 limit. The bounded yield preserves
+    // nextEvent and the queue, including checkpoint restoration at the limit.
+    dkr_probe_audio_guards_initialize();
+    for(unsigned count=0;count<DKR_AUDIO_IMMEDIATE_BUDGET;++count) {
+        word(queue+8,0x80000000U+item); word(queue,0x80000000U+free);
         word(item,0); word(item+4,0x80000000U+queue+8); word(item+8,0);
-        if(count==256) {
+        word(free+4,0x80000000U+queue);
+        if(count==DKR_AUDIO_IMMEDIATE_BUDGET-1) {
             std::array<dkr_probe_audio_guard,8> saved{}; dkr_probe_audio_guards_capture(saved.data());
             const auto before=ram;
             assert(dkr_probe_run(audio_event_service_entry,ram.data(),ram.size(),&context,10000).completed && context.r2==16667);
@@ -483,7 +486,8 @@ void audio_event_services_test() {
             assert(dkr_probe_run(audio_event_service_entry,ram.data(),ram.size(),&context,10000).completed && ram==expected && context.r2==16667);
         } else assert(dkr_probe_run(audio_event_service_entry,ram.data(),ram.size(),&context,10000).completed && context.r2==0);
     }
-    assert(!read(queue+8) && !read(queue+12) && ram[(destination+0)^3]==255 && ram[(destination+1)^3]==255);
+    for(unsigned b=0;b<16;b+=4)assert(read(destination+b)==0xABCD0000U+b);
+    assert(!read(queue+8) && !read(queue+12));
     assert(dkr_probe_run(audio_event_service_entry,ram.data(),ram.size(),&context,10000).completed && context.r2==16667);
     // Voice guard: actual list membership, bus normalization, bounded cycle
     // and refusal. Bus guard changes v0 ONLY on its real invalid branch.

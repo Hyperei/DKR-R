@@ -1,0 +1,93 @@
+DKR-R v1.0.5 Beta 15 - Playtest 10
+Offline / online save-isolation candidate
+
+WHAT CHANGED
+Each launch selects and holds one save owner before the runtime reads EEPROM
+or starts its saving worker. A network disconnect cannot change that route.
+Online launches never fall back to a writable offline EEPROM. A lock or route
+failure refuses the launch and reports the reason instead of opening another
+save. The lease is released only after the runtime and save producers retire.
+
+All three online backends now keep Controller Paks in online storage. The
+experimental backend's previous relative-directory Pak path is corrected.
+Experimental EEPROM/Pak persistence remains confirmed-only: speculative
+rollback state is not written into offline files or online progress.
+
+Replacements are fully written, flushed, read back, validated and atomically
+committed. Multi-part EEPROM updates wait for a complete checksum-valid image.
+Final dirty data is flushed after guest producers join. Valid previous images
+are retained in .bak and up to eight content-addressed history entries per
+save. Manual Save Manager backups remain separate and are not pruned by this
+history policy. Existing invalid images are preserved before an explicit
+repair/import replaces them. Hard-link aliases, descendant symbolic links and
+Windows reparse points cannot be save-write targets. Selected profile roots
+are resolved once, allowing ordinary platform storage-root aliases.
+
+SAVE OWNERSHIP
+Offline Adventure: <profile>/saves/dkr.us.v77.bin
+Offline Paks: <profile>/controller-pak-1.mpk through controller-pak-4.mpk
+Host online Adventure: <profile>/saves/online/host/dkr.us.v77.bin
+Client online Adventure: <profile>/saves/online/sessions/<match-id>/dkr.us.v77.bin
+Legacy online Paks: paks/ beside that online Adventure
+Experimental online Paks: experimental-controller-paks.bin beside it
+Mod-set progress: the existing isolated mods/ save scope, unchanged
+
+Copy single-player, start fresh, and continue previous online session remain
+host options. Copying reads personal progress; it does not replace it. Clients
+receive only the separate online save. Joining does not create personal-save
+backups or automatically import the host's progress into offline storage.
+
+CLEARER UI
+Play labels and previews YOUR OFFLINE ADVENTURE and its actual location.
+Starting offline from a lobby explicitly asks to leave the lobby first.
+The lobby labels its host-supplied ONLINE SESSION SAVE.
+Save Manager has OFFLINE, ONLINE, MODDED and RECOVERY scopes. Offline editing,
+imports, reset and repair are locked while joined to a lobby or running a game.
+Destructive confirmations identify the offline target. Exports cannot target
+the managed save/backup directories as a disguised replacement operation.
+
+RECOVERY
+Recovery scans are read-only and bounded (known profile/portable directories,
+the current working directory's known save subdirectories, 2048 visited
+entries and 256 results). They run off the UI thread. They include surviving
+EEPROMs, backups/history, Controller Paks and the old relative online Pak path.
+Use Refresh Stored Saves after files change. Unrelated old download directories
+are not searched automatically. Copy Location and Export Stored Save preserve
+the original. Restoring a validated Adventure into offline progress requires
+an explicit confirmation and a safety backup. Four-port experimental Pak
+images are export-only here; they are not single offline Pak images.
+
+No automatic migration or recovery guesses are made. A lost save cannot be
+reconstructed if no valid copy survives. The exact cause of each reported
+historical loss is not established without that affected profile's evidence.
+
+VALIDATION STATUS
+This candidate is intended for the user's/team's runtime and visual checks.
+Compilation, patch applicability/provenance and package-content checks are
+performed. Save-policy qualification sources are supplied for future CI/team
+execution; they are compiled, not executed. No launcher/gameplay/GUI tests are
+run by the assistant. Previous Playtest 9 packages remain unchanged.
+
+TEAM QUALIFICATION CHECKLIST (USE COPIES, NOT YOUR ONLY PERSONAL SAVE)
+For Host Prediction, Strict Input Sync and Experimental Rollback separately:
+1. Export and record offline EEPROM/Pak hashes on host and every client.
+2. Exercise all three host seed options and join/leave without starting a game.
+   Personal hashes must remain identical; received online files are separate.
+3. Play a fresh and an existing 2P Adventure, a boss/reward sequence, track
+   select and a minigame. Include consecutive cutscenes and 3/4-player sessions.
+4. End normally, leave from overlay and close a client. Return to the lobby,
+   then choose offline from Play without restarting the application. Offline
+   progress must be the original; online progress must remain separately stored.
+5. Finish ordinary offline play and confirm its own save changes normally.
+6. Restart the app and check both offline and previous host-online progress.
+7. Repeat with original US 1.0/1.1 Game Paks and isolated enabled mod sets.
+8. With copied isolated profiles, exercise two processes sharing a target,
+   denied writes/full disk, invalid primary/valid backup, stale staged saves,
+   hard-link/symlink aliases and interruption during save replacement. The old
+   valid image must survive or a complete valid replacement must be present.
+9. Check Recovery on profile and portable installs, export, and explicitly
+   restore a chosen copy. Cancelling must make no changes. Joined-lobby editing
+   and exports aimed at live managed paths must be refused.
+
+Use this exact candidate on every peer; do not mix Playtest 9 and Playtest 10.
+No public GitHub release or push is performed by this packaging step.

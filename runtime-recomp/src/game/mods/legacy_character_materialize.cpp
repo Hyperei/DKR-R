@@ -122,8 +122,8 @@ bool character_portrait_changed(View replacement,View original) {
     }
     return false;
 }
-PreparedCharacter prepare_character(View original,View target,std::string patch_digest,unsigned base_character) {
-    const auto analysis=analyze(original,target,patch_digest);
+PreparedCharacter prepare_character(View original,View target,std::string patch_digest,unsigned base_character,bool behaviour_enabled) {
+    const auto analysis=analyze(original,target,patch_digest,behaviour_enabled);
     if(!analysis.blockers.empty())throw Error(analysis.blockers.front());
     const auto found=std::find_if(analysis.character_roots.begin(),analysis.character_roots.end(),
         [&](const auto& root){return root.base_character==base_character;});
@@ -159,8 +159,13 @@ PreparedCharacter prepare_character(View original,View target,std::string patch_
             // First reviewed fixtures retain native object behaviour/header
             // semantics. Custom pointer layouts, particles or code need their
             // own adapter, not permissive transplantation into native memory.
-            if(!std::ranges::equal(bytes,stock.record(34,id)) || (bytes[0x53]!=0 && bytes[0x53]!=2))
+            const auto fields=object_parameter_fields(stock.record(34,id),bytes);
+            if((fields && !behaviour_enabled) || (bytes[0x53]!=0 && bytes[0x53]!=2))
                 throw Error("Character header "+std::to_string(id)+" (type="+std::to_string(bytes[0x53])+") requires a reviewed behaviour adapter.");
+            if(fields) {
+                if(!result.root.behaviour.abi) {result.root.behaviour.abi=BehaviourAbi;result.root.behaviour.evidence=sha256(View{});}
+                result.root.behaviour.header_fields|=fields;
+            }
             active_headers.insert(id);
             for(auto model:header_ids(bytes,0x10,bytes[0x55]))if(model!=0xffffffff)visit(bytes[0x53]==0?29:12,model);
             for(auto header:header_ids(bytes,0x14,bytes[0x56]))if(header!=0xffffffff)visit(34,header);
@@ -176,6 +181,7 @@ PreparedCharacter prepare_character(View original,View target,std::string patch_
     validate_character_audio(result.audio);
     std::string canonical="dkr-character-assets-v2:"+result.source_revision+":"+std::to_string(base_character);
     canonical+=":"+character_audio_identity(result.audio);
+    if(result.root.behaviour.abi)canonical+=":behaviour,"+behaviour_identity(result.root.behaviour);
     for(const auto& [key,bytes]:result.records) {
         const auto normalized=(key.first==29 || key.first==32)?inflate_asset(bytes,4*MiB):bytes;
         canonical+=":"+std::to_string(key.first)+","+std::to_string(key.second)+","+sha256(normalized);
@@ -221,8 +227,8 @@ CharacterNamespace allocate_characters(std::shared_ptr<const AssetBank> stock,st
         // Include display-list/palette/alignment overhead, not just packed PNG
         // or ROM bytes. Banks stay resident for previously queued audio.
         retain("portrait:"+sha256(portrait),2*(decoded_portrait.empty()?portrait.size():decoded_portrait.size())+1024);
-        retain("select:"+sha256(character.audio.control)+sha256(character.audio.samples),character.audio.control.size()+64);
-        if(!character.race_audio.control.empty())retain("race:"+sha256(character.race_audio.control)+sha256(character.race_audio.samples),character.race_audio.control.size()+64);
+        retain("audio:"+sha256(character.audio.control)+sha256(character.audio.samples),character.audio.control.size()+64);
+        if(!character.race_audio.control.empty())retain("audio:"+sha256(character.race_audio.control)+sha256(character.race_audio.samples),character.race_audio.control.size()+64);
         std::map<std::pair<unsigned,unsigned>,unsigned> remap;
         std::set<AssetKey> reused;
         for(const auto& [key,bytes]:character.records)if(key.first!=32) {
@@ -276,6 +282,7 @@ CharacterNamespace allocate_characters(std::shared_ptr<const AssetBank> stock,st
         slot.stage_source_header=character.stage_header;
         slot.audio=character.audio;
         slot.race_audio=character.race_audio;
+        slot.behaviour=character.root.behaviour;
         // Presentation provenance is computed from verified records, not a mod
         // name or a donor guess. Never change content IDs or isolated-save paths.
         slot.custom_portrait=character_portrait_changed(portrait,stock->record(4,character.root.portrait));
@@ -308,6 +315,7 @@ CharacterNamespace allocate_characters(std::shared_ptr<const AssetBank> stock,st
     return result;
 }
 std::string validate_prepared_character(const PreparedCharacter& value,const AssetBank& stock) {
+    validate_behaviour(value.root.behaviour);
     constexpr unsigned roots[]{2,3,4,5,6,7,8,9,1,0};
     const auto base=value.root.base_character;
     if(base>=10 || !stock.digest().empty() || stock.augmented() ||
@@ -342,8 +350,10 @@ std::string validate_prepared_character(const PreparedCharacter& value,const Ass
             }
         } else if(section==34) {
             slice(data,0,0x78);
-            if(id>=stock.record_count(34) || !std::ranges::equal(data,stock.record(34,id)) || (data[0x53]!=0 && data[0x53]!=2))
+            if(id>=stock.record_count(34) || (data[0x53]!=0 && data[0x53]!=2))
                 throw Error("Prepared object behaviour/header is not supported.");
+            if(object_parameter_fields(stock.record(34,id),data)&~value.root.behaviour.header_fields)
+                throw Error("Prepared object parameters exceed their behaviour contract.");
             active.insert(id);
             for(auto model:header_ids(data,0x10,data[0x55]))if(model!=0xffffffff)visit(data[0x53]==0?29:12,model);
             for(auto header:header_ids(data,0x14,data[0x56]))if(header!=0xffffffff)visit(34,header);
@@ -359,6 +369,7 @@ std::string validate_prepared_character(const PreparedCharacter& value,const Ass
         throw Error("Prepared character contains unrelated resources or animation ranges.");
     std::string canonical="dkr-character-assets-v2:"+value.source_revision+":"+std::to_string(base);
     canonical+=":"+character_audio_identity(value.audio);
+    if(value.root.behaviour.abi)canonical+=":behaviour,"+behaviour_identity(value.root.behaviour);
     for(const auto& [key,data]:value.records) {
         const auto normalized=(key.first==29 || key.first==32)?inflate_asset(data,4*MiB):data;
         canonical+=":"+std::to_string(key.first)+","+std::to_string(key.second)+","+sha256(normalized);

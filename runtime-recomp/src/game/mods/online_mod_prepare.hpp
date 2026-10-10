@@ -8,5 +8,6 @@ namespace dkr::mods::online {
 // All writes target a fresh private session tree, never the offline library.
 void prepare_library(const Manifest& manifest,const std::filesystem::path& payload_directory,
     const std::vector<std::filesystem::path>& owned_roms,
-    const std::filesystem::path& fresh_destination,const ProgressCallback& progress={});
+    const std::filesystem::path& fresh_destination,const ProgressCallback& progress={},
+    ImportPreparation* shared_sources=nullptr);
 }

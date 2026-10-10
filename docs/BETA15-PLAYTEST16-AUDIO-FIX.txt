@@ -1,0 +1,27 @@
+DKR-R 1.0.5-beta.15-playtest.16-fix.1 - music event-queue correction
+
+The previous audio guard mistook legitimate bursts of zero-delay music events
+for a corrupt queue. After 256 events it detached pending events, losing both
+the reusable event nodes and the player's recurring API heartbeat. This could
+silence music for the remainder of a session, including after returning to menus.
+
+Normal gameplay and Experimental Rollback now share the same authored policy:
+- Preserve every pending event and reusable node during valid bursts.
+- Bound unusually long immediate-event runs without discarding the next event.
+- Recover an empty native music/jingle queue only using verified player/pool
+  ownership, retaining its API heartbeat and native sequence position.
+- Release voices safely when a known queue is genuinely malformed. Never guess
+  pool ownership or continue a corrupt stream.
+- Preserve recovery metadata across scene changes and rollback checkpoints.
+- Fully validate imported compact-MIDI streams and retained prepared banks,
+  while allowing native legacy held notes, note-offs and velocity-zero notes.
+
+This desktop correction retains the latest Track Lab, mod compatibility, UI,
+water and online changes. It does not change sound settings or offline saves.
+All peers must update together: rollback audio policy is part of build identity.
+
+Gameplay changes were generated through the authored Patch Pipeline. Submodules,
+RecompiledFuncs and RecompiledPatches were not edited. Verification uses headless
+queue/parser, checkpoint and compatibility checks; audible gameplay testing is
+left to the user. This fixes the traced queue failure, not every possible device,
+driver or malformed-mod audio failure.

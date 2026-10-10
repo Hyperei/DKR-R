@@ -36,6 +36,8 @@ int main(int argc,char** argv) {
             check(library.import_file(root/"missing.zip",{}));check(!library.refresh());wait(library);
             check(!library.snapshot().succeeded);check(library.snapshot().modal);library.dismiss();check(!library.snapshot().modal);
             check(!library.prepare_review("bad",{}));
+            check(!library.prepare_all_reviews({root/"missing.z64"}));
+            check(!library.prepare_all_reviews({}));
             check(library.set_enabled(TrackCatalog::Kind::Track,std::string(64,'f'),true));wait(library);check(!library.snapshot().succeeded);
             check(!prepare_mod_launch(root/"empty",root/"missing.z64",false)->session); // no mod -> no ROM IO
             write(root/"empty"/"mods"/"legacy"/"character-catalog.json",{{"schema",2},{"enabled",nlohmann::json::array({"bad"})}});
@@ -81,6 +83,23 @@ int main(int argc,char** argv) {
             check(again->save_path==prepared->save_path);
             for(int i=3;i<argc;++i){check(library.import_file(utf8_path(argv[i]),{rom}));wait(library);check(library.snapshot().succeeded);}
             check(library.snapshot().tracks->tracks.size()==snapshot.tracks->tracks.size());check(library.snapshot().characters->tracks.size()==2);
+            check(prepare_mod_launch(config,rom,false)->fingerprint==prepared->fingerprint);
+            // Bulk refresh visits each retained source once, leaves active
+            // editions/save routes intact, and cannot overlap other work.
+            check(library.prepare_all_reviews({rom}));
+            check(library.snapshot().imports_total>=2);
+            check(!library.prepare_all_reviews({rom}));check(!library.refresh());
+            wait(library);check(library.snapshot().succeeded);
+            check(library.snapshot().result.find("source imports")!=std::string::npos);
+            check(prepare_mod_launch(config,rom,false)->fingerprint==prepared->fingerprint);
+            check(library.prepare_all_reviews({rom}));library.cancel();wait(library);
+            check(!library.snapshot().succeeded);
+            check(prepare_mod_launch(config,rom,false)->fingerprint==prepared->fingerprint);
+            // Missing ROMs fail independently; every source is accounted for,
+            // without deleting or deactivating already prepared content.
+            check(library.prepare_all_reviews({root/"missing.z64"}));wait(library);
+            check(!library.snapshot().succeeded);
+            check(library.snapshot().result.find("needs attention")!=std::string::npos);
             check(prepare_mod_launch(config,rom,false)->fingerprint==prepared->fingerprint);
             // A failed/cancelled worker never changes enablement or stock saves.
             check(library.import_file(root/"missing.xdelta",{rom}));library.cancel();wait(library);check(!library.snapshot().succeeded);

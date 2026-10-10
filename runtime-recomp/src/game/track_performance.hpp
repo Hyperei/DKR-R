@@ -15,11 +15,17 @@ using Samples = std::array<double, kSamples>;
 using Clock = std::chrono::steady_clock;
 
 inline bool enabled() {
+#if defined(__ANDROID__)
+    // Existing worker timers only: normal support logs must explain a slow
+    // scene without opting into Java/PSS recording or extra GPU query pools.
+    return true;
+#else
     static const bool value = [] {
         const char* setting = std::getenv("DKR_TRACK_PROFILE");
         return setting != nullptr && setting[0] == '1' && setting[1] == '\0';
     }();
     return value || performance_capture::active();
+#endif
 }
 
 struct Summary {

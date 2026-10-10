@@ -285,22 +285,22 @@ struct TrackState {
 };
 
 void check_midi(const Event& event, std::uint64_t tick, std::size_t track,
-                SequenceReport& report, const std::array<bool, 128>* programs) {
+                SequenceReport& report, const std::array<bool, 128>* programs, bool native_legacy_notes) {
     const std::uint8_t kind = event.status & 0xF0U;
     const unsigned channel = event.status & 0x0FU;
     const std::string where = "Track " + std::to_string(track + 1) + ", tick " +
                               std::to_string(tick);
     if (kind == kNoteOn) {
-        if (event.byte2 == 0U) {
+        if (event.byte2 == 0U && !native_legacy_notes) {
             fail("velocity-zero", where + ": a note-on with velocity zero; compact sequences "
                                           "give every note a duration instead.");
         }
-        if (event.duration == 0U) {
+        if (event.duration == 0U && !native_legacy_notes) {
             fail("duration-zero", where + ": a note with no duration never ends.");
         }
         report.channel_mask = static_cast<std::uint16_t>(report.channel_mask | (1U << channel));
         ++report.notes;
-    } else if (kind == kNoteOff) {
+    } else if (kind == kNoteOff && !native_legacy_notes) {
         fail("note-off", where + ": an explicit note-off; compact sequences give every note a "
                                  "duration instead.");
     } else if (kind == kProgram) {
@@ -318,7 +318,7 @@ void check_midi(const Event& event, std::uint64_t tick, std::size_t track,
 }
 
 SequenceReport check(std::span<const std::uint8_t> data, std::uint32_t capacity,
-                     const std::array<bool, 128>* programs) {
+                     const std::array<bool, 128>* programs, bool native_legacy_notes) {
     SequenceReport report;
     report.size = static_cast<std::uint32_t>(std::min<std::size_t>(data.size(), UINT32_MAX));
     if (data.size() < kHeaderBytes) {
@@ -428,7 +428,7 @@ SequenceReport check(std::span<const std::uint8_t> data, std::uint32_t capacity,
                 reader.backup_left = 0;
             }
         } else if (event.kind == Kind::Midi) {
-            check_midi(event, tick, next, report, programs);
+            check_midi(event, tick, next, report, programs, native_legacy_notes);
         }
         state.next_tick = tick + reader.var_len();
     }
@@ -441,10 +441,10 @@ SequenceReport check(std::span<const std::uint8_t> data, std::uint32_t capacity,
 } // namespace
 
 SequenceCheck validate_sequence(std::span<const std::uint8_t> data, std::uint32_t capacity,
-                                const std::array<bool, 128>* programs) {
+                                const std::array<bool, 128>* programs, bool native_legacy_notes) {
     SequenceCheck result;
     try {
-        result.report = check(data, capacity, programs);
+        result.report = check(data, capacity, programs, native_legacy_notes);
         result.code = "ok";
     } catch (const Failure& failure) {
         result.code = failure.code;

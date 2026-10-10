@@ -253,6 +253,11 @@ int main() {
         dkr_owned_draw_event event{};event.kind=DKR_OWNED_MATRIX;
         event.address=0x80004000U;event.token=0x12345678U;
         assert(dkr_owned_draw_event_valid(&event));
+        event.parameters[0]=0x10F;
+        assert(dkr_owned_draw_event_valid(&event));
+        event.parameters[0]=0x200;
+        assert(!dkr_owned_draw_event_valid(&event));
+        event.parameters[0]=0;
         auto projection=event;
         projection.parameters[4]=60;projection.parameters[5]=0x42A00000;projection.parameters[6]=3;
         assert(dkr_owned_draw_event_valid(&projection));

@@ -17,6 +17,29 @@ constexpr bool select_mode(int choice, int& stable_choice, bool& experimental_en
     return true;
 }
 
+// Auto is a local host preference, not a fourth wire protocol/backend. Resolve
+// it before constructing lobby Rules so all peers negotiate a concrete mode.
+constexpr int host_backend_choice(int stable_choice, bool experimental_enabled,
+                                  bool automatic) {
+    return automatic ? 0 : static_cast<int>(selected_mode(stable_choice, experimental_enabled)) + 1;
+}
+constexpr bool select_host_backend(int choice, int& stable_choice,
+                                   bool& experimental_enabled, bool& automatic) {
+    if (choice < 0 || choice > 3) return false;
+    automatic = choice == 0;
+    // Retain the last explicit backend when selecting Auto.
+    return automatic || select_mode(choice - 1, stable_choice, experimental_enabled);
+}
+constexpr SynchronizationMode resolved_host_backend(int stable_choice,
+        bool experimental_enabled, bool automatic) {
+    return automatic ? SynchronizationMode::ExperimentalRollback :
+        selected_mode(stable_choice, experimental_enabled);
+}
+constexpr bool migrated_automatic_backend(bool has_automatic_setting,
+        bool saved_automatic, bool has_legacy_backend_setting) {
+    return has_automatic_setting ? saved_automatic : !has_legacy_backend_setting;
+}
+
 // A working generic driver is not a working DKR adapter. Keep this explicit
 // until the game has a synchronous replay tick, complete owned state capture,
 // and transactional audio/save/scene effects. In particular, never substitute

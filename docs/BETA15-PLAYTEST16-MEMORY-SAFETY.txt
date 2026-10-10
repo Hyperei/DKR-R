@@ -1,0 +1,69 @@
+DKR-R 1.0.5 Beta 15 Playtest 16 - Memory Safety Correction 1
+
+This correction retains the Playtest 16 water performance changes, Track Lab,
+custom characters/tracks, the existing UI and online backends. Android is deferred.
+
+Crash finding
+The supplied 20261009-190911 dump faults in transition_init_shape after a
+928-byte transition allocation returned NULL. The original function then wrote
+through a derived invalid guest address. The dump does not contain enough heap
+metadata to establish whether fragmentation, descriptor exhaustion or another
+allocation failure caused the NULL. It does not prove a water or GPU fault.
+
+Phase 1 - Transitions
+Three bounded 7,712-byte transition workspaces are allocated once inside guest
+RDRAM. Ownership is released only when the normal deferred-free timer expires.
+If the reserved workspaces and ordinary optional allocation are unavailable,
+the transition uses the original allocation-free full-screen fade instead.
+Colours, timing, inversion and end timers are retained. No NULL-derived vertex
+or triangle write is permitted.
+
+Phase 2 - Allocator safety
+The stock 256-entry free queue could overwrite its count before detecting any
+overflow. A checked guest-owned queue now has one entry per pool descriptor,
+with a pre-write bound and duplicate-release protection. Its normal two-tick
+borrowing lifetime and retail drain order are preserved. If the optional queue
+reservation fails, the original queue still has a pre-write bound.
+Stock descriptor count remains 1,600; augmented asset namespaces use a bounded
+4,096-8,192 descriptor capacity derived from their immutable asset counts.
+Allocator mutations and relevant list walks are checked. Mandatory allocation
+failures stop safely with an explanation rather than continuing with NULL.
+
+Phase 3 - Custom resources
+Portraits and voice-bank controls remain lazy and immutable for the session;
+they are not freed at scene cuts while results/audio may still borrow them.
+Identical complete voice payloads now share controls across selection and race
+roles as well as across characters. Existing byte-budget admission is retained;
+no new arbitrary small character-count cap has been added. This is not a claim
+that an unbounded number of unique assets can fit inside finite guest memory.
+
+Phase 4 - Diagnostics
+Allocation failures report requested bytes, caller, free bytes, largest hole,
+descriptor usage, deferred queue depth/high-water and list validity, plus at
+most twelve allocation metadata records. No ROM, save or audio payload is logged.
+The full bounded heap walk runs only on a failure, not every frame. Repeated
+transition fallback reports are limited in the guest-owned descriptor.
+
+Phase 5 - Qualification
+Headless tests execute fresh Patch Pipeline-generated retail allocator and
+transition functions for US v1.0/v1.1. They cover 1,600/4,096/8,192 descriptors,
+bulk deferred frees past the old boundary, exhausted ordinary memory and all
+reserved workspaces, all geometry transitions, both FPU register modes, and
+5,000 allocation/free cycles returning to identical byte/slot ownership.
+Helper tests also cover corrupt metadata and checkpoint restoration. Custom
+presentation tests cover 10,000 repeated preparations without allocation growth.
+Windows and Linux builds use the same owned-game contracts. All peers in an
+online lobby must update together.
+
+Gameplay qualification
+No live game, visual test or automatic online match was launched for this pass.
+Please verify long offline/online sessions, repeated Track Select/race/results
+transitions and custom AI/portraits/voices. Headless checks cannot certify every
+third-party mod or guarantee that all future crashes are impossible. If another
+failure occurs, retain the current and archived logs and matching crash dump.
+
+Build procedure
+Only authored pipeline/native/test/package sources were changed. Protected
+submodules and existing RecompiledFuncs/RecompiledPatches were not edited.
+New generated output is in a separate pipeline-r2 directory. Older packages
+are preserved. Windows x64 and Linux x64/ARM64 AppImages are provided.

@@ -54,7 +54,7 @@ $runtimeFiles = @('DKR-R.exe', 'SDL2.dll', 'dxcompiler.dll', 'dxil.dll')
 $experimentalRaceTest = (Test-Path -LiteralPath (Join-Path $resolvedBuild 'CMakeCache.txt')) -and
     (Select-String -LiteralPath (Join-Path $resolvedBuild 'CMakeCache.txt') -Pattern '^DKR_EXPERIMENTAL_RACE_TEST:BOOL=(ON|1|TRUE|YES)$' -Quiet)
 if ($experimentalRaceTest) {
-    if ($Version -notmatch 'experimental|rollback-test|^1\.0\.5-beta\.15(?:-playtest\.(?:[23456789]|10|11|12|14|15(?:-fix\.[12])?))?$') { throw 'Experimental backend builds must use a distinctly labelled experimental version or an approved Beta 15 playtest candidate.' }
+    if ($Version -notmatch 'experimental|rollback-test|^1\.0\.5-beta\.15(?:-playtest\.(?:[23456789]|10|11|12|14|15(?:-fix\.[12])?|16(?:-fix\.[12])?))?$') { throw 'Experimental backend builds must use a distinctly labelled experimental version or an approved Beta 15 playtest candidate.' }
 }
 $inputHostFiles = @('DKR-R-InputHost.exe', 'SDL3.dll', 'DKR-R-ModWorker.exe')
 
@@ -67,7 +67,14 @@ if (Test-Path -LiteralPath $zip) {
 
 $bin = Join-Path $resolvedBuild "bin\$Configuration"
 if (Test-Path -LiteralPath (Join-Path $bin 'DKR-R.exe')) {
+    $releaseVersionInfo = (Get-Item -LiteralPath (Join-Path $bin 'DKR-R.exe')).VersionInfo
+    if ($releaseVersionInfo.FileVersion -ne $Version -or $releaseVersionInfo.ProductVersion -ne $Version) {
+        throw "The release executable's public version metadata does not match '$Version'. Reconfigure and rebuild before packaging."
+    }
     $imageText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes((Join-Path $bin 'DKR-R.exe')))
+    if (-not $imageText.Contains($Version)) {
+        throw "The release executable does not contain the requested version '$Version'. Reconfigure and rebuild before packaging."
+    }
     if ($imageText.Contains('DKR_REPLAY_CAPTURE_FILE')) {
         throw 'Release executable still contains private replay fixture capture.'
     }
@@ -103,10 +110,14 @@ foreach ($name in $inputHostFiles) {
 }
 $stagedRuntime = Join-Path $stage 'DKR-R.exe'
 $stagedInputHost = Join-Path $stagedInputHostDirectory 'DKR-R-InputHost.exe'
+if ($Version -eq '1.0.5-beta.15') {
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\BETA15-RELEASE.txt') -Destination (Join-Path $stage 'BETA15-NOTES.txt')
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\BETA15-ONLINE-STABILITY-20261007.txt') -Destination (Join-Path $stage 'ONLINE-STABILITY-CORRECTION.txt')
+}
 if ($experimentalRaceTest) {
     # Current playtests have their own connection/scope guides. The older file
     # describes Playtest 2 and must not label this candidate as that release.
-    if ($Version -notin @('1.0.5-beta.15-playtest.8', '1.0.5-beta.15-playtest.9', '1.0.5-beta.15-playtest.10', '1.0.5-beta.15-playtest.11', '1.0.5-beta.15-playtest.12', '1.0.5-beta.15-playtest.14', '1.0.5-beta.15-playtest.15', '1.0.5-beta.15-playtest.15-fix.1', '1.0.5-beta.15-playtest.15-fix.2')) {
+    if ($Version -notin @('1.0.5-beta.15', '1.0.5-beta.15-playtest.8', '1.0.5-beta.15-playtest.9', '1.0.5-beta.15-playtest.10', '1.0.5-beta.15-playtest.11', '1.0.5-beta.15-playtest.12', '1.0.5-beta.15-playtest.14', '1.0.5-beta.15-playtest.15', '1.0.5-beta.15-playtest.15-fix.1', '1.0.5-beta.15-playtest.15-fix.2', '1.0.5-beta.15-playtest.16', '1.0.5-beta.15-playtest.16-fix.1', '1.0.5-beta.15-playtest.16-fix.2')) {
         Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\EXPERIMENTAL-ROLLBACK-TESTING.txt') -Destination (Join-Path $stage 'EXPERIMENTAL-ROLLBACK-TESTING.txt')
     }
     if ($Version -eq '1.0.5-beta.15-playtest.3') {
@@ -187,11 +198,28 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\LEGACY-MODS-BETA.md') -Dest
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\LEGACY-MOD-COMPATIBILITY-BETA7.md') -Destination (Join-Path $stage 'LEGACY-MOD-COMPATIBILITY-BETA7.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE.md') -Destination (Join-Path $stage 'LICENSE.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY.md') -Destination (Join-Path $stage 'THIRD_PARTY.md')
+if (Test-Path -LiteralPath (Join-Path $projectRoot 'docs/ENHANCED-WATER-BETA15.txt')) {
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/ENHANCED-WATER-BETA15.txt') -Destination $stage
+}
+if ($Version -in @('1.0.5-beta.15-playtest.16','1.0.5-beta.15-playtest.16-fix.1','1.0.5-beta.15-playtest.16-fix.2')) {
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/BETA15-PLAYTEST16-WATER-PERFORMANCE.txt') -Destination $stage
+}
+if ($Version -in @('1.0.5-beta.15-playtest.16','1.0.5-beta.15-playtest.16-fix.1','1.0.5-beta.15-playtest.16-fix.2')) {
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/BETA15-PLAYTEST16-MEMORY-SAFETY.txt') -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/LEGACY-BEHAVIOUR-20261010.txt') -Destination $stage
+}
+if ($Version -in @('1.0.5-beta.15-playtest.16-fix.1','1.0.5-beta.15-playtest.16-fix.2')) {
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/BETA15-PLAYTEST16-AUDIO-FIX.txt') -Destination $stage
+}
+if ($Version -eq '1.0.5-beta.15-playtest.16-fix.2') {
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/BETA15-PLAYTEST16-MOD-LIBRARY.txt') -Destination $stage
+}
 Copy-Item -LiteralPath (Join-Path $projectRoot 'runtime-recomp\COPYING-NOTICE.md') -Destination (Join-Path $stage 'COPYING-NOTICE.md')
 $noticeDirectory = Join-Path $stage 'ThirdPartyLicenses'
 New-Item -ItemType Directory -Path $noticeDirectory | Out-Null
 $noticeFiles = [ordered]@{
     'RT64-LICENSE.txt' = 'extern\rt64\LICENSE'
+    'WAVE-RACE-WATER-LICENSE.txt' = 'patches\enhanced-water\LICENSE-WAVE-RACE.txt'
     'Dear-ImGui-LICENSE.txt' = 'extern\rt64\src\contrib\imgui\LICENSE.txt'
     'SDL2-LICENSE.txt' = 'extern\rt64\src\contrib\mupen64plus-win32-deps\SDL2-2.26.3\COPYING.txt'
     'SDL3-LICENSE.txt' = 'extern\sdl3\LICENSE.txt'

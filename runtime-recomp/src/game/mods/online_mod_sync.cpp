@@ -159,6 +159,9 @@ void ModSync::client_loop(const SyncSettings& settings,const RuntimePreparation&
     Download download;ChunkInbox inbox;std::unique_ptr<PayloadFile> file;std::shared_ptr<const Profile> profile;
     std::shared_ptr<const void> runtime;Clock::time_point retry{},consent_retry{},preparing_retry{};
     std::string requested_payload;std::uint32_t requested_offset=0;
+    bool data_requested=false;
+    const auto download_began=Clock::now();
+    std::uint64_t wire_bytes=0,cached_bytes=0,retries=0,credits=0;
     bool saw_offer=false,consent_sent=false,preparing_sent=false,prepared=false,keep_requested=false,kept_offline=false;
     std::string keep_error;
     Clock::time_point progress_next{};
@@ -218,19 +221,22 @@ void ModSync::client_loop(const SyncSettings& settings,const RuntimePreparation&
                 preparing_sent=true;continue;
             }
             if(download.phase()!=TransferPhase::Manifest && download.phase()!=TransferPhase::Payloads)continue;
-            inbox.push(message,download.request(link_.chunk_budget()));
+            if(inbox.push(message,download.request(link_.chunk_budget())))wire_bytes+=message.bytes.size();
             while(download.phase()==TransferPhase::Manifest || download.phase()==TransferPhase::Payloads) {
               const auto chunk=inbox.take(download.request(link_.chunk_budget()));if(!chunk)break;
               if(download.phase()==TransferPhase::Manifest) {
-                if(download.manifest_chunk(*chunk) && download.phase()==TransferPhase::Consent) {
+                const bool advanced=download.manifest_chunk(*chunk);
+                if(advanced)retry=Clock::now()+std::chrono::seconds(1);
+                if(advanced && download.phase()==TransferPhase::Consent) {
                     SyncView review;review.phase=SyncPhase::Review;review.manifest=std::make_shared<const Manifest>(download.manifest());
                     review.total=transfer_size(download.manifest());review.stage="Review the host's required mods";publish(std::move(review));
                 }
               } else if(download.accept_payload_chunk(*chunk)) {
                 if(!file)throw Error("Online mod chunk preceded an authorized private download.");
                 file->append(chunk->bytes);download.persisted(chunk->bytes.size());
+                retry=Clock::now()+std::chrono::seconds(1);
                 {std::lock_guard lock(mutex_);state_.received=download.received_bytes();}
-                if(file->size()==chunk->total){file->publish(settings.online_root/"payloads"/chunk->payload);file.reset();download.payload_verified();inbox.clear();retry={};}
+                if(file->size()==chunk->total){file->publish(settings.online_root/"payloads"/chunk->payload);file.reset();download.payload_verified();inbox.clear();retry={};data_requested=false;}
               }
             }
         }
@@ -263,16 +269,23 @@ void ModSync::client_loop(const SyncSettings& settings,const RuntimePreparation&
             const auto& items=download.manifest().payloads;
             const auto found=std::find_if(items.begin(),items.end(),[&](const auto& p){return p.digest==request.payload;});
             if(found==items.end())throw Error("Required payload disappeared from the frozen host manifest.");
-            if(cached_payload(settings.online_root/"payloads",*found)){download.cached(found->digest,found->size);continue;}
+            if(cached_payload(settings.online_root/"payloads",*found)){cached_bytes+=found->size;download.cached(found->digest,found->size);continue;}
             file=std::make_unique<PayloadFile>(settings.online_root/"partials"/found->digest,*found);
             if(file->size()==found->size){file->publish(settings.online_root/"payloads"/found->digest);file.reset();download.cached(found->digest,found->size);continue;}
             if(file->size())download.resume_prefix(found->digest,file->size());retry={};
         }
         if(download.phase()==TransferPhase::Manifest || download.phase()==TransferPhase::Payloads) {
-            const auto request=download.request(link_.chunk_budget());
-            const bool next_window=request.payload!=requested_payload || request.offset-requested_offset>=transfer_window_bytes(link_.chunk_budget());
-            if(Clock::now()>=retry || next_window) {
-                if(send(0,request,error)){retry=Clock::now()+std::chrono::seconds(1);requested_payload=request.payload;requested_offset=request.offset;}
+            auto request=download.request(link_.chunk_budget());
+            const bool first=!data_requested || request.payload!=requested_payload;
+            const bool gap=!first && Clock::now()>=retry;
+            const bool refill=!first && request.offset>=requested_offset &&
+                request.offset-requested_offset>=transfer_window_bytes(link_.chunk_budget())/2;
+            if(first || gap || refill) {
+                if(refill && !gap)request.operation=request.payload.empty()?Operation::ManifestCredit:Operation::PayloadCredit;
+                if(send(0,request,error)){
+                    if(gap)++retries;else if(!first)++credits;
+                    retry=Clock::now()+std::chrono::seconds(1);data_requested=true;requested_payload=request.payload;requested_offset=request.offset;
+                }
                 else if(!error.empty())throw Error(error);
             }
         } else if(download.phase()==TransferPhase::Preparing) {
@@ -280,6 +293,10 @@ void ModSync::client_loop(const SyncSettings& settings,const RuntimePreparation&
                 if(Clock::now()>=preparing_retry && send(0,control(Operation::Preparing,download),error))preparing_retry=Clock::now()+std::chrono::milliseconds(250);
                 if(!error.empty())throw Error(error);pause(stop);continue;
             }
+            std::fprintf(stderr,"[online-mods][download] wire-bytes=%llu cached-bytes=%llu gap-retries=%llu refill-credits=%llu elapsed-ms=%lld\n",
+                static_cast<unsigned long long>(wire_bytes),static_cast<unsigned long long>(cached_bytes),
+                static_cast<unsigned long long>(retries),static_cast<unsigned long long>(credits),
+                static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-download_began).count()));
             {std::lock_guard lock(mutex_);state_.phase=SyncPhase::Preparing;state_.received=download.received_bytes();}
             // Import/runtime validation can take longer than a stage callback.
             // Display-only authenticated heartbeats remain independent of that

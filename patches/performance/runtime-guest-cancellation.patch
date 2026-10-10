@@ -1,0 +1,12 @@
+diff --git a/librecomp/src/recomp.cpp b/librecomp/src/recomp.cpp
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -541,2 +541,3 @@
++#include "native_guest_lifetime.hpp"
+ std::atomic_bool exited = false;
+ moodycamel::LightweightSemaphore graphics_shutdown_ready;
+@@ -545,3 +546,4 @@
+     exited.store(true);
+     ultramodern::notify_external_message_waiters();
++    ultramodern::cancel_native_guest_threads();
+     game_status.store(GameStatus::Quit);

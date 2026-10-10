@@ -1,0 +1,83 @@
+diff --git a/src/contrib/plume/plume_vulkan.cpp b/src/contrib/plume/plume_vulkan.cpp
+--- a/src/contrib/plume/plume_vulkan.cpp
++++ b/src/contrib/plume/plume_vulkan.cpp
+@@ -14,2 +14,3 @@
+ #include "android_surface_state.hpp"
++#include "android_rotation_policy.hpp"
+ #include "render_resource_policy.hpp"
+@@ -2490,6 +2491,9 @@
+-        if (!(surfaceCapabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)) {
++        auto preRotation = dkr::runtime::android_rotation::select(
++            surfaceCapabilities.currentTransform, surfaceCapabilities.supportedTransforms);
++        if (preRotation == 0) {
+             dkr::runtime::graphics_health::record(dkr::runtime::graphics_health::Stage::Surface, VK_ERROR_FEATURE_NOT_PRESENT);
+-            fprintf(stderr, "[Android] Surface cannot present unrotated content (transforms=%x current=%x).\n",
++            fprintf(stderr, "[Android] Surface has no supported presentation transform (transforms=%x current=%x).\n",
+                 surfaceCapabilities.supportedTransforms, surfaceCapabilities.currentTransform);
+             return false;
+@@ -2503,2 +2507,19 @@
+         if (width == 0 || height == 0) return false;
++        // currentExtent is oriented for display. Keep game targets/layout/input
++        // logical, while the existing final pass writes natural-orientation images.
++        preRotation = dkr::runtime::android_rotation::select_for_extent(
++            surfaceCapabilities.currentTransform, surfaceCapabilities.supportedTransforms,
++            {width, height}, {surfaceCapabilities.minImageExtent.width, surfaceCapabilities.minImageExtent.height},
++            {surfaceCapabilities.maxImageExtent.width, surfaceCapabilities.maxImageExtent.height});
++        if (preRotation == 0) {
++            dkr::runtime::graphics_health::record(dkr::runtime::graphics_health::Stage::Surface, VK_ERROR_FEATURE_NOT_PRESENT);
++            return false;
++        }
++        const auto imageExtent = dkr::runtime::android_rotation::rotated_extent({width, height}, preRotation);
++        width = imageExtent.width;
++        height = imageExtent.height;
+         releaseImageViews();
+@@ -2515,1 +2532,1 @@
+         createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+-        createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
++        createInfo.preTransform = static_cast<VkSurfaceTransformFlagBitsKHR>(preRotation);
+         createInfo.compositeAlpha = pickedAlphaFlag;
+@@ -2589,5 +2606,24 @@
+         if (!dkr::runtime::android_surface::matches(androidSurfaceGeneration) || androidSurfaceLost) return true;
+         uint32_t windowWidth, windowHeight;
+         getWindowSize(windowWidth, windowHeight);
+-        return (vk == VK_NULL_HANDLE) || (windowWidth != requestedWindowWidth) || (windowHeight != requestedWindowHeight) || (requiredPresentMode != createdPresentMode);
++        if ((vk == VK_NULL_HANDLE) || (windowWidth != requestedWindowWidth) || (windowHeight != requestedWindowHeight) || (requiredPresentMode != createdPresentMode)) return true;
++        // Same-size 180-degree rotations may not resize the native window.
++        // Poll at most four times/second (also works before Android 10). Do not
++        // recreate for a persistent VK_SUBOPTIMAL unless extent/transform changed.
++        const auto now = std::chrono::steady_clock::now();
++        if (now < androidTransformCheckAfter) return false;
++        androidTransformCheckAfter = now + std::chrono::milliseconds(250);
++        VkSurfaceCapabilitiesKHR caps{};
++        const auto result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(commandQueue->device->physicalDevice, surface, &caps);
++        if (result != VK_SUCCESS) return result == VK_ERROR_SURFACE_LOST_KHR;
++        const auto logical = caps.currentExtent.width != UINT32_MAX
++            ? dkr::runtime::android_rotation::Extent{caps.currentExtent.width, caps.currentExtent.height}
++            : dkr::runtime::android_rotation::Extent{windowWidth, windowHeight};
++        const auto selected = dkr::runtime::android_rotation::select_for_extent(caps.currentTransform, caps.supportedTransforms,
++            logical, {caps.minImageExtent.width, caps.minImageExtent.height}, {caps.maxImageExtent.width, caps.maxImageExtent.height});
++        const auto extent = dkr::runtime::android_rotation::rotated_extent(logical, selected);
++        return selected && (selected != createInfo.preTransform || extent.width != width || extent.height != height);
+     }
+@@ -2611,7 +2647,9 @@
+     uint32_t VulkanSwapChain::getWidth() const {
+-        return width;
++        // Callers use logical dimensions; swapchain textures retain image dimensions.
++        return dkr::runtime::android_rotation::quarter_turn(createInfo.preTransform) ? height : width;
+     }
+ 
+     uint32_t VulkanSwapChain::getHeight() const {
+-        return height;
++        return dkr::runtime::android_rotation::quarter_turn(createInfo.preTransform) ? width : height;
+     }
+diff --git a/src/contrib/plume/plume_vulkan.h b/src/contrib/plume/plume_vulkan.h
+--- a/src/contrib/plume/plume_vulkan.h
++++ b/src/contrib/plume/plume_vulkan.h
+@@ -13,1 +13,2 @@
+ #include <mutex>
++#include <chrono>
+ #include <set>
+@@ -241,2 +242,3 @@
+         int androidRequestedRate = 0;
++        mutable std::chrono::steady_clock::time_point androidTransformCheckAfter{};
+         VkSwapchainCreateInfoKHR createInfo = {};

@@ -1,0 +1,48 @@
+DKR-R 1.0.5 Beta 15 - Playtest 9
+==============================
+
+Packages: Windows x64 ZIP and Linux x86_64 AppImage.
+This packages the camera-obstruction rebuild the user reported working well.
+No further gameplay changes were made for the Playtest 9 version update.
+
+Included
+--------
+* Collision-aware normal follow-camera placement for cars, planes and
+  hovercraft. Solid level geometry constrains the requested camera position
+  before rendering/culling; the existing boom smoothing handles recovery.
+* The same checked guest-only camera correction in Experimental Rollback,
+  without reading local display preferences into shared simulation.
+* The preceding near-plane clearance correction, HUD fixes, launcher/overlay
+  styling, readable layouts and multi-pack texture priority changes.
+* The integrated contributor changes and the existing local billboard/scenery
+  performance work. This is not a claim that deferred graphics/audio parity
+  phases or all devices and scenes have been fully qualified.
+
+Scripted, dialogue, fixed, loop and finish cameras keep their authored behaviour.
+The query ignores non-collidable/water/decal batches, is bounded and allocates
+no memory. Invalid/oversized meshes or unresolved tight spaces keep the retail
+camera/void-cover fallback rather than changing physics or unsafe state.
+
+Connect
+-------
+Use the same Playtest 9 package on all participating machines. Experimental
+Rollback still uses the ordinary launcher, lobby/countdown, intro and menus;
+there is no separate test launcher or forced track. Select an unmodified US
+v1.0 Game Pak for that backend. Experimental v1.1 and online custom mods remain
+unsupported. Host Prediction and Strict Input Sync remain available.
+Single-player saves remain separate from the isolated online session save.
+
+Late gameplay inputs use checkpoint restoration/replay. Menus and resource
+transitions remain confirmed/retirement-gated, and audio/save/external effects
+remain confirmation-gated. Master volume and renderer-only settings are local;
+category-mixer and broader independent scenery reconstruction remain deferred.
+See LOCAL-SCENERY-STATUS.txt for the existing scenery scope and limitations.
+
+Verification and rollback
+-------------------------
+The user reported the camera fix working well. The agent performed Patch
+Pipeline ABI/source checks, Windows/Linux Release compilation and static
+package/version checks only. No game, launcher, CTest or runtime self-test was
+run by the agent. Broader gameplay/online testing remains with the user/team.
+Previous packages and pre-change authored input backups are retained.
+No ROMs, saves, personal profiles, runtime logs or crash dumps are supplied.

@@ -74,9 +74,7 @@ public:
            std::memcmp(&staged.native,&initial_native_,sizeof(initial_native_))) return false;
         for(unsigned i=0;i<staged.guards.size();++i) {
             const auto& guard=staged.guards[i];
-            if(guard.immediate_events>256 || guard.logged_empty>1 || guard.logged_corrupt>1 ||
-               (guard.queue && ((guard.queue&3) || guard.queue<0x80000000U || guard.queue>0x80FFFFECU))) return false;
-            if(!guard.queue && (guard.immediate_events || guard.logged_empty || guard.logged_corrupt)) return false;
+            if(!dkr_audio_guard_valid(&guard)) return false;
             for(unsigned j=0;j<i;++j) if(guard.queue && guard.queue==staged.guards[j].queue) return false;
         }
         unsigned frame=0;

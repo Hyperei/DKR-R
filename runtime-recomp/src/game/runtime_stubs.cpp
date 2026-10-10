@@ -12,6 +12,7 @@
 #include "vi_presentation_policy.hpp"
 #include "widescreen_policy.hpp"
 #include "finish_presentation_policy.hpp"
+#include "audio_event_queue.h"
 
 #include "ultramodern/config.hpp"
 #include "ultramodern/ultramodern.hpp"
@@ -175,18 +176,7 @@ bool IsRdramWordAddress(std::uint32_t address, std::uint32_t final_offset) {
                                                            final_offset);
 }
 
-constexpr std::uint32_t kAudioEventSize = 0x10U;
-constexpr std::uint32_t kAudioEventItemSize = 0x1CU;
-constexpr std::uint32_t kAudioEventQueueSize = 0x14U;
-constexpr std::uint32_t kAudioRecoveryDelayUs = 16667U;
-constexpr std::uint32_t kMaximumImmediateAudioEvents = 256U;
-
-struct AudioEventQueueGuard {
-    std::uint32_t queue = 0U;
-    std::uint32_t immediate_events = 0U;
-    bool logged_empty = false;
-    bool logged_corrupt = false;
-};
+using AudioEventQueueGuard = dkr_audio_queue_guard;
 
 std::mutex g_audio_event_mutex;
 std::array<AudioEventQueueGuard, 8> g_audio_event_guards{};
@@ -224,27 +214,35 @@ AudioEventQueueGuard& AudioGuardFor(std::uint32_t queue) {
     return guard;
 }
 
-void WriteNoAudioEvent(std::uint8_t* rdram, std::uint32_t event) {
-    if (rdram != nullptr && IsRdramWordAddress(event, kAudioEventSize - 4U)) {
-        MEM_H(0, RdramAddress(event)) = static_cast<std::int16_t>(-1);
-    }
-}
-
-void QuarantineAllocatedAudioEvents(std::uint8_t* rdram,
-                                    std::uint32_t queue) {
-    if (rdram == nullptr || !IsRdramWordAddress(queue, kAudioEventQueueSize - 4U)) {
-        return;
-    }
-    MEM_W(0x08, RdramAddress(queue)) = 0U;
-    MEM_W(0x0C, RdramAddress(queue)) = 0U;
-}
-
 void ResetAudioEventGuards() {
     std::scoped_lock lock(g_audio_event_mutex);
-    g_audio_event_guards = {};
+    // Scene changes do not reallocate the audio heap. Preserve registered
+    // pool ownership for later empty/corrupt-queue recovery.
+    for (auto& guard : g_audio_event_guards) {
+        guard.immediate_events = guard.logged_empty = guard.logged_corrupt = 0;
+    }
+}
+
+void ResumeNativeSequence(void* user, std::uint8_t* rdram, std::uint32_t player) {
+    recomp_context next = *static_cast<recomp_context*>(user);
+    next.f_odd = next.mips3_float_mode ? &next.f1.u32l : &next.f0.u32h;
+    next.r4 = RdramAddress(player);
+    const std::uint32_t entry = dkr::runtime::revision_addresses::MusicPlayer == 0x800DC630U
+        ? 0x800629CCU : 0x80062C0CU; // __CSPPostNextSeqEvent, checked retail maps.
+    get_function(static_cast<std::int32_t>(entry))(rdram, &next);
 }
 
 } // namespace
+
+extern "C" void dkr_audio_event_queue_initialize(std::uint8_t*, recomp_context* context) {
+    if (!context) return;
+    std::scoped_lock lock(g_audio_event_mutex);
+    AudioEventQueueGuard& guard = AudioGuardFor(static_cast<std::uint32_t>(context->r4));
+    if (!dkr_audio_register_queue(&guard, static_cast<std::uint32_t>(context->r4),
+            static_cast<std::uint32_t>(context->r5), static_cast<std::uint32_t>(context->r6))) {
+        guard = {}; // Invalid arguments never license pool reconstruction.
+    }
+}
 
 extern "C" std::uint32_t dkr_audio_event_queue_next(
     std::uint8_t* rdram, recomp_context* context) {
@@ -257,106 +255,26 @@ extern "C" std::uint32_t dkr_audio_event_queue_next(
 
     std::scoped_lock lock(g_audio_event_mutex);
     AudioEventQueueGuard& guard = AudioGuardFor(queue);
-    const auto recover = [&](bool corrupt, const char* reason) {
-        WriteNoAudioEvent(rdram, destination);
-        guard.immediate_events = 0U;
-        bool& logged = corrupt ? guard.logged_corrupt : guard.logged_empty;
-        if (!logged) {
-            std::fprintf(stderr,
-                         "[stability][audio] recovered %s event queue "
-                         "queue=%08X; scheduling next callback in %u us\n",
-                         reason, queue, kAudioRecoveryDelayUs);
-            logged = true;
-        }
-        return kAudioRecoveryDelayUs;
-    };
-
-    if (rdram == nullptr || context == nullptr ||
-        !IsRdramWordAddress(queue, kAudioEventQueueSize - 4U) ||
-        !IsRdramWordAddress(destination, kAudioEventSize - 4U)) {
-        return recover(true, "invalid");
+    unsigned status = DKR_AUDIO_QUEUE_INVALID;
+    std::uint32_t delay = DKR_AUDIO_FRAME_US;
+    if (rdram && context) delay = dkr_audio_queue_next(rdram, &guard, destination,
+        dkr::runtime::revision_addresses::MusicPlayer, ResumeNativeSequence, context, &status);
+    if (status == DKR_AUDIO_QUEUE_INVALID || status == DKR_AUDIO_QUEUE_EMPTY) {
+        // A corrupt caller must not overwrite the queue/pool while returning
+        // a harmless idle event. Apply the same output-alias fence as the
+        // shared dequeue policy, including its newly adopted pool metadata.
+        if (rdram && dkr_audio_range(queue, 20) && dkr_audio_range(destination, 16) &&
+            !(destination < queue + 20 && queue < destination + 16) &&
+            !(guard.item_count && destination < guard.items + guard.item_count * 28 &&
+                guard.items < destination + 16)) dkr_audio_empty_event(rdram, destination);
     }
-
-    const gpr queue_address = RdramAddress(queue);
-    const std::uint32_t item = static_cast<std::uint32_t>(
-        MEM_W(0x08, queue_address));
-    if (item == 0U) {
-        // libultra returns delta=0 for an exhausted queue. Rare's custom
-        // sequence-player handler immediately asks again while delta is zero,
-        // producing an infinite audio-thread loop. Preserve the error event,
-        // but return one authored audio-frame so the player can yield and its
-        // public API can safely repopulate the queue.
-        return recover(false, "exhausted");
+    if (status && !(guard.logged_corrupt & status)) {
+        std::fprintf(stderr, "[stability][audio] queue=%08X status=%u delay=%u us "
+            "pool=%u; valid burst events retained, recovery restricted to native owners\n",
+            queue, status, delay, guard.item_count);
+        guard.logged_corrupt |= status;
     }
-    if (!IsRdramWordAddress(item, kAudioEventItemSize - 4U)) {
-        QuarantineAllocatedAudioEvents(rdram, queue);
-        return recover(true, "malformed");
-    }
-
-    const gpr item_address = RdramAddress(item);
-    const std::uint32_t next = static_cast<std::uint32_t>(MEM_W(0, item_address));
-    const std::uint32_t previous = static_cast<std::uint32_t>(MEM_W(4, item_address));
-    const std::uint32_t alloc_sentinel = queue + 0x08U;
-    if (!SameRdramAddress(previous, alloc_sentinel) ||
-        (next != 0U && !IsRdramWordAddress(next, 4U))) {
-        QuarantineAllocatedAudioEvents(rdram, queue);
-        return recover(true, "malformed");
-    }
-    if (next != 0U) {
-        const std::uint32_t next_previous = static_cast<std::uint32_t>(
-            MEM_W(4, RdramAddress(next)));
-        if (!SameRdramAddress(next_previous, item)) {
-            QuarantineAllocatedAudioEvents(rdram, queue);
-            return recover(true, "malformed");
-        }
-    }
-
-    const std::uint32_t free_head = static_cast<std::uint32_t>(
-        MEM_W(0, queue_address));
-    if (free_head != 0U && !IsRdramWordAddress(free_head, 4U)) {
-        QuarantineAllocatedAudioEvents(rdram, queue);
-        return recover(true, "malformed");
-    }
-
-    // Exact alUnlink(item) semantics for the allocated-list head.
-    MEM_W(0x08, queue_address) = next;
-    if (next != 0U) {
-        MEM_W(4, RdramAddress(next)) = alloc_sentinel;
-    } else {
-        MEM_W(0x0C, queue_address) = 0U;
-    }
-
-    // ALEvent is 16 bytes in this ABI. Word copies preserve the recomp's N64
-    // byte ordering without introducing unaligned host accesses.
-    for (std::uint32_t offset = 0U; offset < kAudioEventSize; offset += 4U) {
-        MEM_W(offset, RdramAddress(destination)) =
-            MEM_W(0x0CU + offset, item_address);
-    }
-    const std::uint32_t delta = static_cast<std::uint32_t>(
-        MEM_W(0x08, item_address));
-
-    // Exact alLink(item, &evtq->freeList) semantics.
-    MEM_W(0, item_address) = free_head;
-    MEM_W(4, item_address) = queue;
-    if (free_head != 0U) {
-        MEM_W(4, RdramAddress(free_head)) = item;
-    }
-    MEM_W(0, queue_address) = item;
-
-    if (delta != 0U) {
-        guard.immediate_events = 0U;
-        guard.logged_empty = false;
-        return delta;
-    }
-    if (++guard.immediate_events <= kMaximumImmediateAudioEvents) {
-        return 0U;
-    }
-
-    // No retail DKR player owns more than 150 event items. A longer run of
-    // zero-delta callbacks therefore proves a damaged/cyclic queue rather
-    // than a legal simultaneous-event batch.
-    QuarantineAllocatedAudioEvents(rdram, queue);
-    return recover(true, "non-progressing");
+    return delay;
 }
 
 extern "C" void dkr_custom_tracks_prepare_memory(std::uint8_t*, recomp_context*);

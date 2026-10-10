@@ -1704,6 +1704,14 @@ void dkr::runtime::platform::pump_window_events(void*) {
     SDL_Event event{};
     while (SDL_PollEvent(&event) != 0) {
         update_fullscreen_cursor(&event);
+#if defined(__ANDROID__) && defined(DKR_EXPERIMENTAL_RACE_TEST)
+        if (event.type == SDL_APP_WILLENTERBACKGROUND && netplay::experimental::runtime_view().active) {
+            // Android may suspend SDL's input owner after this event. End the
+            // shared match while networking is still awake, not minutes later
+            // after every other racer stalls. Keep the lobby for a quick retry.
+            netplay::session().request_owned_match_end("A racer moved DKR-R to the background. The match has ended.");
+        }
+#endif
         if (event.type == SDL_QUIT ||
             (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE)) {
 #if defined(DKR_EXPERIMENTAL_RACE_TEST)

@@ -32,14 +32,19 @@ void storage_budget(const std::filesystem::path& path) {
 }
 void prepare_library(const Manifest& input,const std::filesystem::path& input_payload_directory,
     const std::vector<std::filesystem::path>& owned_roms,const std::filesystem::path& input_destination,
-    const ProgressCallback& progress) {
+    const ProgressCallback& progress,ImportPreparation* shared_sources) {
     const auto manifest=canonical(input);const auto digest=identity(manifest);
     const auto payload_directory=private_storage_path(input_payload_directory);
     const auto destination=private_storage_path(input_destination);
     if(owned_roms.empty() || owned_roms.size()>8 || std::filesystem::exists(destination))throw Error("Online preparation needs imported original Game Paks and fresh staging.");
     check_storage(payload_directory,true);check_storage(destination.parent_path(),true);
     for(const auto& path:owned_roms)check_storage(path,false);
-    auto preparation=load_import_sources(owned_roms);
+    ImportPreparation local;
+    if(!shared_sources)local=load_import_sources(owned_roms);
+    auto& preparation=shared_sources?*shared_sources:local;
+    // Only locally verified worker memory can be shared, never host artifacts.
+    // Release the previous patch's scratch before decoding the next one.
+    preparation.target.clear();preparation.analysis={};
     std::set<std::string> revisions;
     for(const auto& [revision,bytes]:preparation.bases)revisions.insert(revision);
     if(!revisions.contains(manifest.revision))throw Error("Import the lobby's original Game Pak revision before preparing these mods.");
@@ -87,24 +92,48 @@ void prepare_library(const Manifest& input,const std::filesystem::path& input_pa
         if(std::filesystem::exists(review))throw Error("Duplicate online review publication.");
         std::filesystem::rename(job/"review",review);
         for(const auto kind:{Kind::Track,Kind::Character}) {
-            bool required=false;for(const auto& content:manifest.content)if(content.payload==payload.digest && content.kind==kind)required=true;
+            bool required=false,behaviour_enabled=false,asset_only=false;
+            for(const auto& content:manifest.content)if(content.payload==payload.digest && content.kind==kind) {
+                required=true;behaviour_enabled|=content.behaviour_abi!=0;asset_only|=content.behaviour_abi==0;
+            }
             if(!required)continue;
+            // Old installed artifacts keep their explicitly frozen asset-only
+            // policy and identities. Never silently discard a host's behaviour
+            // contract if a new adapter fails. A mixed package can legitimately
+            // contain one adapted racer and another purely visual racer. Build
+            // each explicitly requested policy in its own transaction; no
+            // failure ever causes a retry under a more permissive policy.
+            for(const bool enabled:{false,true}) {
+            if(!(enabled?behaviour_enabled:asset_only))continue;
             report(kind==Kind::Track?"Preparing exact custom course selection":"Preparing exact custom character selection");
-            const auto prepared=job/(kind==Kind::Track?"tracks":"characters");
-            if(kind==Kind::Track)prepare_imported_tracks(review,owned_roms,prepared,progress,&preparation);
-            else prepare_imported_characters(review,owned_roms,prepared,progress,&preparation);
-            const auto receipt=read(prepared/"prepared.json");
-            for(const auto& item:receipt.at(kind==Kind::Track?"tracks":"characters")) {
+            const auto prepared=job/(std::string(kind==Kind::Track?"tracks":"characters")+(enabled?"-behaviour":"-assets"));
+            if(kind==Kind::Track)prepare_imported_tracks(review,owned_roms,prepared,progress,&preparation,enabled);
+            else prepare_imported_characters(review,owned_roms,prepared,progress,&preparation,enabled);
+            auto receipt=read(prepared/"prepared.json");
+            const char* entries=kind==Kind::Track?"tracks":"characters";
+            auto selected=json::array();
+            for(const auto& item:receipt.at(entries)) {
                 if(kind==Kind::Track && item.at("revision")!=manifest.revision)continue;
                 const auto key=std::make_pair(kind,item.at("id").get<std::string>());const auto entry=expected.find(key);
                 if(entry==expected.end() || entry->second.payload!=payload.digest)continue;
                 const auto& wanted=entry->second;
+                if((wanted.behaviour_abi!=0)!=enabled)continue;
                 if(item.at("patch")!=wanted.payload || item.at("artifact")!=wanted.artifact || item.at("name")!=wanted.name ||
+                   item.value("behaviour_identity",std::string{})!=wanted.behaviour || item.value("behaviour_abi",0U)!=wanted.behaviour_abi ||
                    (kind==Kind::Track?item.at("bank").get<std::string>():wanted.id)!=wanted.bank || !found.insert(key).second)
                     throw Error("Locally prepared mod assets differ from the frozen host selection.");
+                selected.push_back(item);
             }
+            // Do not expose extra roots or duplicate asset-only editions from
+            // the other policy as members of the frozen session collection.
+            receipt[entries]=std::move(selected);
+            const auto original_receipt=prepared/"prepared.json";
+            const auto retained_receipt=prepared/"prepared-all.json";
+            std::filesystem::rename(original_receipt,retained_receipt);
+            write(original_receipt,receipt);
             const auto hash=sha256(read_file(prepared/"prepared.json",MiB));
             std::filesystem::rename(prepared,root/(kind==Kind::Track?"prepared":"prepared-characters")/hash);
+            }
         }
         storage_budget(destination);
     }

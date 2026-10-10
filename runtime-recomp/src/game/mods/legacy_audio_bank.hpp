@@ -18,6 +18,8 @@ SequenceDirectory inspect_sequence_directory(View bank);
 // songs because an exporter shifted or padded their offsets in a ROM patch.
 Bytes build_sequence_bank(View original,const std::map<unsigned,Bytes>& replacements,
     std::uint32_t allocated_sequence_capacity);
+// Certify changed streams in a retained prepared bank, not just its header.
+void validate_changed_sequences(View original,View prepared);
 // Compare resolved musical instruments, not ROM addresses or exporter padding.
 // Both graphs are fully bounds checked. Equality permits retaining the original
 // live bank while playing an imported sequence; it never licenses a bank swap.

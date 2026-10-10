@@ -32,10 +32,12 @@ unsigned checks=0;
 void check(bool ok,const char* why){++checks;if(!ok)throw std::runtime_error(why);}
 struct ModBrowserState {
     char search[160]{};
-    int sort=0,state=0,compatibility=0,visibility=0,format=0;
+    int sort=0,state=0,compatibility=0,visibility=0,format=0,duplicates=0;
     std::string source,manage_id,remove_id,hide_id;
     std::shared_ptr<const dkr::mods::TrackCatalogView> snapshot;
     std::vector<dkr::mods::browser::Card> all;
+    std::map<std::string,dkr::mods::browser::DuplicateMatch> duplicate_matches;
+    std::vector<std::pair<std::string,std::string>> native_name_sources;
     std::vector<int> shown;
     std::string filter_key,layout_key;
     std::vector<float> row_heights;
@@ -139,6 +141,12 @@ int main() {
             const auto& views=g_library_card_views[characters?1:0];
             check(views.size()==total,"Card descriptions are missing.");
             check_card_text(views,card_width);
+            for(const auto& card:views)check(card.note.empty(),"Normal cards still duplicate their Details notes.");
+            auto described=DescribeLibraryCard({&state.all.front(),nullptr},characters,2,false);
+            auto longer=state.all.front();longer.item.details=std::string(4000,'W');
+            check(MeasureLibraryCard(described,card_width)==MeasureLibraryCard(
+                DescribeLibraryCard({&longer,nullptr},characters,2,false),card_width),
+                "Long compatibility notes still enlarge cards.");
             for(std::size_t index=0;index<views.size();++index)
                 check(MeasureLibraryCard(views[index],card_width)<=state.row_heights[index/columns]+0.5F,"A card is taller than its row.");
             ++rendered;
@@ -171,11 +179,20 @@ int main() {
             check(state.shown.size()==2+(characters?0:tracks.size()),"The active filter is wrong.");
             ResetLibraryFilters(state);
             check(!LibraryFiltered(state),"Filters did not reset.");
+            state.duplicates=1;state.visibility=1;
+            frame(width,[&]{DrawModCardBrowser(width,characters,mods,false,tracks,{});});
+            check(state.shown.size()==200+(characters?0U:3U),"Name duplicates are missing, or unique native tracks were included.");
+            state.duplicates=2;
+            frame(width,[&]{DrawModCardBrowser(width,characters,mods,false,tracks,{});});
+            check(state.shown.empty(),"Missing source identities were treated as duplicates.");
+            ResetLibraryFilters(state);
+            check(state.duplicates==0&&!LibraryFiltered(state),"Duplicate filters did not reset.");
 
             // A long-notes modal through the production modal renderer.
             state.all.front().item.details=std::string(3500,'W');state.manage_id=state.all.front().item.id;
             for(int step=0;step<3;++step) {
                 ImGui::NewFrame();ImGui::Begin("Modal owner");if(!step)ImGui::OpenPopup("Manage custom mod");
+                ImGui::SetNextItemOpen(true,ImGuiCond_Always);
                 DrawModManagement(state,characters,true);ImGui::End();ImGui::Render();
             }
             bool modal=false;

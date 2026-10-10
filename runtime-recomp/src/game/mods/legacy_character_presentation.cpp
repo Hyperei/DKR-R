@@ -63,8 +63,10 @@ void CharacterPresentation::prepare(std::span<std::uint8_t> memory,const recomp_
         portrait_cells_[i]=draw+16;
     }
     if(audio && !c.race_audio.control.empty() && !banks_[i]) {
-        if(!c.race_audio_identity.empty())for(unsigned j=0;j<entries.size();++j)
+        if(!c.race_audio_identity.empty())for(unsigned j=0;j<entries.size();++j) {
             if(banks_[j] && entries[j].race_audio_identity==c.race_audio_identity) {banks_[i]=banks_[j];break;}
+            if(selection_banks_[j] && entries[j].selection_audio_identity==c.race_audio_identity) {banks_[i]=selection_banks_[j];break;}
+        }
         if(banks_[i])return;
         if(!sample_address)throw Error("Custom race sample mount is missing.");
         const auto control=call.call(f.allocate,{unsigned(c.race_audio.control.size()),0x7f7f7fff});
@@ -79,9 +81,12 @@ std::uint32_t CharacterPresentation::selection_bank(std::span<std::uint8_t> memo
         throw Error("Unadmitted custom selection voice.");
     if(selection_banks_[i])return selection_banks_[i];
     const auto& c=entries[i];
-    if(!c.selection_audio_identity.empty())for(unsigned j=0;j<entries.size();++j)
+    if(!c.selection_audio_identity.empty())for(unsigned j=0;j<entries.size();++j) {
         if(selection_banks_[j] && entries[j].selection_audio_identity==c.selection_audio_identity)
             return selection_banks_[i]=selection_banks_[j];
+        if(banks_[j] && entries[j].race_audio_identity==c.selection_audio_identity)
+            return selection_banks_[i]=banks_[j];
+    }
     Calls call(memory,ctx);auto& g=call.guest;
     const auto base=call.call(f.allocate,{unsigned(c.audio.control.size()),0x7f7f7fff});
     if(!base)throw Error("Not enough guest memory for the selected custom voice.");

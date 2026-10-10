@@ -638,6 +638,12 @@ void DrawAboutPage(float width, bool support) {
             SDL_OpenURL("https://github.com/akratch/goldenballoon");
         }
         PaddockGap(26.0F);
+        DetailText("Wave Race 64 Recomp - enhanced-water rendering reference (MIT)", inner);
+        DetailText("Thank you to elliotttate and the Wave Race contributors. DKR-R adapts the renderer to its own water geometry, cameras and presentation pipeline.", inner, kSetMuted, 0.0F);
+        if (DetailRaceButton("VISIT WAVE RACE RECOMP ON GITHUB", inner)) {
+            SDL_OpenURL("https://github.com/elliotttate/wave-race-64-recomp");
+        }
+        PaddockGap(26.0F);
         DetailHeading("DKR-R HDR TEXTURE PACK PROJECT", inner, kSetWarm);
         DetailText("A community project re-imagining Diddy Kong Racing in crisp HD while remaining faithful to the "
                    "original art direction. Project lead: sr.gu. Thank you to every artist, tester and contributor "

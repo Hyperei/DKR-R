@@ -2,6 +2,7 @@
 #include "legacy_mod_process.hpp"
 #include "legacy_track_prepare_job.hpp"
 #include "online_mod_prepare.hpp"
+#include "online_mod_bundle.hpp"
 #include <json/json.hpp>
 #include <fstream>
 #include <iostream>
@@ -33,7 +34,7 @@ int execute(const std::filesystem::path& input_request) {
         const auto job=nlohmann::json::parse(bytes.begin(),bytes.end());
         if(job.at("schema")!=Schema) throw Error("Unsupported importer request version.");
         if(job.value("operation",std::string{})=="online-capabilities") {
-            const auto capabilities=nlohmann::json({{"schema",Schema},{"online_prepare",1}}).dump();
+            const auto capabilities=nlohmann::json({{"schema",Schema},{"online_prepare",1},{"online_prepare_batch",1}}).dump();
             write_new_file(request.parent_path()/"capabilities.json",
                 View(reinterpret_cast<const std::uint8_t*>(capabilities.data()),capabilities.size()));
             return 0;
@@ -51,7 +52,7 @@ int execute(const std::filesystem::path& input_request) {
         const auto operation=job.value("operation",std::string("import"));
         unsigned event_count=0;
         const auto report=[&](const Progress& progress) {
-            if(++event_count>(operation=="online-prepare"?4096U:512U)) throw Error("Import progress budget exceeded.");
+            if(++event_count>((operation=="online-prepare" || operation=="online-prepare-batch")?4096U:512U)) throw Error("Import progress budget exceeded.");
             stream<<nlohmann::json({{"patch",progress.patch},{"count",progress.count},
                                    {"stage",progress.stage}}).dump()<<'\n';
             stream.flush();return bool(stream);
@@ -63,6 +64,20 @@ int execute(const std::filesystem::path& input_request) {
             const auto manifest_path=utf8_path(job.at("manifest").get<std::string>());
             const auto manifest=online::decode(read_file(manifest_path,online::MaxManifestBytes));
             online::prepare_library(manifest,source,roms,destination,report);
+        } else if(operation=="online-prepare-batch") {
+            // Two sequential items, one verified ROM source set, the SAME
+            // process CPU/memory/wall limits as a single ordinary import.
+            // Complete receipts survive a failed/limited second item.
+            const auto count=job.at("count").get<unsigned>();
+            if(count!=2)throw Error("Invalid bounded online preparation batch.");
+            auto preparation=load_import_sources(roms);
+            for(unsigned i=0;i<count;++i) {
+                const auto part=request.parent_path()/"batch"/std::to_string(i);
+                online::check_storage(part,true);
+                const auto manifest=online::decode(read_file(part/"manifest.json",online::MaxManifestBytes));
+                if(manifest.payloads.size()!=1)throw Error("Batch item must contain exactly one mod payload.");
+                online::prepare_library(manifest,source,roms,part/"content",report,&preparation);
+            }
         } else throw Error("Unsupported legacy worker operation.");
         return 0;
     } catch(const std::exception& error) {

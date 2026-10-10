@@ -49,6 +49,7 @@ struct SequenceCheck {
 [[nodiscard]] SequenceCheck validate_sequence(
     std::span<const std::uint8_t> data,
     std::uint32_t capacity = kRetailSequenceCapacity,
-    const std::array<bool, 128>* programs = nullptr);
+    const std::array<bool, 128>* programs = nullptr,
+    bool native_legacy_notes = false);
 
 } // namespace dkr::runtime::custom_music

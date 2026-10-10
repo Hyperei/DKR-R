@@ -576,6 +576,8 @@ int main() {
     assert(canonical_network_release(" 1.0.0\r\n") == "1.0.0");
     assert(canonical_network_build_fingerprint("1.0.0") ==
            canonical_network_build_fingerprint(" 1.0.0\n"));
+    assert(canonical_network_build_fingerprint("1.0.0").find(
+        "/mod-transfer-2/mod-manifest-2/behaviour-1/native-guest-lifetime-1/") != std::string::npos);
 
     std::string error;
     Lobby lobby;

@@ -20,11 +20,13 @@ public:
         std::span<const std::uint8_t> unlocked,const std::function<unsigned(unsigned)>& random);
     std::optional<unsigned> header(unsigned player,unsigned native_header) const;
     const std::string& active(unsigned slot) const;
+    const AllocatedCharacter* entry(unsigned slot)const;
     bool ai(unsigned slot)const{return slot<8 && ai_[slot];}
     Bytes checkpoint()const;
     CharacterRoster stage_checkpoint(View)const;
 private:
     std::shared_ptr<const CharacterNamespace> assets_;
+    std::map<std::string,unsigned> indexes_; // immutable, reconstructed from the admitted namespace
     std::array<std::string,4> requested_{},humans_{};
     std::array<std::string,8> active_{};
     std::array<bool,8> ai_{};

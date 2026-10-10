@@ -10,6 +10,9 @@
 #endif
 
 namespace dkr::runtime {
+inline constexpr std::chrono::microseconds presentation_tail_guard(bool android) {
+    return android ? std::chrono::microseconds(250) : std::chrono::microseconds(2000);
+}
 // Presentation only. Neither simulation clocks nor input/network deadlines
 // use this wait. Keep the upstream measured short-sleep/spin tail intact.
 #if defined(_WIN32) && !defined(DKR_PRESENTATION_LEGACY_WAIT)
@@ -51,7 +54,16 @@ void coarse_presentation_wait(std::chrono::time_point<Clock, Duration> deadline)
         if (timer.wait(std::chrono::duration_cast<std::chrono::nanoseconds>(remaining))) return;
     }
 #endif
-    const auto coarse_deadline = deadline - std::chrono::milliseconds(2);
+    // Android's old 2 ms tail wakes for many calibrated micro-sleeps/spins per
+    // frame. Keep the same deadline/precision path, but sleep through most of
+    // that tail. No simulation clocks, images or user FPS settings change.
+    const auto coarse_deadline = deadline - presentation_tail_guard(
+#if defined(__ANDROID__)
+        true
+#else
+        false
+#endif
+    );
     if (Clock::now() < coarse_deadline) std::this_thread::sleep_until(coarse_deadline);
 }
 }

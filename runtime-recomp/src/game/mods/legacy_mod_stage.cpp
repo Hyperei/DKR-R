@@ -100,7 +100,8 @@ void stage_import(const std::filesystem::path& source,
         report(progress,index,static_cast<unsigned>(patches.size()),"Finding tracks and checking dependencies");
         const auto analysis=preparation && preparation->analysis.patch_digest==patch_id
             ?preparation->analysis:analyze(*matched,target,patch_id);
-        if(auto duplicate=editions.find(analysis.asset_digest);duplicate!=editions.end()) {
+        const auto edition_identity=analysis.asset_digest+":"+behaviour_identity(analysis.behaviour);
+        if(auto duplicate=editions.find(edition_identity);duplicate!=editions.end()) {
             packages[duplicate->second]["editions"].push_back(patch_id);
             store(destination/"patches"/(patch_id+".xdelta"),patch.data);
             continue;
@@ -148,7 +149,7 @@ void stage_import(const std::filesystem::path& source,
             }
         }
         store(destination/"patches"/(patch_id+".xdelta"),patch.data);
-        editions.emplace(analysis.asset_digest,packages.size());
+        editions.emplace(edition_identity,packages.size());
         packages.push_back(std::move(package));
     }
     report(progress,index,static_cast<unsigned>(patches.size()),"Preparing import review");

@@ -40,6 +40,13 @@ int main() {
         fields >> expected >> name >> hex;
         const std::vector<std::uint8_t> data = from_hex(hex);
         const SequenceCheck result = validate_sequence(data);
+        // Retail compact MIDI also permits explicit note-offs, held notes,
+        // and velocity-zero note-offs. Preserve those in legacy imports while
+        // retaining Track Lab's stricter authoring contract.
+        if(expected=="duration-zero" || expected=="note-off" || expected=="velocity-zero")
+            assert(validate_sequence(data,kRetailSequenceCapacity,nullptr,true).ok());
+        else if(expected!="ok")
+            assert(!validate_sequence(data,kRetailSequenceCapacity,nullptr,true).ok());
         ++cases;
         if (result.code != expected) {
             std::fprintf(stderr, "%s: got %s, expected %s (%s)\n", name.c_str(),

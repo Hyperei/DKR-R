@@ -6,6 +6,7 @@
 #include "probe_pak.h"
 #include "probe_magic.h"
 #include "../../src/game/camera_obstruction_guest.h"
+#include "../../src/game/mods/legacy_memory_safety.h"
 #include <string.h>
 #include <math.h>
 #include <stdio.h>
@@ -666,9 +667,9 @@ void dkr_probe_scene_load_reset(uint8_t* rdram,recomp_context* ctx) {
     dkr_probe_mod_dispatch("dkr_owned_course_prepare",rdram,ctx,0,0,0,0,&ignored);
     // Accurate/4:3 private world has no live interpolation registry and every
     // reversible drawing scope is balanced. No mod session exists here. The
-    // native reset DOES clear audio guards even in that profile: retain this
-    // operation explicitly, with the same owned guards captured by the DSP.
-    dkr_probe_audio_guards_initialize();state.scene_load_resets=1;
+    // Scene reset clears diagnostic/work counters, not event-pool ownership.
+    // Capture the retained descriptors with the DSP checkpoint too.
+    dkr_probe_audio_guards_reset();state.scene_load_resets=1;
     dkr_probe_parity_scene(&state.presentation);
     state.title_tail_phase=state.title_tail_units=0; // Production scene_reset's TailGate reset.
     if(scenery_observer)scenery_observer(scenery_user,rdram,0,state.presentation.scene,0);
@@ -1114,6 +1115,9 @@ int dkr_probe_native(const char* name, uint8_t* ram, struct recomp_context* cont
         if(dkr_probe_input_service(name,ram,context)) return 0;
         if(audio_owned && strcmp(name,"dkr_audio_event_queue_next")==0)
             return (int)dkr_probe_audio_event_next(ram,context);
+        if(audio_owned && strcmp(name,"dkr_audio_event_queue_initialize")==0) {
+            dkr_probe_audio_queue_initialize(ram,context); return 0;
+        }
         if(audio_owned && strcmp(name,"dkr_audio_voice_guard")==0)
             return dkr_probe_audio_voice_guard(ram,context);
         if(audio_owned && strcmp(name,"dkr_audio_bus_guard")==0)
@@ -1299,12 +1303,61 @@ int dkr_probe_native(const char* name, uint8_t* ram, struct recomp_context* cont
     }
     dkr_probe_block(name);
 }
+static void dkr_probe_memory_report(dkr_memory_view g,const char* reason,uint32_t request,uint32_t caller) {
+    const dkr_memory_metrics m=dkr_memory_measure(g);
+    fprintf(stderr,"[memory][safety] reason=%s revision=%u request=%u caller=%08x free=%u largest=%u slots=%u/%u queue=%u peak=%u valid=%d\n",
+        reason,g.revision,request,caller,m.free_bytes,m.largest_free,m.used_slots,m.max_slots,m.queue,m.high_water,m.valid);
+    if(m.valid) {
+        const uint32_t base=dkr_memory_read(g,dkr_memory_pools(g)+8,4);uint32_t i=0;
+        for(unsigned n=0;n<12 && i!=65535U;++n) {
+            const uint32_t s=base+20U*i;
+            fprintf(stderr,"[memory][slot] index=%u address=%08x bytes=%u flags=%u tag=%08x\n",i,
+                dkr_memory_read(g,s,4),dkr_memory_read(g,s+4,4),dkr_memory_read(g,s+8,2),dkr_memory_read(g,s+16,4));
+            i=dkr_memory_read(g,s+12,2);
+        }
+    }
+    fflush(stderr);
+}
 uint64_t dkr_probe_native_args(const char* name, uint8_t* ram, struct recomp_context* context,
                               const uint64_t* args, unsigned count) {
     (void)ram; (void)context;
     dkr_probe_checkpoint();
     uint64_t mod_result=0;
     if(dkr_probe_mod_dispatch(name,ram,context,args,count,0,0,&mod_result))return mod_result;
+    if(offline && count==4 && strcmp(name,"dkr_legacy_memory_service")==0 &&
+       args[1]==DKR_PROBE_REVISION && args[2]<=UINT32_MAX && args[3]<=UINT32_MAX) {
+        const dkr_memory_view g={ram,8U*1024U*1024U,DKR_PROBE_REVISION};
+        const uint32_t a=(uint32_t)args[2],b=(uint32_t)args[3];uint32_t value=0;
+        switch(args[0]) {
+        case 0:
+            for(unsigned i=0;i<32;i+=4)dkr_memory_write(g,dkr_memory_descriptor(g)+i,0,4);
+            dkr_memory_write(g,dkr_memory_count_address(g),0,4);return 1600;
+        case 1: value=dkr_memory_pool(g,0);if(value!=DKR_MEMORY_ERROR)value=dkr_memory_reserve_bytes(value);break;
+        case 2: value=!a || dkr_memory_install(g,a,dkr_memory_read(g,dkr_memory_pools(g),4))?0:DKR_MEMORY_ERROR;break;
+        case 3: value=dkr_memory_queue(g);break;
+        case 4: value=dkr_memory_enqueue(g,a);break;
+        case 5: value=dkr_memory_acquire(g,a);break;
+        case 6: value=dkr_memory_release(g,a);break;
+        case 7: value=dkr_memory_pool(g,a);break;
+        case 8: value=dkr_memory_mutation(g,a,b)?0:DKR_MEMORY_ERROR;break;
+        case 9: {
+            const uint32_t d=dkr_memory_descriptor(g);
+            if(dkr_memory_read(g,d,4)==DKR_MEMORY_MAGIC) {
+                const uint32_t n=dkr_memory_read(g,d+24,4);dkr_memory_write(g,d+24,n+1,4);
+                if(n>=4)return 0;
+            }
+            dkr_probe_memory_report(g,"transition-fallback",a,b);return 0;
+        }
+        case 10: dkr_probe_memory_report(g,"required-allocation-failed",a,b);
+            dkr_probe_block("required-guest-allocation-failed");return 0;
+        default: value=DKR_MEMORY_ERROR;break;
+        }
+        if(value==DKR_MEMORY_ERROR) {
+            dkr_probe_memory_report(g,"invalid-allocator-or-free-queue",a,b);
+            dkr_probe_block("guest-memory-safety");
+        }
+        return value;
+    }
     if(offline && count==2 && args[0]<=3 && args[1]<=UINT32_MAX &&
        strcmp(name,"dkr_legacy_model_safety")==0) {
         const int checked=dkr_probe_model_safety(ram,(unsigned)args[0],(uint32_t)args[1]);

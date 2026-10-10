@@ -1,0 +1,186 @@
+diff --git a/src/contrib/plume/plume_render_interface_types.h b/src/contrib/plume/plume_render_interface_types.h
+--- a/src/contrib/plume/plume_render_interface_types.h
++++ b/src/contrib/plume/plume_render_interface_types.h
+@@ -1768,6 +1768,7 @@
+         // Raytracing.
+         bool raytracing = false;
+         bool raytracingStateUpdate = false;
++        bool rayQuery = false; // Feature actually enabled, not inferred from GPU model.
+ 
+         // MSAA.
+         bool sampleLocations = false;
+diff --git a/src/contrib/plume/plume_vulkan.h b/src/contrib/plume/plume_vulkan.h
+--- a/src/contrib/plume/plume_vulkan.h
++++ b/src/contrib/plume/plume_vulkan.h
+@@ -413,6 +413,7 @@
+         RenderDeviceCapabilities capabilities;
+         RenderDeviceDescription description;
+         VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtPipelineProperties = {};
++        VkPhysicalDeviceAccelerationStructurePropertiesKHR waterASProperties = {};
+         VkPhysicalDeviceSampleLocationsPropertiesEXT sampleLocationProperties = {};
+         std::unique_ptr<RenderBuffer> nullBuffer;
+         bool loadStoreOpNoneSupported = false;
+diff --git a/src/contrib/plume/plume_vulkan.cpp b/src/contrib/plume/plume_vulkan.cpp
+--- a/src/contrib/plume/plume_vulkan.cpp
++++ b/src/contrib/plume/plume_vulkan.cpp
+@@ -80,6 +80,7 @@
+         VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME,
+         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
++        VK_KHR_RAY_QUERY_EXTENSION_NAME,
+         VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
+         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+         VK_EXT_SAMPLE_LOCATIONS_EXTENSION_NAME,
+@@ -602,7 +603,7 @@
+         }
+     }
+     
+-    static VkPipelineStageFlags toStageFlags(RenderBarrierStages stages, bool geometrySupported, bool rtSupported) {
++    static VkPipelineStageFlags toStageFlags(RenderBarrierStages stages, bool geometrySupported, bool rtSupported, bool querySupported=false) {
+         VkPipelineStageFlags flags = 0;
+ 
+         if (stages & RenderBarrierStage::GRAPHICS) {
+@@ -622,10 +623,8 @@
+         if (stages & RenderBarrierStage::COMPUTE) {
+             flags |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+ 
+-            if (rtSupported) {
+-                flags |= VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+-                flags |= VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+-            }
++            if (rtSupported || querySupported) flags |= VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
++            if (rtSupported) flags |= VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+         }
+ 
+         if (stages & RenderBarrierStage::COPY) {
+@@ -881,6 +880,8 @@
+             minAlignment = device->rtPipelineProperties.shaderGroupBaseAlignment;
+         }
+ 
++        if(desc.flags & RenderBufferFlag::ACCELERATION_STRUCTURE_SCRATCH)
++            minAlignment=std::max<uint64_t>(minAlignment,device->waterASProperties.minAccelerationStructureScratchOffsetAlignment);
+         VkResult res;
+         if (minAlignment > 0) {
+             res = vmaCreateBufferWithAlignment(device->allocator, &bufferInfo, &createInfo, minAlignment, &vk, &allocation, &allocationInfo);
+@@ -2833,8 +2834,9 @@
+ 
+         const bool geometryEnabled = queue->device->capabilities.geometryShader;
+         const bool rtEnabled = queue->device->capabilities.raytracing;
++        const bool queryEnabled = queue->device->capabilities.rayQuery;
+         VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+-        VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT | toStageFlags(stages, geometryEnabled, rtEnabled);
++        VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT | toStageFlags(stages, geometryEnabled, rtEnabled, queryEnabled);
+         thread_local std::vector<VkBufferMemoryBarrier> bufferMemoryBarriers;
+         thread_local std::vector<VkImageMemoryBarrier> imageMemoryBarriers;
+         bufferMemoryBarriers.clear();
+@@ -2853,7 +2855,7 @@
+             bufferMemoryBarrier.offset = 0;
+             bufferMemoryBarrier.size = interfaceBuffer->desc.size;
+             bufferMemoryBarriers.emplace_back(bufferMemoryBarrier);
+-            srcStageMask |= toStageFlags(interfaceBuffer->barrierStages, geometryEnabled, rtEnabled);
++            srcStageMask |= toStageFlags(interfaceBuffer->barrierStages, geometryEnabled, rtEnabled, queryEnabled);
+             interfaceBuffer->barrierStages = stages;
+         }
+ 
+@@ -2873,7 +2875,7 @@
+             imageMemoryBarrier.subresourceRange.layerCount = interfaceTexture->desc.arraySize;
+             imageMemoryBarrier.subresourceRange.aspectMask = toAspectFlags(interfaceTexture->desc.format, interfaceTexture->desc.flags);
+             imageMemoryBarriers.emplace_back(imageMemoryBarrier);
+-            srcStageMask |= toStageFlags(interfaceTexture->barrierStages, geometryEnabled, rtEnabled);
++            srcStageMask |= toStageFlags(interfaceTexture->barrierStages, geometryEnabled, rtEnabled, queryEnabled);
+             interfaceTexture->textureLayout = textureBarrier.layout;
+             interfaceTexture->barrierStages = stages;
+         }
+@@ -3883,6 +3885,10 @@
+             featuresChain = &portabilityFeatures;
+         }
+ 
++        const bool rayQueryFound=bufferDeviceAddressFound &&
++            supportedOptionalExtensions.count(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) &&
++            supportedOptionalExtensions.count(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME) &&
++            supportedOptionalExtensions.count(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+         VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingPipelineFeatures = {};
+         VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures = {};
+         const bool rayTracingFound = (supportedOptionalExtensions.find(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME) != supportedOptionalExtensions.end()) && (supportedOptionalExtensions.find(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) != supportedOptionalExtensions.end());
+@@ -3896,11 +3902,27 @@
+             featuresChain = &accelerationStructureFeatures;
+         }
+ 
++        VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures = {};
++        // Query-only GPUs still need acceleration structures, not a ray
++        // tracing pipeline. Do not query unsupported pipeline features.
++        if(rayQueryFound && !rayTracingFound) {
++            accelerationStructureFeatures.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
++            accelerationStructureFeatures.pNext=featuresChain;featuresChain=&accelerationStructureFeatures;
++        }
++        if(rayQueryFound) {
++            rayQueryFeatures.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
++            rayQueryFeatures.pNext=featuresChain;featuresChain=&rayQueryFeatures;
++        }
+         VkPhysicalDeviceFeatures2 deviceFeatures = {};
+         deviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+         deviceFeatures.pNext = featuresChain;
+         vkGetPhysicalDeviceFeatures2(physicalDevice, &deviceFeatures);
+ 
++        if(rayQueryFound || rayTracingFound) {
++            waterASProperties.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
++            VkPhysicalDeviceProperties2 properties={};properties.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
++            properties.pNext=&waterASProperties;vkGetPhysicalDeviceProperties2(physicalDevice,&properties);
++        }
+         // Check for properties.
+         if (rayTracingFound) {
+             rtPipelineProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+@@ -3924,6 +3946,14 @@
+         // Build the device creation chain.
+         void *createDeviceChain = nullptr;
+         const bool rayTracingSupported = rayTracingPipelineFeatures.rayTracingPipeline && accelerationStructureFeatures.accelerationStructure;
++        const bool rayQuerySupported=rayQueryFound && accelerationStructureFeatures.accelerationStructure &&
++            bufferDeviceAddressFeatures.bufferDeviceAddress && rayQueryFeatures.rayQuery;
++        if(rayQuerySupported) {
++            rayQueryFeatures.pNext=createDeviceChain;createDeviceChain=&rayQueryFeatures;
++            if(!rayTracingSupported) {
++                accelerationStructureFeatures.pNext=createDeviceChain;createDeviceChain=&accelerationStructureFeatures;
++            }
++        }
+         if (rayTracingSupported) {
+             rayTracingPipelineFeatures.pNext = createDeviceChain;
+             createDeviceChain = &rayTracingPipelineFeatures;
+@@ -4122,6 +4152,7 @@
+         // Fill capabilities.
+         capabilities.geometryShader = deviceFeatures.features.geometryShader;
+         capabilities.raytracing = rayTracingSupported;
++        capabilities.rayQuery = rayQuerySupported;
+         capabilities.raytracingStateUpdate = false;
+         capabilities.sampleLocations = (sampleLocationProperties.sampleLocationSampleCounts != 0);
+         capabilities.resolveRegion = true;
+diff --git a/src/contrib/plume/plume_d3d12.cpp b/src/contrib/plume/plume_d3d12.cpp
+--- a/src/contrib/plume/plume_d3d12.cpp
++++ b/src/contrib/plume/plume_d3d12.cpp
+@@ -602,6 +602,8 @@
+             return D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
+         }
+ 
++        if(stages==RenderBarrierStage::COMPUTE && accessBits==RenderBufferAccess::READ &&
++            (bufferFlags & RenderBufferFlag::ACCELERATION_STRUCTURE_INPUT))return D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+         // Use copy-optimized states.
+         if (stages == RenderBarrierStage::COPY) {
+             if (accessBits == RenderBufferAccess::WRITE) {
+@@ -3707,6 +3709,10 @@
+                 rtStateUpdateSupportOption = d3d12Options5.RaytracingTier >= D3D12_RAYTRACING_TIER_1_1;
+             }
+ 
++            D3D12_FEATURE_DATA_SHADER_MODEL rayShaderModel = {D3D_SHADER_MODEL_6_5};
++            const bool rayQueryOption=rtStateUpdateSupportOption &&
++                SUCCEEDED(deviceOption->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL,&rayShaderModel,sizeof(rayShaderModel))) &&
++                rayShaderModel.HighestShaderModel>=D3D_SHADER_MODEL_6_5;
+             bool triangleFanSupportOption = false;
+             bool dynamicDepthBiasOption = false;
+             bool gpuUploadHeapOption = false;
+@@ -3757,6 +3763,7 @@
+                 capabilities.geometryShader = true;
+                 capabilities.raytracing = rtSupportOption;
+                 capabilities.raytracingStateUpdate = rtStateUpdateSupportOption;
++                capabilities.rayQuery = rayQueryOption;
+                 capabilities.sampleLocations = samplePositionsOption;
+                 capabilities.resolveRegion = resolveRegionOption;
+                 capabilities.resolveModes = samplePositionsOption; // Resolve modes require sample positions support.

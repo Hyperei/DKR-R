@@ -5,7 +5,7 @@
 #include <vector>
 
 namespace dkr::mods::online {
-inline constexpr unsigned ManifestSchema = 1;
+inline constexpr unsigned ManifestSchema = 2;
 inline constexpr std::size_t MaxManifestBytes = 2 * 1024 * 1024;
 inline constexpr std::size_t MaxPackages = MaxEnabledCharacters + 512;
 inline constexpr std::size_t MaxTracks = 512;
@@ -25,6 +25,8 @@ struct Content {
     Kind kind = Kind::Track;
     std::string id, name, payload, artifact, bank;
     unsigned adapter = 0;
+    std::string behaviour;
+    unsigned behaviour_abi = 0;
     bool operator==(const Content&) const = default;
 };
 // No paths, user identities, ROM bytes or machine-local activation state.

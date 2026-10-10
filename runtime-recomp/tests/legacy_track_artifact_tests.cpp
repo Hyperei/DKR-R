@@ -54,6 +54,8 @@ void session_tests(const std::shared_ptr<const AssetBank>& stock, const std::vec
     session.begin_scene(memory,5);
     rejects([&]{session.instantiate();});
     check(session.current_content().empty());check(memory==original_memory);
+    check(session.course_component(0,99)==99);
+    rejects([&]{session.course_component(3,99);});
     const auto stock_checkpoint=session.checkpoint();
     // A rejected sidecar never changes its owner or guest memory. Include
     // every truncated length, an alien boot identity and trailing fields.
@@ -86,12 +88,15 @@ void session_tests(const std::shared_ptr<const AssetBank>& stock, const std::vec
         }
         session.begin_scene(memory,track.root.carrier);
         check(session.current_content()==track.root.content_id);
+        for(unsigned site=0;site<3;++site)
+            check(session.course_component(site,99)==static_cast<std::uint32_t>(execute_behaviour_component(track.root.behaviour,site,99)));
         check(session.acquire().route()->directory()->fingerprint()==track.bank->fingerprint());
         const auto custom_checkpoint=session.checkpoint(),custom_memory=memory;
         const auto custom_scenes=session.published_scenes();
         // No request must return to stock, even for the exact same retail carrier.
         session.begin_scene(memory,track.root.carrier);
         check(session.current_content().empty());check(!session.acquire().route());
+        check(session.course_component(0,99)==99);
         check(memory==original_memory);
         auto restore=session.stage_checkpoint(custom_checkpoint);
         // Only the exclusive owned CPU caller restores RAM; committing this
@@ -100,6 +105,8 @@ void session_tests(const std::shared_ptr<const AssetBank>& stock, const std::vec
         check(session.commit_checkpoint(std::move(restore)));
         check(session.current_content()==track.root.content_id && session.published_scenes()==custom_scenes);
         check(session.checkpoint()==custom_checkpoint && memory==custom_memory);
+        for(unsigned site=0;site<3;++site)
+            check(session.course_component(site,99)==static_cast<std::uint32_t>(execute_behaviour_component(track.root.behaviour,site,99)));
         check(!session.commit_checkpoint(std::move(restore))); // exactly once
         auto invalidated=session.stage_checkpoint(stock_checkpoint);
         session.request("",track.root.carrier);

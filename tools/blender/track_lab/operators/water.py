@@ -387,9 +387,46 @@ class DKR_OT_wave_preset(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class DKR_OT_render_water_material_add(bpy.types.Operator):
+    """Classify an exported model texture entry for enhanced rendering"""
+
+    bl_idname = "dkr.render_water_material_add"
+    bl_label = "Add Material Override"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        entries = context.scene.dkr_water.render_materials
+        used = {item.texture for item in entries}
+        available = next((i for i in range(256) if i not in used), None)
+        if available is None:
+            self.report({"WARNING"}, "All 256 texture entries already have overrides")
+            return {"CANCELLED"}
+        entry = entries.add()
+        entry.texture = available
+        return {"FINISHED"}
+
+
+class DKR_OT_render_water_material_remove(bpy.types.Operator):
+    """Remove an optical material override without changing geometry"""
+
+    bl_idname = "dkr.render_water_material_remove"
+    bl_label = "Remove Material Override"
+    bl_options = {"REGISTER", "UNDO"}
+    index: IntProperty(default=-1)
+
+    def execute(self, context):
+        entries = context.scene.dkr_water.render_materials
+        if not 0 <= self.index < len(entries):
+            return {"CANCELLED"}
+        entries.remove(self.index)
+        return {"FINISHED"}
+
+
 CLASSES = (
     DKR_OT_add_water,
     DKR_OT_select_water,
     DKR_OT_remove_water,
     DKR_OT_wave_preset,
+    DKR_OT_render_water_material_add,
+    DKR_OT_render_water_material_remove,
 )

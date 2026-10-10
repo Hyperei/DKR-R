@@ -5,7 +5,7 @@ namespace dkr::mods::online {
 namespace {
 void put32(Bytes& out,std::uint32_t value) {for(unsigned i=0;i<4;++i)out.push_back(static_cast<std::uint8_t>(value>>(24-i*8)));}
 void validate(const Message& value) {
-    if(value.operation<Operation::Offer || value.operation>Operation::Progress || !valid_digest(value.manifest) ||
+    if(value.operation<Operation::Offer || value.operation>Operation::PayloadCredit || !valid_digest(value.manifest) ||
        (!value.payload.empty() && !valid_digest(value.payload)) || value.bytes.size()>MaxChunkBytes)
         throw Error("Invalid online mod transfer message.");
     const auto operation=value.operation;
@@ -16,8 +16,8 @@ void validate(const Message& value) {
             throw Error("Invalid online mod progress report.");
         return;
     }
-    const bool payload=operation==Operation::PayloadRequest || operation==Operation::PayloadChunk;
-    const bool metadata=operation==Operation::ManifestRequest || operation==Operation::ManifestChunk;
+    const bool payload=operation==Operation::PayloadRequest || operation==Operation::PayloadChunk || operation==Operation::PayloadCredit;
+    const bool metadata=operation==Operation::ManifestRequest || operation==Operation::ManifestChunk || operation==Operation::ManifestCredit;
     const bool chunk=operation==Operation::ManifestChunk || operation==Operation::PayloadChunk;
     if(payload!=!value.payload.empty() || (operation==Operation::Offer && (!value.total || value.total>MaxManifestBytes || value.offset || !value.bytes.empty())) ||
        ((payload||metadata) && (!value.total || value.total>(payload?MaxTransferBytes:MaxManifestBytes) || value.offset>=value.total)) ||
@@ -28,13 +28,13 @@ void validate(const Message& value) {
 }
 }
 Bytes encode_message(const Message& value) {
-    validate(value);Bytes out{'D','K','M',1,static_cast<std::uint8_t>(value.operation)};
+    validate(value);Bytes out{'D','K','M',WireVersion,static_cast<std::uint8_t>(value.operation)};
     out.insert(out.end(),value.manifest.begin(),value.manifest.end());out.push_back(value.payload.empty()?0:1);
     if(!value.payload.empty())out.insert(out.end(),value.payload.begin(),value.payload.end());
     put32(out,value.offset);put32(out,value.total);out.insert(out.end(),value.bytes.begin(),value.bytes.end());return out;
 }
 Message decode_message(View bytes) {
-    if(bytes.size()<78 || bytes.size()>142+MaxChunkBytes || bytes[0]!='D' || bytes[1]!='K' || bytes[2]!='M' || bytes[3]!=1 || bytes[69]>1)
+    if(bytes.size()<78 || bytes.size()>142+MaxChunkBytes || bytes[0]!='D' || bytes[1]!='K' || bytes[2]!='M' || bytes[3]!=WireVersion || bytes[69]>1)
         throw Error("Invalid online mod transfer envelope.");
     Message out;out.operation=static_cast<Operation>(bytes[4]);out.manifest.assign(bytes.begin()+5,bytes.begin()+69);
     std::size_t at=70;
@@ -122,6 +122,21 @@ void Upload::request(const Message& message,std::size_t chunk) {
     if(message.manifest!=digest_ || !chunk || chunk>MaxChunkBytes || cancelled_)
         throw Error("Mod request does not belong to this frozen host selection.");
     switch(message.operation) {
+    case Operation::ManifestCredit:
+    case Operation::PayloadCredit:
+        // Credits extend the existing send window without rewinding its cursor.
+        // Only an explicit Request retries a gap. Progress cannot acknowledge
+        // bytes that were never sent, change the source, or bypass consent.
+        if(!source_ || message.payload!=payload_ || message.total!=source_->size() ||
+           chunk!=chunk_ || message.offset>sent_high_water_ ||
+           (message.operation==Operation::PayloadCredit && (!consented_ || preparing_)))
+            throw Error("Invalid online mod window credit.");
+        end_=(std::max)(end_,static_cast<std::uint32_t>(message.offset+
+            (std::min)(source_->size()-message.offset,transfer_window_bytes(chunk))));
+        // A recovered gap can release later buffered chunks already sent in
+        // the previous window. Skip ONLY that acknowledged contiguous prefix.
+        offset_=(std::max)(offset_,message.offset);
+        return;
     case Operation::Cancel:cancelled_=true;source_.reset();return;
     case Operation::Consent:consented_=true;return;
     case Operation::Preparing:
@@ -141,6 +156,8 @@ void Upload::request(const Message& message,std::size_t chunk) {
     }
     default:throw Error("Invalid online mod upload operation.");
     }
+    if(payload_!=message.payload)sent_high_water_=message.offset;
+    sent_high_water_=(std::max)(sent_high_water_,message.offset);
     payload_=message.payload;offset_=message.offset;chunk_=chunk;
     end_=static_cast<std::uint32_t>(offset_+(std::min)(source_->size()-offset_,transfer_window_bytes(chunk)));
 }
@@ -153,6 +170,7 @@ std::optional<Message> Upload::next()const {
 void Upload::sent() {
     if(!source_ || offset_>=end_)throw Error("No mod chunk was pending transmission.");
     offset_+=static_cast<std::uint32_t>((std::min)(chunk_,std::size_t(end_-offset_)));
+    sent_high_water_=(std::max)(sent_high_water_,offset_);
 }
 bool ChunkInbox::push(const Message& chunk,const Message& request) {
     if(payload_!=request.payload){clear();payload_=request.payload;}

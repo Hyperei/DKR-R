@@ -2,9 +2,13 @@
 #include "render_power_policy.hpp"
 #include "performance_trace.hpp"
 #include "water_performance.hpp"
+#if defined(DKR_ENHANCED_WATER)
+#include "enhanced_water_settings.hpp"
+#endif
 #include "graphics_health.hpp"
 #if defined(__ANDROID__)
 #include "android_surface_state.hpp"
+#include "android_frame_budget.hpp"
 #endif
 #include "mobile_graphics_preset.hpp"
 #include "render/rt64_generated_mip_config.h"
@@ -545,6 +549,12 @@ dkr::runtime::RT64Renderer::RT64Renderer(
     // packs on its first presentation, even if the retired renderer had already
     // consumed this library generation. Do not change users' enabled settings.
     dkr::runtime::texture_packs::renderer_started();
+#if defined(DKR_ENHANCED_WATER)
+    const bool water_ray_queries=application_->device && application_->device->getCapabilities().rayQuery;
+    water::enhanced::hardware_ray_capability.store(water_ray_queries ? 1 : 0);
+    std::fprintf(stderr,"[water][capabilities] hardware-ray-query=%s; original water remains the default\n",
+        water_ray_queries ? "enabled" : "unavailable (screen-space fallback)");
+#endif
 #if defined(DKR_EXPERIMENTAL_RACE_TEST)
     if(owned_mode_) {
         owned_registration_=std::make_unique<netplay::experimental::present_gate::Registration>(application_->state.get());
@@ -645,7 +655,15 @@ void dkr::runtime::RT64Renderer::enable_instant_present() {
 
 void dkr::runtime::RT64Renderer::send_dl(const OSTask* task,
                                          std::uint8_t* rdram_snapshot) {
+#if defined(__ANDROID__)
+    std::unique_lock presentation_lock(presentation_mutex_, std::defer_lock);
+    {
+        android_frame_budget::Scope lockTiming(android_frame_budget::Region::PresentationLock);
+        presentation_lock.lock();
+    }
+#else
     std::scoped_lock presentation_lock(presentation_mutex_);
+#endif
     if (application_ == nullptr || rdram_snapshot == nullptr) {
         return;
     }
@@ -678,7 +696,15 @@ void dkr::runtime::RT64Renderer::send_dl(const OSTask* task,
 #endif
     if (track_performance::enabled()) {
         const auto start = track_performance::Clock::now();
+#if defined(__ANDROID__)
+        {
+            android_frame_budget::Scope decodeTiming(android_frame_budget::Region::Decoder);
+            f3ddkr_.process(*application_, *task);
+        }
+        android_frame_budget::report();
+#else
         f3ddkr_.process(*application_, *task);
+#endif
         record_track_performance(rdram_snapshot, start);
     } else {
         track_capture_.count = 0; // A later opt-in capture must not span the idle gap.
@@ -982,6 +1008,9 @@ void dkr::runtime::RT64Renderer::present_owned(
     std::shared_ptr<const netplay::experimental::RenderSnapshot> lease,
     netplay::experimental::PresentationMailbox& mailbox) {
     if(!owned_mode_||!application_||!owned_registration_||!mailbox.is_current(lease))return;
+#if defined(__ANDROID__)
+    if (graphics_health::failed()) return;
+#endif
     reap_owned();
     // The render loop leaves the latest mailbox image pending until capacity
     // returns; it never blocks on an unbounded completion wait or adds debt.
@@ -1050,7 +1079,7 @@ void dkr::runtime::RT64Renderer::present_owned(
             const auto flags=event.parameters[0];
             const auto identity=event.token?presentation::normalise_identity(event.token^presentation::mix_identity(scene)):0U;
             owned_matrices.push_back({event.address,{identity,(flags&1)!=0,(flags&2)!=0,(flags&4)!=0,(flags&8)!=0,std::uint8_t(event.parameters[3]),
-                {float(event.parameters[4]),std::bit_cast<float>(event.parameters[5]),std::uint8_t(event.parameters[6])}},event.parameters[1]!=0});
+                {float(event.parameters[4]),std::bit_cast<float>(event.parameters[5]),std::uint8_t(event.parameters[6])},(flags&256U)!=0},event.parameters[1]!=0});
             continue;
         }
         if(event.kind==DKR_OWNED_SKY_MATRIX || event.kind==DKR_OWNED_TRANSITION) {
@@ -1169,10 +1198,24 @@ void dkr::runtime::RT64Renderer::present_owned(
         lease->draw_events(),workspace->bytes(),scene);
     const auto present_cursor=application_->presentQueue->writeCursor;
     {std::scoped_lock lock(presentation_mutex_);
-        presentation::TaskIdentityScope identity{owned_markers,owned_matrices,owned_shadows,scene,modern};
+        presentation::TaskIdentityScope identity{owned_markers,owned_matrices,owned_shadows,scene,modern,double(lease->descriptor().frame)/30.0};
         application_->state->setRefreshRate(30);
         {netplay::experimental::performance::Scope timing(netplay::experimental::performance::Stage::Process);
-         f3ddkr_.process(*application_,task,&owned_decode_scratch_->local_scenery);}
+#if defined(__ANDROID__)
+         try {
+             graphics_health::TaskBoundary boundary;
+#endif
+             f3ddkr_.process(*application_,task,&owned_decode_scratch_->local_scenery);
+#if defined(__ANDROID__)
+         } catch (const graphics_health::TaskAborted&) {
+             // DrainOnExit retains the immutable image, decode workspace and
+             // upload buffers until their actual consumers finish. No failed
+             // frame is marked queued/completed or recycled early.
+             std::fprintf(stderr,"[android][graphics] stopped failed owned display-list task\n");
+             return;
+         }
+#endif
+        }
         auto& c=application_->core;
         *c.VI_STATUS_REG=presentation::kRetailNtscViStatus;
         *c.VI_ORIGIN_REG=presentation::retail_ntsc_vi_origin(d.framebuffer);*c.VI_WIDTH_REG=320;
@@ -1258,6 +1301,9 @@ void dkr::runtime::RT64Renderer::present_owned(
 }
 void dkr::runtime::RT64Renderer::repeat_owned() {
     if(!owned_mode_||!application_)return;
+#if defined(__ANDROID__)
+    if (graphics_health::failed()) return;
+#endif
     reap_owned();
     // Let an in-flight real presentation draw the fresh overlay. Resubmitting
     // a paused workload would stall/reset interpolation and race its slot.

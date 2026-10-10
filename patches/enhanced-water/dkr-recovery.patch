@@ -1,0 +1,229 @@
+diff --git a/src/render/rt64_water_renderer.h b/src/render/rt64_water_renderer.h
+--- a/src/render/rt64_water_renderer.h
++++ b/src/render/rt64_water_renderer.h
+@@ -1,5 +1,6 @@
+ #pragma once
+ #include "WaterRayScene.h"
++#include "WaterResourcePolicy.h"
+ #include "rt64_buffer_uploader.h"
+ #include "rt64_shader_library.h"
+ #include "shared/rt64_water_params.h"
+@@ -159,6 +160,8 @@
+         std::unique_ptr<WaterCaptureSet> captureSet;
+         std::unique_ptr<WaterDescriptorSet> materialSet;
+         RenderTarget *sourceColor = nullptr, *sourceDepth = nullptr;
++        RenderTexture *sourceColorTexture=nullptr,*sourceDepthTexture=nullptr;
++        uint64_t sourceColorRevision=0,sourceDepthRevision=0;
+         uint32_t width = 0, height = 0, mipCount = 0;
+         bool captured = false;
+         interop::float4 capturedView{};
+@@ -166,6 +169,8 @@
+     };
+     std::vector<SceneInputs> scenes;
+     std::map<std::tuple<uint64_t,bool,bool>,uint32_t> sceneKeys;
++    std::set<std::tuple<uint64_t,bool,bool>> rejectedScenes;
++    uint32_t budgetLogCooldown=0;
+     std::vector<uint32_t> drawScenes;
+     ShaderRecord captureShader, captureMSShader, originalShader, originalMSShader;
+     ShaderRecord depthReduceShader;
+diff --git a/src/render/rt64_water_renderer.cpp b/src/render/rt64_water_renderer.cpp
+--- a/src/render/rt64_water_renderer.cpp
++++ b/src/render/rt64_water_renderer.cpp
+@@ -185,7 +185,11 @@
+ }
+ 
+ void WaterRenderer::reset() {
+-    draws.clear(); normalGroups.clear(); sceneKeys.clear(); drawScenes.clear();
++    // The preceding workload fence has completed before this reset.
++    // Keep only scratch targets actually used, not historical menu targets.
++    scenes.resize(water_policy::retainedScenes(uint32_t(scenes.size()),uint32_t(sceneKeys.size())));
++    draws.clear(); normalGroups.clear(); sceneKeys.clear(); drawScenes.clear(); rejectedScenes.clear();
++    if(budgetLogCooldown) --budgetLogCooldown;
+     rays.resetFrame();
+     wireIndices.clear(); wireStarts.clear();
+     profileKinds.clear();
+@@ -196,27 +200,45 @@
+     const auto sceneKey=std::make_tuple(key,classic,selfDepth);
+     auto found = sceneKeys.find(sceneKey);
+     if (found != sceneKeys.end()) return found->second;
+-    const uint64_t pixels=uint64_t(color->width)*color->height;
+-    const uint32_t candidate=uint32_t(sceneKeys.size());
+-    const uint32_t retainedOriginal=candidate<scenes.size() ? scenes[candidate].originalSamples : 0;
+-    const uint64_t perPixel=16+4*color->multisampling.sampleCount+
+-        (selfDepth ? 4*depth->multisampling.sampleCount : 0)+
+-        8*std::max(retainedOriginal,classic ? color->multisampling.sampleCount : 0u);
+-    uint64_t resident=pixels*perPixel;
+-    for (uint32_t i=0;i<scenes.size();i++) if (i!=candidate) {
+-        const auto &s=scenes[i];
+-        resident+=uint64_t(s.width)*s.height*(16+4*s.surfaceSamples+8*s.originalSamples);
+-        resident+=uint64_t(s.waterDepthWidth)*s.waterDepthHeight*4*s.waterDepthSamples;
+-    }
+-    // Bound intermediate memory without reducing game-image resolution.
+-    // Unsupported/oversized targets retain authored water instead of OOM.
+-    if (!color->width || !color->height || color->width>8192 || color->height>8192 ||
+-        resident>256ULL*1024*1024 || sceneKeys.size()>=16)
+-        throw std::runtime_error("water intermediate target exceeds its bounded budget");
+-
+-    const uint32_t index = uint32_t(sceneKeys.size());
+-    sceneKeys.emplace(sceneKey,index);
+-    if (index == scenes.size()) scenes.emplace_back();
++    if(rejectedScenes.count(sceneKey))return water_policy::invalidScene;
++    const uint32_t index=uint32_t(sceneKeys.size());
++    const auto bytes=[](const SceneInputs &s) {
++        return s.color ? water_policy::sceneBytes(s.width,s.height,s.surfaceSamples,
++            bool(s.originalColor),bool(s.waterDepth),s.waterDepthWidth,s.waterDepthHeight,s.waterDepthSamples) : uint64_t(0);
++    };
++    uint64_t active=0;
++    for(uint32_t i=0;i<index;i++)active+=bytes(scenes[i]);
++    const uint64_t requested=water_policy::sceneBytes(color->width,color->height,color->multisampling.sampleCount,
++        classic,selfDepth,depth->width,depth->height,depth->multisampling.sampleCount);
++    if(!water_policy::fits(active,requested,index)) {
++        rejectedScenes.insert(sceneKey);
++        if(!budgetLogCooldown) {
++            std::fprintf(stderr,"[water] target fallback (recoverable): %ux%u samples=%u active=%llu requested=%llu classic=%u isolated=%u\n",
++                color->width,color->height,color->multisampling.sampleCount,
++                static_cast<unsigned long long>(active),static_cast<unsigned long long>(requested),classic,selfDepth);
++            budgetLogCooldown=240;
++        }
++        return water_policy::invalidScene;
++    }
++    // Cached targets not yet assigned in this workload are disposable. Avoid
++    // stale resources rejecting a perfectly valid current target.
++    uint64_t pooled=active+requested;
++    for(uint32_t i=index+1;i<scenes.size();i++)pooled+=bytes(scenes[i]);
++    if(pooled>water_policy::sceneBudget)scenes.resize(std::min(size_t(index+1),scenes.size()));
++    if(index==scenes.size())scenes.emplace_back();
++    auto &cached=scenes[index];
++    if(cached.color && (cached.width!=color->width || cached.height!=color->height ||
++        cached.surfaceSamples!=color->multisampling.sampleCount || bool(cached.originalColor)!=classic ||
++        cached.selfDepth!=selfDepth || (selfDepth && (cached.waterDepthWidth!=depth->width ||
++        cached.waterDepthHeight!=depth->height || cached.waterDepthSamples!=depth->multisampling.sampleCount))))
++    {
++        // Move out first: normal reverse-order destruction releases descriptor
++        // sets/views/framebuffers before their textures (assignment does not).
++        auto retired=std::move(cached);cached=SceneInputs{};
++    }
++    // Publish the key only after every texture, framebuffer and binding exists.
++    // A failed candidate must never be looked up as a prepared scene.
++    try {
+     auto &scene = scenes[index];
+     scene.selfDepth = selfDepth;
+     if (!scene.color || scene.width != color->width || scene.height != color->height) {
+@@ -276,16 +298,22 @@
+     // Modern water owns its depth writes; later original translucent effects
+     // must still see the game's unchanged depth attachment.
+     const RenderTexture *surfaceAttachment=scene.surface.get();
++    const bool attachmentsChanged=scene.sourceColor!=color || scene.sourceDepth!=depth ||
++        scene.sourceColorTexture!=color->texture.get() || scene.sourceDepthTexture!=depth->texture.get() ||
++        scene.sourceColorRevision!=color->textureRevision || scene.sourceDepthRevision!=depth->textureRevision;
++    if(!scene.surfaceFramebuffer || attachmentsChanged)
+     scene.surfaceFramebuffer=checkedWaterResource(worker->device->createFramebuffer(RenderFramebufferDesc(&surfaceAttachment,1,
+         scene.selfDepth ? scene.waterDepth.get() : depth->texture.get(),!scene.selfDepth)));
+-    if (scene.selfDepth) {
++    if (scene.selfDepth && (!scene.waterColorFramebuffer || attachmentsChanged)) {
+         const RenderTexture *colorAttachment=color->texture.get();
+         scene.waterColorFramebuffer=checkedWaterResource(worker->device->createFramebuffer(RenderFramebufferDesc(&colorAttachment,1,scene.waterDepth.get(),true)));
+     }
+-    else scene.waterColorFramebuffer.reset();
++    else if(!scene.selfDepth) scene.waterColorFramebuffer.reset();
+     scene.spraySet->setTexture(scene.spraySet->sceneDepth,scene.depth.get(),RenderTextureLayout::SHADER_READ,scene.depthMipViews[0].get());
+     scene.spraySet->setTexture(scene.spraySet->waterDepth,scene.surface.get(),RenderTextureLayout::SHADER_READ,scene.surfaceView.get());
+     scene.sourceColor = color; scene.sourceDepth = depth;
++    scene.sourceColorTexture=color->texture.get();scene.sourceDepthTexture=depth->texture.get();
++    scene.sourceColorRevision=color->textureRevision;scene.sourceDepthRevision=depth->textureRevision;
+     auto &cs = scene.captureSet;
+     cs->setTexture(cs->color,color->texture.get(),RenderTextureLayout::SHADER_READ,color->textureView.get());
+     cs->setTexture(cs->depth,depth->texture.get(),RenderTextureLayout::SHADER_READ,depth->textureView.get());
+@@ -301,7 +329,13 @@
+         classic ? scene.originalColorView.get() : scene.colorView.get());
+     ms->setTexture(ms->sceneColor,scene.color.get(),RenderTextureLayout::SHADER_READ,scene.colorView.get());
+     ms->setTexture(ms->sceneDepth,scene.depth.get(),RenderTextureLayout::SHADER_READ,scene.depthView.get());
++    sceneKeys.emplace(sceneKey,index);
+     return index;
++    } catch(...) {
++        {auto retired=std::move(scenes[index]);scenes[index]=SceneInputs{};}
++        rejectedScenes.insert(sceneKey);
++        throw;
++    }
+ }
+ 
+ bool WaterRenderer::captureScene(RenderWorker *worker, uint32_t drawIndex, bool depthReadOnly) {
+diff --git a/src/render/rt64_framebuffer_renderer.h b/src/render/rt64_framebuffer_renderer.h
+--- a/src/render/rt64_framebuffer_renderer.h
++++ b/src/render/rt64_framebuffer_renderer.h
+@@ -3,6 +3,7 @@
+ //
+ 
+ #pragma once
++#include "WaterResourcePolicy.h"
+ 
+ #include <stdint.h>
+ 
+@@ -104,7 +105,8 @@
+         interop::FrameParams frameParams;
+         const ShaderLibrary *shaderLibrary = nullptr;
+         std::unique_ptr<WaterRenderer> waterRenderer;
+-        bool waterUnavailable = false;
++        bool waterUnavailable = false; // shader/device support only
++        water_policy::Recovery waterRecovery;
+ 
+ #   if RT_ENABLED
+         const RenderTexture *blueNoiseTexture = nullptr;
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -176,6 +176,7 @@
+     
+     void FramebufferRenderer::resetFramebuffers(RenderWorker *worker, bool ubershadersVisible, float ditherNoiseStrength, const RenderMultisampling &multisampling) {
+         instanceDrawCallVector.clear();
++        waterRecovery.beginFrame();
+         if (waterRenderer) waterRenderer->reset();
+         hitGroupVector.clear();
+         renderIndicesVector.clear();
+@@ -1837,7 +1838,7 @@
+                 }
+                 const bool waterSamplesSupported = wantsWater &&
+                     (p.worker->device->getSampleCountsSupported(RenderFormat::R32_FLOAT) & p.fbStorage->colorTarget->multisampling.sampleCount);
+-                if (wantsWater && waterRenderer && !waterUnavailable && waterSamplesSupported) {
++                if (wantsWater && waterRenderer && !waterUnavailable && waterRecovery.ready() && waterSamplesSupported) {
+                     try {
+                     interop::WaterDrawParams wp{};
+                     wp.material = *waterMaterial;
+@@ -1903,6 +1904,7 @@
+                     if (waterMatricesValid) {
+                         const auto waterScene=waterRenderer->prepareScene(p.worker,p.fbStorage->colorTarget,p.fbStorage->depthTarget,
+                             uint64_t(framebufferCount),classic,selfDepth);
++                        if(waterScene!=water_policy::invalidScene) {
+                         instanceDrawCall.originalWaterPipeline=triangles.pipeline;
+                         instanceDrawCall.waterIndex = uint32_t(waterRenderer->draws.size());
+                         waterRenderer->draws.push_back(wp);
+@@ -1911,9 +1913,10 @@
+ 
+                         triangles.pipeline = waterPipeline;
+                         waterRenderer->worldView = RenderVertexBufferView(RenderBufferReference(outputBuffers.rasterWorldPosBuffer.buffer.get()), PosStride * vertexCount);
++                        }
+                     }
+                     } catch (const std::exception &error) {
+-                        waterUnavailable=true;
++                        waterRecovery.fail();
+                         std::fprintf(stderr,"[water] resource fallback to Original: %s\n",error.what());
+                     }
+                 }
+@@ -2047,7 +2050,7 @@
+         if (waterRenderer && !waterRenderer->draws.empty()) {
+             const auto uploadStart=shaderUploads.size();
+             try {
+-                if (waterUnavailable) throw std::runtime_error("water preparation was incomplete");
++                if (waterRecovery.failed) throw std::runtime_error("water preparation was incomplete; bounded retry scheduled");
+                 waterRenderer->prepareField(worker);
+                 waterRenderer->prepareNormals(worker, *outputBuffers, shaderUploads);
+                 shaderUploads.push_back({waterRenderer->draws.data(), {0,waterRenderer->draws.size()}, sizeof(interop::WaterDrawParams), RenderBufferFlag::STORAGE, {}, &waterRenderer->drawBuffer});
+@@ -2059,7 +2062,7 @@
+                     draw.waterIndex=UINT32_MAX;
+                 }
+                 waterRenderer->reset();
+-                waterUnavailable=true;
++                waterRecovery.fail();
+                 std::fprintf(stderr,"[water] frame fallback to Original: %s\n",error.what());
+             }
+         }

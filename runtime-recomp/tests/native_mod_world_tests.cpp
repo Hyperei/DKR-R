@@ -1,6 +1,7 @@
 #include "runtime_legacy_mods.hpp"
 #include "mods/legacy_track_catalog.hpp"
 #include "mods/online_course_policy.hpp"
+#include "mods/legacy_memory_safety.h"
 #include "runtime_netplay.hpp"
 #include "ultramodern/ultramodern.hpp"
 #include <iostream>
@@ -67,6 +68,23 @@ int main(int argc,char** argv) {
         std::vector<std::uint8_t> ram(8U*MiB);recomp_context ctx{};std::uint64_t result=0;
         const auto put=[&](std::uint32_t address,std::uint32_t word){for(unsigned i=0;i<4;++i)ram[((address&0x7fffff)+i)^3]=std::uint8_t(word>>(24-i*8));};
         const auto word=[&](std::uint32_t address){std::uint32_t value=0;for(unsigned i=0;i<4;++i)value=(value<<8)|ram[((address&0x7fffff)+i)^3];return value;};
+        // Immutable header membership controls this adapter, independently of
+        // donor/racer IDs. Restoring a private world rebuilds that membership.
+        auto phase_names=std::make_shared<CharacterNamespace>(*names);
+        phase_names->characters.at(0).behaviour.native_profile=2;
+        auto phase_session=std::make_shared<RuntimeSession>(stock,phase_names);
+        dkr::runtime::legacy::ModWorld phases(phase_session,calls,nullptr,nullptr,false);
+        ctx.r4=0x80000400;put(0x8000042c,0); // stock object: original routine must run
+        check(phases.dispatch("dkr_legacy_texture_animation",ram.data(),&ctx,nullptr,0,nullptr,0,result)==1 && result==0);
+        put(0x8000042c,phase_names->characters.at(0).headers[0]<<16);
+        put(0x80000440,0x80000500);put(0x80000554,0x00010000);
+        put(0x80000468,0x80000600);put(0x80000600,0x80000640);put(0x80000640,0x80000700);
+        put(0x80000750,0); // native no-animation early return; no callback needed
+        check(phases.dispatch("dkr_legacy_texture_animation",ram.data(),&ctx,nullptr,0,nullptr,0,result)==1 && result==1);
+        const auto phase_checkpoint=phases.checkpoint();
+        check(phases.commit_checkpoint(phases.stage_checkpoint(phase_checkpoint)));
+        check(phases.dispatch("dkr_legacy_texture_animation",ram.data(),&ctx,nullptr,0,nullptr,0,result)==1 && result==1);
+        check(host.dispatch("dkr_legacy_texture_animation",ram.data(),&ctx,nullptr,0,nullptr,0,result)==1 && result==0);
         // Model fences share the immutable guest namespace. They must work
         // through the owned dispatch boundary without altering checkpoints.
         put(0x802E9FB0U,0x80400000U);
@@ -82,6 +100,38 @@ int main(int argc,char** argv) {
         check(host.dispatch("dkr_legacy_model_safety",ram.data(),&ctx,bad_operation,2,nullptr,0,result)==-1);
         check(host.dispatch("dkr_legacy_model_safety",ram.data(),&ctx,bad_width,2,nullptr,0,result)==-1);
         check(host.dispatch("dkr_legacy_model_safety",ram.data(),&ctx,model_check,1,nullptr,0,result)==-1);
+        std::fill(ram.begin(),ram.end(),0);
+        // Exercise the actual scalar owned bridge, not only the helper. The
+        // free queue and reserve bits must live exclusively in checkpointed
+        // RDRAM; restoring them must not mutate the native mod-world payload.
+        const unsigned revision=stock->revision()=="us.v80"?80U:77U;
+        const auto service=[&](unsigned operation,std::uint32_t x=0,std::uint32_t y=0) {
+            const std::uint64_t args[]{operation,revision,x,y};
+            check(host.dispatch("dkr_legacy_memory_service",ram.data(),&ctx,args,4,nullptr,0,result)==1);
+            return static_cast<std::uint32_t>(result);
+        };
+        const auto capacity=service(0);
+        check(capacity>=4096 && capacity<=8192);
+        const std::uint64_t init_args[]{0,revision,0,0};std::uint64_t peer_capacity=0;
+        check(client.dispatch("dkr_legacy_memory_service",ram.data(),&ctx,init_args,4,nullptr,0,peer_capacity)==1 && peer_capacity==capacity);
+        dkr_memory_view heap{ram.data(),ram.size(),revision};
+        put(dkr_memory_pools(heap),capacity);
+        check(service(2,0x80600000U)==0);
+        put(dkr_memory_count_address(heap)+4,2);
+        const auto allocated=service(5,928);
+        check(allocated==0x80600000U+capacity*8U);
+        check(service(4,allocated)==0 && service(4,allocated)==0);
+        check(word(dkr_memory_count_address(heap))==1);
+        const auto guest_checkpoint=ram;
+        check(service(6,allocated)==1);
+        check(service(5,928)==allocated);
+        ram=guest_checkpoint;
+        check(service(5,928)==allocated+DKR_TRANSITION_STRIDE);
+        check(host.checkpoint()==baseline && client.checkpoint()==baseline);
+        const std::uint64_t wide_memory_args[]{3,revision,0x180600000ULL,0};
+        const auto unchanged_memory=ram;
+        check(host.dispatch("dkr_legacy_memory_service",ram.data(),&ctx,init_args,3,nullptr,0,result)==-1 && ram==unchanged_memory);
+        check(host.dispatch("dkr_legacy_memory_service",ram.data(),&ctx,wide_memory_args,4,nullptr,0,result)==-1 && ram==unchanged_memory);
         std::fill(ram.begin(),ram.end(),0);
         auto pending=host.stage_checkpoint(baseline);
         check(host.dispatch("unknown",ram.data(),&ctx,nullptr,0,nullptr,0,result)==0);

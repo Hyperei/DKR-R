@@ -1,0 +1,99 @@
+DKR-R 1.0.5-beta.15-playtest.14 - shared online mod sources rebuild
+6 October 2026
+
+INSTALLATION
+Every racer must extract the complete new Windows ZIP or use the new Linux
+AppImage. Do not replace only DKR-R.exe: the packaged ModWorker was updated too.
+This is a rebuild of Playtest 14, not an additional online backend.
+
+WHY SYNCHRONIZATION WAS SLOW
+The latest investigation found a more severe disk-work amplification: each
+installed xdelta in a multi-patch pack copied the entire prepared pack and its
+retained source review, then copied/compared it again in an aggregate library.
+Two patches in the same 21-character pack each repeated a 5,225-file asset tree
+and a 1,467-file source tree. The user log took 150.5 and 103.2 seconds for just
+those first two patches. Those copies have now been removed.
+
+The old uploader scheduled one small packet per recipient every five
+milliseconds. Requests opened a 64 KiB window. Out-of-order chunks were dropped
+until a retry, and every small received chunk forced a physical disk flush.
+Preparation then repeatedly decoded and analysed the same patch for review,
+tracks and characters. Failed aggregate jobs discarded completed per-mod work.
+Already installed but inactive offline mods were not used to avoid that work.
+
+WHAT CHANGED
+- A session is now a small, atomically published local source index, not a
+  duplicate mod library. Exact selected installed assets are loaded directly.
+  Offline enabled/hidden choices are independent of the frozen host list.
+  Shared pack/review metadata is checked once per source library/group.
+- Existing completed per-patch caches are referenced directly, not recopied.
+  Only missing content needs isolated reconstruction. Native Track Lab courses
+  can also be referenced directly, including locally inactive kept courses.
+- Offline keeping deduplicates group/review sources. Already installed sources
+  require no copy or recursive byte comparison. New missing groups are kept
+  once, safely and inactive, without overwriting existing content or saves.
+- Fully validated preparation worlds are retained as templates instead of
+  discarded/rebuilt at game boot. Each game instantiates its own asset bus,
+  mutable caches, resident state and checkpoint/replay transaction authority.
+- A single in-process immutable runtime cache is keyed by the full original ROM
+  hash and frozen mod manifest, conservatively limited to 256 MiB. Larger sets
+  remain playable within existing adapter budgets but are not held in this
+  extra cache. No mutable running world is ever shared or reused.
+- Matching offline patches are reused after the client accepts the host's mod
+  list. Prepared offline characters and revision-compatible tracks are also
+  reused, including disabled/hidden items. Track Lab courses reuse their
+  canonical package bytes. Different names/versions/assets are not treated as
+  interchangeable: exact host identities and content hashes must match.
+- Completed individual preparations are cached independently, so cancellation
+  or failure later in a library does not require rebuilding those mods again.
+- First-time preparation shares one verified ROM/decoded patch/analysis between
+  the review, track and character stages within its isolated worker.
+- Transfer uses bounded eight-packet bursts, a chunk-aligned 256 KiB window and
+  a bounded reorder inbox. A missing chunk still prevents that file advancing.
+- Disk flushes are batched at 64 KiB, with an explicit mandatory final flush,
+  exact length and full SHA-256 verification before publication.
+- Authenticated progress updates continue during local library checking,
+  importer work, runtime validation and offline retention. The host sees the
+  current stage without mistaking that status for verified lobby admission.
+
+SAFETY AND LIMITS
+Consent, original ROM ownership, exact host selection, native compatibility,
+record verification, memory/file-count/disk/time budgets and final runtime
+preparation are still required. Status packets cannot admit a client. Transfers
+remain forbidden during gameplay. Source offline mods, enablement/visibility
+settings and save files are never replaced by the host's selection.
+New downloaded offline copies remain inactive. Existing user's selections stay
+unchanged. No ROM is transferred, and no downloaded executable is run.
+
+MEASUREMENTS AND QUALIFICATION
+The user's actual 26-root / 20-patch installed selection now measured:
+  final Windows host export 391 ms, profile 326 ms, runtime validation 3,725 ms;
+  two independent game worlds 1 ms; warm runtime preparation 233 ms.
+The US v1.1 character-only selection (14 roots) also passed independent-world
+and exact-selection checks. The profile contained only two metadata files;
+no asset trees were copied and no mod reconstruction worker was invoked.
+These are headless local measurements on this development PC, not internet
+join timings, gameplay qualification or a performance guarantee.
+Linux passed the same installed-library checks; those fixtures reside on the
+Windows-mounted /mnt/c volume, so its measured disk timings are not a native
+Linux filesystem performance comparison.
+
+A real 1,583,450-byte character patch, using isolated empty preparation caches,
+took 6,014 ms with the old worker and 3,633 ms with the new worker, with identical
+runtime resource fingerprints. This is one local sample, not a promised join
+time, a network benchmark, or a guarantee for every mod/device.
+Automated checks cover packet reordering/loss/retry, bounded queues, cancellation,
+partial download resume, consent/refusal, three-client admission and rematches.
+Real installed character/course assets are checked on both supported ROM
+revisions, including inactive reuse without changing offline activation files.
+Windows and Linux headless checks were used; no gameplay windows were opened.
+Real-world Quick Join performance and visual/gameplay acceptance remain for the
+playtest team. First-time missing content still needs download and validation.
+
+DIAGNOSTICS
+runtime.log includes per-mod method=installed-reference/cache-reference/worker,
+profile aggregate-copied-files, runtime immutable-cache-hit, host-ready timing
+and client-ready profile/runtime/keep timing. Existing transfer progress is kept.
+If joining is still slow, collect host and client logs from this rebuild
+so download time, local asset preparation and final runtime validation can be
+distinguished. Keep the complete online cache for subsequent attempts.

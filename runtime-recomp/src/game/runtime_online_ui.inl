@@ -1923,7 +1923,7 @@ void DrawOlHostSettings(float width) {
         static const std::vector<std::string> ownership{
             "Host guides menus until character select", "Host controls shared menus", "Every assigned port"};
         static const std::vector<std::string> racers{"2", "3", "4"};
-        static const std::vector<std::string> modes{"Host prediction (legacy Rollback)", "Strict input sync (Lockstep)",
+        static const std::vector<std::string> modes{"Auto", "Host prediction (legacy Rollback)", "Strict input sync (Lockstep)",
 #if defined(DKR_EXPERIMENTAL_RACE_TEST)
                                                      "Experimental rollback"};
 #else
@@ -1941,12 +1941,19 @@ void DrawOlHostSettings(float width) {
         OlParagraph("Races and minigames support 2\xE2\x80\x93" "4 racers. Adventure supports 2.", 15.0F, kOlSoft,
                     inner);
         PaddockGap(16.0F);
-        int selected_mode = static_cast<int>(CurrentOnlineSynchronization());
+        int selected_mode = dkr::runtime::netplay::experimental::host_backend_choice(
+            g_online_synchronization, g_online_experimental_rollback, g_online_automatic_backend);
         if (OlSelect("synchronization", "Synchronization", &selected_mode, modes, inner)) {
-            changed |= dkr::runtime::netplay::experimental::select_mode(
-                selected_mode, g_online_synchronization, g_online_experimental_rollback);
+            changed |= dkr::runtime::netplay::experimental::select_host_backend(
+                selected_mode, g_online_synchronization, g_online_experimental_rollback,
+                g_online_automatic_backend);
         }
         PaddockGap(16.0F);
+        if (g_online_automatic_backend) {
+            OlParagraph("Auto selects Experimental rollback. The host can also choose a backend explicitly.",
+                        14.0F, kOlSoft, inner);
+            PaddockGap(8.0F);
+        }
         if (CurrentOnlineSynchronization() == SynchronizationMode::ExperimentalRollback) {
 #if defined(DKR_EXPERIMENTAL_RACE_TEST)
             changed |= OlRange("experimental-window", "Rollback prediction window (frames)", &g_online_rollback_window, 2, 20, inner);
@@ -1962,6 +1969,7 @@ void DrawOlHostSettings(float width) {
 #endif
             PaddockGap(8.0F);
             if (OlButton("Use previous online mode", OlTone::Plain, inner)) {
+                g_online_automatic_backend = false;
                 g_online_experimental_rollback = false;
                 changed = true;
             }

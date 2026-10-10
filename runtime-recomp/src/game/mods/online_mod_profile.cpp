@@ -8,6 +8,8 @@
 #include <set>
 #include <algorithm>
 #include <fstream>
+#include <array>
+#include <optional>
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
@@ -113,7 +115,8 @@ ProfileSources profile_sources(const Profile& input_profile) {
             const auto key=std::make_pair(kind,item.id);
             const auto entry=expected.find(key);
             if(entry==expected.end() || entry->second.name!=item.name || entry->second.artifact!=item.artifact ||
-               entry->second.bank!=item.bank || entry->second.payload!=item.patch || !found.insert(key).second)
+               entry->second.bank!=item.bank || entry->second.payload!=item.patch ||
+               entry->second.behaviour!=item.behaviour_identity || entry->second.behaviour_abi!=item.behaviour_abi || !found.insert(key).second)
                 throw Error("Online profile's activated legacy assets do not match the host.");
             if(!valid_digest(item.review))throw Error("Referenced online assets need a retained source review.");
             const auto review=source.library/"reviews"/item.review;
@@ -300,7 +303,7 @@ void verify_online_worker(const std::filesystem::path& worker,const std::filesys
     const auto outcome=run_worker(worker,job.path/"request.json",[&]{return !stop.stop_requested();},std::chrono::seconds(10));
     cancelled(stop);
     if(outcome.outcome!=WorkerOutcome::Completed || !std::filesystem::exists(job.path/"capabilities.json") ||
-        read(job.path/"capabilities.json",4096)!=json({{"schema",Schema},{"online_prepare",1}}))
+        read(job.path/"capabilities.json",4096)!=json({{"schema",Schema},{"online_prepare",1},{"online_prepare_batch",1}}))
         throw Error("The installed ModWorker does not support this build's online mod preparation. Extract the entire new release into a new folder, including libexec/dkr-r; every racer must use that complete package.");
     std::fprintf(stderr,"[online-mods][worker] online-prepare=1 path=%s\n",path_text(worker).c_str());
 }
@@ -375,7 +378,8 @@ bool reuse_installed(const Manifest& manifest,const std::filesystem::path& libra
         if(library.empty())return false;
         const auto& items=content.kind==Kind::Track?tracks:characters;
         const auto found=std::find_if(items.begin(),items.end(),[&](const auto& item){return item.id==content.id &&
-            item.name==content.name && item.artifact==content.artifact && item.patch==content.payload && item.bank==content.bank && valid_digest(item.review);});
+            item.name==content.name && item.artifact==content.artifact && item.patch==content.payload && item.bank==content.bank &&
+            item.behaviour_identity==content.behaviour && item.behaviour_abi==content.behaviour_abi && valid_digest(item.review);});
         if(found==items.end())return false;
         (content.kind==Kind::Track?selected.tracks:selected.characters).push_back({library,*found});
     }
@@ -472,6 +476,7 @@ std::shared_ptr<const Profile> prepare_profile(const Manifest& input,const std::
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::minutes(15);
     const auto begin=std::chrono::steady_clock::now();
     ProfileSources sources;unsigned index=0,workers=0,installed_count=0,cached_count=0;
+    std::set<std::string> batch_attempted;
     for(const auto& payload:out->manifest.payloads) {
         cancelled(stop);
         if(std::chrono::steady_clock::now()>=deadline)throw Error("Online mods exceeded the whole-session preparation limit.");
@@ -496,8 +501,61 @@ std::shared_ptr<const Profile> prepare_profile(const Manifest& input,const std::
             if(progress)progress(prefix+"Revalidating previously prepared assets");
             append_sources(sources,profile_sources(reusable));
         } else {
-        method="worker";++workers;
+        method="worker";
         if(std::filesystem::space(root).available<1280ULL*MiB)throw Error("Missing online mods need at least 1.25 GiB of free staging space.");
+        if(payload.kind==PayloadKind::Xdelta && !batch_attempted.contains(payload.digest) &&
+            std::filesystem::space(root).available>=2304ULL*MiB) {
+            // Avoid workers for installed/cached items. Share ROM validation
+            // only for two truly missing payloads; never make a whole library
+            // one unbounded import. A capped batch may fall back per item.
+            std::optional<Manifest> second;
+            for(const auto& candidate:out->manifest.payloads) {
+                if(candidate.digest==payload.digest || candidate.kind!=PayloadKind::Xdelta || batch_attempted.contains(candidate.digest))continue;
+                Manifest next;next.revision=out->manifest.revision;next.payloads.push_back(candidate);
+                for(const auto& c:out->manifest.content)if(c.payload==candidate.digest)next.content.push_back(c);
+                next=canonical(std::move(next));
+                ProfileSources scratch;
+                if(std::filesystem::exists(root/"prepared-payloads"/identity(next)) ||
+                    reuse_installed(next,installed,installed_tracks,installed_characters,installed_courses,scratch))continue;
+                second=std::move(next);break;
+            }
+            if(second) {
+                const auto batch=job.path/"parts"/nonce();child(batch);child(batch/"batch");
+                const std::array<Manifest,2> items{subset,*second};
+                for(unsigned i=0;i<items.size();++i) {
+                    const auto item=batch/"batch"/std::to_string(i);child(item);
+                    write_new_file(item/"manifest.json",encode(items[i]));
+                    batch_attempted.insert(items[i].payloads.front().digest);
+                }
+                json batch_request={{"schema",Schema},{"operation","online-prepare-batch"},{"source",path_text(std::filesystem::absolute(payloads))},
+                    {"count",2},{"roms",json::array()}};
+                for(const auto& rom:roms)batch_request["roms"].push_back(path_text(std::filesystem::absolute(rom)));
+                write(batch/"request.json",batch_request);++workers;
+                if(progress)progress(prefix+"Preparing two missing mods with shared verified ROM sources");
+                const auto batch_start=std::chrono::steady_clock::now();
+                const auto result=run_worker(worker,batch/"request.json",[&] {
+                    return !stop.stop_requested() && std::chrono::steady_clock::now()<deadline;
+                });
+                unsigned completed=0;
+                for(unsigned i=0;i<items.size();++i) {
+                    const auto content=batch/"batch"/std::to_string(i)/"content";
+                    if(!std::filesystem::exists(content/"verified.json"))continue;
+                    const auto id=identity(items[i]);Profile partial{items[i],id,content};validate_profile(partial);
+                    const auto destination=root/"prepared-payloads"/id;
+                    std::error_code ec;std::filesystem::rename(content,destination,ec);
+                    if(ec)validate_profile({items[i],id,destination});
+                    ++completed;
+                }
+                // Keep fully verified item receipts even if cancellation or
+                // the second item's resource limit ended this bounded batch.
+                // This publishes cache only, never selection/readiness.
+                cancelled(stop);
+                std::fprintf(stderr,"[online-mods][batch] items=2 complete=%u outcome=%u elapsed-ms=%lld\n",completed,unsigned(result.outcome),
+                    static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-batch_start).count()));
+            }
+        }
+        if(!std::filesystem::exists(source)) {
+        ++workers;
         write_new_file(part/"manifest.json",encode(subset));
         json request={{"schema",Schema},{"operation","online-prepare"},{"source",path_text(std::filesystem::absolute(payloads))},
             {"manifest",path_text(part/"manifest.json")},{"roms",json::array()}};
@@ -527,6 +585,7 @@ std::shared_ptr<const Profile> prepare_profile(const Manifest& input,const std::
         if(publish_error) {
             if(!std::filesystem::exists(source))throw Error("Could not publish a verified per-mod preparation cache.");
             validate_profile(reusable);
+        }
         }
         append_sources(sources,profile_sources(reusable));
         }

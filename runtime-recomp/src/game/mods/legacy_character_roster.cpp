@@ -5,6 +5,14 @@
 namespace dkr::mods {
 CharacterRoster::CharacterRoster(std::shared_ptr<const CharacterNamespace> assets):assets_(std::move(assets)) {
     if(!assets_ || assets_->characters.empty())throw Error("Character roster needs a prepared asset namespace.");
+    for(unsigned i=0;i<assets_->characters.size();++i)
+        if(!indexes_.emplace(assets_->characters[i].id,i).second)throw Error("Duplicate character behaviour owner.");
+}
+const AllocatedCharacter* CharacterRoster::entry(unsigned slot)const {
+    if(slot>=8 || active_[slot].empty())return nullptr;
+    const auto found=indexes_.find(active_[slot]);
+    if(found==indexes_.end())throw Error("Active racer behaviour lost its immutable owner.");
+    return &assets_->characters[found->second];
 }
 void CharacterRoster::request(unsigned slot,const std::string& id) {
     if(slot>=4)throw Error("Character selection refers to an invalid player slot.");

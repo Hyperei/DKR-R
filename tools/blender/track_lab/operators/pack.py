@@ -94,6 +94,19 @@ class DKR_OT_export_dkrmap(bpy.types.Operator, ExportHelper):
                 author=settings.track_author,
                 revision=tree.label if tree else "",
             )
+            appearance = context.scene.dkr_water
+            if appearance.render_profile:
+                try:
+                    package.set_render_water({
+                        "deep": list(appearance.render_deep), "shallow": list(appearance.render_shallow),
+                        "sky": list(appearance.render_sky), "sun": list(appearance.render_sun),
+                        "absorption": appearance.render_absorption, "roughness": appearance.render_roughness,
+                        "visibility": appearance.render_visibility, "ripple": appearance.render_ripple,
+                        "foam": appearance.render_foam,
+                    }, [{"texture": item.texture, "kind": item.kind}
+                        for item in appearance.render_materials])
+                except ValueError as error:
+                    raise dkrmap.DkrMapError("Enhanced water: %s" % error) from error
             package.notes.append(
                 "%d objects, roughly %d bytes encoded"
                 % (len(object_map.objects),

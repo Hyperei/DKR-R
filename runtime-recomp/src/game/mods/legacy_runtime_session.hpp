@@ -28,6 +28,7 @@ public:
     ResidentAssetState::Lease acquire();
     const AssetBus& bus() const {return bus_;}
     std::string current_content() const;
+    std::uint32_t course_component(unsigned site,std::uint32_t native_value)const;
     std::uint64_t published_scenes() const;
     std::vector<Root> tracks() const;
     const std::shared_ptr<const CharacterNamespace>& characters() const {return characters_;}

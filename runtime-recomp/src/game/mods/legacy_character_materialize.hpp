@@ -17,7 +17,7 @@ struct PreparedCharacter {
     CharacterAudio audio;
     CharacterRaceAudio race_audio;
 };
-PreparedCharacter prepare_character(View original,View reconstructed,std::string patch_digest,unsigned base_character);
+PreparedCharacter prepare_character(View original,View reconstructed,std::string patch_digest,unsigned base_character,bool behaviour_enabled=true);
 // Revalidate persisted dependency graphs without trusting their manifest hashes.
 // Returns the canonical content identity after complete bounds/closure checks.
 std::string validate_prepared_character(const PreparedCharacter&,const AssetBank& original);
@@ -32,6 +32,7 @@ struct AllocatedCharacter {
     CharacterRaceAudio race_audio;
     bool custom_portrait=true;
     std::string portrait_identity,selection_audio_identity,race_audio_identity;
+    BehaviourContract behaviour;
 };
 // Allocated once, before native asset-table initialization. No original record
 // is replaced; all model/texture/animation/header references are relocated.

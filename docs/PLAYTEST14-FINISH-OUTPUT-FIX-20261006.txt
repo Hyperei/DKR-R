@@ -1,0 +1,57 @@
+Modded multiplayer finish-line investigation and candidate correction
+===================================================================
+
+Observed failure
+----------------
+The supplied host/client reports run the same Experimental Rollback engine,
+US v1.0 ROM, two-owner roster and admitted mod namespace. Both enter the custom
+race on retail carrier 5 successfully. At the first finish the host stops at
+epoch 92/frame 2320; the client continues to 2338 before the session ends.
+The host reports that its bounded rollback receive queue is no longer serviced.
+Neither supplied report contains a native crash stack; both return to the
+launcher. The last "finished" counter changes from 1 to 2, but that diagnostic
+must not be treated as an authoritative count of completed racers.
+
+Correction
+----------
+The confirmation owner previously called SDL audio-device functions and durable
+EEPROM/controller-Pak storage synchronously. Device locks, frequency changes,
+write-through flushes and backup rotation can therefore stop packet consumption.
+Those blocking calls are now separated from the packet-consuming thread:
+
+* Confirmed audio is copied to an eight-block, fixed-size mailbox. The ordinary
+  event owner consumes it after input polling. No guest spans survive a callback.
+  If a device stalls, only old already-confirmed PCM is discarded, with sparse
+  diagnostics; gameplay inputs, effects/checkpoints and peer hashes are retained.
+* Confirmed saves are copied to a dedicated writer with one active write and one
+  latest pending snapshot. Existing validation, isolated online paths, leases,
+  atomic replacement and backup/history rules remain in force. The final
+  confirmed snapshot must finish before the match-return handshake releases the
+  route. Write failures remain errors, never a fallback to an offline save.
+* Native owner-stage diagnostics identify a slow capture, restore, tick, effect
+  confirmation, publication, scene load or durable write. Exceptions racing a
+  connection end are now logged instead of losing their underlying diagnostic.
+
+The supplied logs do NOT identify the exact blocked call, so this is a candidate
+correction to demonstrated blocking paths, not a claim of an end-to-end verified
+finish-line fix. No race logic, mod definitions, queue admission limits, rollback
+prediction rules or legacy backends are changed by this correction.
+
+Qualification
+-------------
+Headless native tests exercise copied buffer ownership, invalid audio blocks,
+audio ordering/overflow, concurrent producer/consumer operation, blocked save
+writes, bounded latest-snapshot coalescing, final durability fences, write
+failure and exception reporting. These checks do not replace a real modded
+multiplayer finish-line test. No game windows or scripted gameplay are launched.
+Windows and Linux builds completed successfully. All 16 selected native
+regression suites passed on each platform; the new confirmed-output suite also
+passed 100 consecutive repetitions on each platform. Packaged executables are
+verified against the rebuilt binaries, with no ROMs, saves or crash logs shipped.
+
+Install this candidate on BOTH host and clients. It retains the Playtest 14
+version name; use the packages in the finish-output-fix-20261006 directory rather
+than an older Playtest 14 download. Test an AI first finish and a player first
+finish on the previously failing custom track. If the session still ends, retain
+both runtime.log files, including any [rollback][owner-stall] and
+[rollback][retired-operation] lines.

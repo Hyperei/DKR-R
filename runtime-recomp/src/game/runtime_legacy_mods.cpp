@@ -14,6 +14,7 @@
 #include "mods/legacy_heap_policy.hpp"
 #include "mods/legacy_asset_capacity.hpp"
 #include "mods/legacy_model_safety.hpp"
+#include "mods/legacy_memory_safety.h"
 #include "mods/legacy_checkpoint.hpp"
 #include "mods/online_mod_runtime.hpp"
 #include "mods/online_course_policy.hpp"
@@ -26,6 +27,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <bit>
+#include <set>
 
 extern "C" void osPiStartDma_recomp(std::uint8_t*,recomp_context*);
 extern "C" void dkr_character_select_animation_fraction(std::uint8_t*,recomp_context*);
@@ -53,7 +55,13 @@ struct CharacterState {
     mods::CharacterPresentation presentation;
     bool menu_active=false;
     std::array<bool,8> portrait_logged{};
-    explicit CharacterState(std::shared_ptr<const mods::CharacterNamespace> assets):roster(std::move(assets)){}
+    std::set<unsigned> shared_phase_headers; // immutable admission data, rebuilt after restore
+    explicit CharacterState(std::shared_ptr<const mods::CharacterNamespace> assets):roster(assets){
+        if(assets)for(const auto& c:assets->characters)if(c.behaviour.native_profile==2) {
+            for(auto id:c.headers)shared_phase_headers.insert(id);
+            shared_phase_headers.insert(c.stage_header);
+        }
+    }
 };
 struct MusicBinding {
     std::mutex mutex;
@@ -70,6 +78,7 @@ struct WorldState {
     GamePayload calls{};
     RecompiledEntrypoint animation=nullptr;
     RecompiledEntrypoint random=nullptr;
+    RecompiledEntrypoint texture_animation=nullptr;
     std::shared_ptr<const custom_tracks::PreparedTracks> authored;
     bool private_owner=false,frozen_online=false,custom_ai=false;
     std::uint32_t pending_course_heap=0;
@@ -192,6 +201,14 @@ void begin_prepared(std::shared_ptr<const mods::PreparedModLaunch> prepared) {
 }
 std::shared_ptr<const mods::PreparedModLaunch> prepared_launch(){return launch.load();}
 bool frozen_online_resources(){return frozen_courses();}
+std::optional<water::enhanced::Metadata> renderer_water_for_level(std::int32_t level) {
+    if(!ordinary_world.frozen_online)return custom_tracks::water_for_level(level);
+    const auto& authored=ordinary_world.authored;
+    if(!authored)return {};
+    for(const auto& course:authored->courses)if(course.level_id==level)
+        for(const auto& track:authored->tracks)if(track.id==course.id)return track.water;
+    return {};
+}
 bool frozen_course_hook(const char* hook,std::uint8_t* ram,recomp_context* ctx) {
     if(!frozen_courses())return false;
     try {
@@ -272,6 +289,22 @@ void request_scene(const std::string& id,unsigned carrier) {
     active->request(id,carrier);
 }
 std::string failure(){std::lock_guard lock(error_mutex);return last_error;}
+}
+extern "C" int dkr_legacy_texture_animation(std::uint8_t* ram,recomp_context* ctx,dkr::mods::OriginalPiHandler texture) {
+    using namespace dkr::runtime;
+    const auto state=legacy::characters.load();
+    if(!state || state->shared_phase_headers.empty())return 0;
+    try {
+        std::lock_guard lock(state->mutex);
+        dkr::mods::CharacterMenuFields fields;fields.fill(0x80000000U);
+        dkr::mods::CharacterMenuMemory g({ram,legacy::guest_memory_size()},fields);
+        const auto object=std::uint32_t(ctx->r4);
+        if(object>UINT32_MAX-0x68)throw dkr::mods::Error("Animated object address overflow.");
+        if(!state->shared_phase_headers.contains(g.read(object+0x2c,2)))return 0;
+        dkr::mods::animate_character_textures({ram,legacy::guest_memory_size()},*ctx,texture);
+        return 1;
+    }catch(const ultramodern::thread_terminated&){throw;}
+     catch(const std::exception& error){legacy::fail(error.what());}
 }
 extern "C" void dkr_legacy_character_event(std::uint8_t* rdram,recomp_context* ctx,unsigned event,std::uint32_t roster_address) {
     using namespace dkr::runtime;
@@ -439,6 +472,23 @@ extern "C" void dkr_legacy_heap_capacity(std::uint8_t*,recomp_context* ctx) {
         std::fprintf(stderr,"[legacy][memory] offline custom-session pool uses existing 8 MiB RDRAM; stock/online pool unchanged\n");
     ctx->r15=static_cast<gpr>(static_cast<std::int32_t>(end));
 }
+extern "C" std::uint32_t dkr_legacy_course_component(std::uint8_t*,recomp_context*,unsigned site,std::uint32_t native_value) {
+    try {
+        const auto assets=dkr::runtime::legacy::session.load();
+        if(site>=3)throw dkr::mods::Error("Unknown custom-course executable component.");
+        return assets?assets->course_component(site,native_value):native_value;
+    }catch(const ultramodern::thread_terminated&){throw;}
+     catch(const std::exception& error){dkr::runtime::legacy::fail(error.what());}
+}
+extern "C" std::uint32_t dkr_legacy_racer_stat(std::uint8_t* ram,recomp_context*,unsigned stat,std::uint32_t racer,std::uint32_t native_bits) {
+    try {
+        if(stat>=3)throw dkr::mods::Error("Unknown custom-racer parameter.");
+        const auto state=dkr::runtime::legacy::characters.load();if(!state)return native_bits;
+        std::lock_guard lock(state->mutex);
+        return dkr::mods::character_stat(state->roster,{ram,dkr::runtime::legacy::guest_memory_size()},stat,racer,native_bits);
+    }catch(const ultramodern::thread_terminated&){throw;}
+     catch(const std::exception& error){dkr::runtime::legacy::fail(error.what());}
+}
 extern "C" std::uint32_t dkr_legacy_asset_cache_capacity(std::uint8_t*,recomp_context*,unsigned kind) {
     using namespace dkr::runtime;
     if(kind>=4)legacy::fail("Unknown legacy asset cache kind.");
@@ -466,6 +516,64 @@ extern "C" int dkr_legacy_model_safety(std::uint8_t* ram,recomp_context*,unsigne
         legacy::fail("Invalid model allocation detected before a guest-memory access. The game was stopped safely; installed mods and saves were retained. Please send runtime.log.");
     }
     return check.no_shading?1:0;
+}
+extern "C" std::uint32_t dkr_legacy_memory_service(std::uint8_t* ram,recomp_context*,unsigned operation,
+    unsigned revision,std::uint32_t a,std::uint32_t b) {
+    using namespace dkr::runtime;
+    if(revision!=77 && revision!=80)legacy::fail("Unreviewed allocator safety revision.");
+    const dkr_memory_view g{ram,legacy::guest_memory_size(),revision};
+    const auto report=[&](const char* reason) {
+        const auto m=dkr_memory_measure(g);
+        std::fprintf(stderr,"[memory][safety] reason=%s revision=%u request=%u caller=%08X free=%u largest=%u slots=%u/%u queue=%u peak=%u valid=%d\n",
+            reason,revision,a,b,m.free_bytes,m.largest_free,m.used_slots,m.max_slots,m.queue,m.high_water,m.valid);
+        // Bounded allocation metadata only; no saves, ROM data or audio samples.
+        if(m.valid) {
+            const auto base=dkr_memory_read(g,dkr_memory_pools(g)+8,4);unsigned i=0;
+            for(unsigned n=0;n<12 && i!=65535U;++n) {
+                const auto s=base+20U*i;
+                std::fprintf(stderr,"[memory][slot] index=%u address=%08X bytes=%u flags=%u tag=%08X\n",i,
+                    dkr_memory_read(g,s,4),dkr_memory_read(g,s+4,4),dkr_memory_read(g,s+8,2),dkr_memory_read(g,s+16,4));
+                i=dkr_memory_read(g,s+12,2);
+            }
+        }
+        std::fflush(stderr);
+    };
+    std::uint32_t value=0;
+    switch(operation) {
+    case 0: {
+        const auto d=dkr_memory_descriptor(g);
+        for(unsigned i=0;i<32;i+=4)dkr_memory_write(g,d+i,0,4);
+        dkr_memory_write(g,dkr_memory_count_address(g),0,4);
+        const auto state=legacy::session.load();const auto bank=state?state->boot_bank():nullptr;
+        if(!bank || !bank->augmented())return 1600;
+        std::uint64_t records=0;for(auto section:{2,4,12,29})records+=bank->record_count(section);
+        return static_cast<unsigned>(std::clamp<std::uint64_t>((records*2U+15U)&~15ULL,4096U,8192U));
+    }
+    case 1: value=dkr_memory_pool(g,0);if(value!=DKR_MEMORY_ERROR)return dkr_memory_reserve_bytes(value);break;
+    case 2: if(!a)return 0;value=dkr_memory_install(g,a,dkr_memory_read(g,dkr_memory_pools(g),4))?0:DKR_MEMORY_ERROR;break;
+    case 3: value=dkr_memory_queue(g);break;
+    case 4: value=dkr_memory_enqueue(g,a);break;
+    case 5: value=dkr_memory_acquire(g,a);break;
+    case 6: value=dkr_memory_release(g,a);break;
+    case 7: value=dkr_memory_pool(g,a);break;
+    case 8: value=dkr_memory_mutation(g,a,b)?0:DKR_MEMORY_ERROR;break;
+    case 9: {
+        const auto d=dkr_memory_descriptor(g);
+        if(dkr_memory_read(g,d,4)==DKR_MEMORY_MAGIC) {
+            const auto n=dkr_memory_read(g,d+24,4);dkr_memory_write(g,d+24,n+1,4);
+            if(n>=4)return 0; // repeated pressure never floods the runtime log
+        }
+        report("transition-fallback");return 0;
+    }
+    case 10: report("required-allocation-failed");
+        legacy::fail("Not enough guest memory for a required game resource. Game stopped safely; mods and saves were retained. Please send runtime.log.");
+    default: value=DKR_MEMORY_ERROR;break;
+    }
+    if(value==DKR_MEMORY_ERROR) {
+        report("invalid-allocator-or-free-queue");
+        legacy::fail("Invalid guest allocator metadata detected before a memory write. Game stopped safely; mods and saves were retained. Please send runtime.log.");
+    }
+    return value;
 }
 extern "C" std::uint32_t dkr_legacy_character_portrait_lookup(std::uint8_t* rdram,recomp_context* ctx,std::uint32_t racer_base) {
     using namespace dkr::runtime;
@@ -702,12 +810,13 @@ struct WorldRestore final:ModWorld::Restore {
 }
 ModWorld::ModWorld(std::shared_ptr<mods::RuntimeSession> assets,GamePayload calls,
     RecompiledEntrypoint animation,std::shared_ptr<const custom_tracks::PreparedTracks> authored,bool ai,
-    RecompiledEntrypoint random,std::shared_ptr<const mods::online::MusicLibrary> music)
+    RecompiledEntrypoint random,std::shared_ptr<const mods::online::MusicLibrary> music,RecompiledEntrypoint texture)
     :state_(std::make_unique<State>()) {
     if(!assets)throw mods::Error("An owned mod world needs admitted resources.");
     (void)mods::online::course_display_budgets(authored.get());
     state_->session.store(assets);state_->private_owner=true;state_->calls=calls;
     state_->animation=animation;state_->random=random;state_->authored=std::move(authored);state_->custom_ai=ai;
+    state_->texture_animation=texture;
     state_->music.store(std::make_shared<MusicBinding>(std::move(music),assets->boot_bank()->revision()=="us.v80"));
     if(ai && !random)throw mods::Error("Owned custom AI needs the reviewed private RNG entry.");
     auto roots=frozen_roots(*assets,state_->authored.get());
@@ -815,7 +924,23 @@ int ModWorld::dispatch(const char* operation,std::uint8_t* ram,recomp_context* c
             state_->pending_course_heap=0;
         }
         else if(name=="dkr_legacy_heap_capacity"){arity(0);dkr_legacy_heap_capacity(ram,ctx);}
+        else if(name=="dkr_legacy_course_component") {
+            arity(2);if(args[0]>=3 || args[1]>UINT32_MAX)throw mods::Error("Invalid owned course-behaviour ABI.");
+            result=dkr_legacy_course_component(ram,ctx,static_cast<unsigned>(args[0]),static_cast<std::uint32_t>(args[1]));
+        }
+        else if(name=="dkr_legacy_racer_stat") {
+            arity(3);if(args[0]>=3 || args[1]>UINT32_MAX || args[2]>UINT32_MAX)throw mods::Error("Invalid owned racer-parameter ABI.");
+            result=dkr_legacy_racer_stat(ram,ctx,static_cast<unsigned>(args[0]),static_cast<std::uint32_t>(args[1]),static_cast<std::uint32_t>(args[2]));
+        }
+        else if(name=="dkr_legacy_texture_animation") {
+            arity(0);result=dkr_legacy_texture_animation(ram,ctx,state_->texture_animation);
+        }
         else if(name=="dkr_legacy_model_safety"){arity(2);if(args[0]>3 || args[1]>0xffffffffULL)throw mods::Error("Invalid owned model-safety ABI.");result=dkr_legacy_model_safety(ram,ctx,static_cast<unsigned>(args[0]),static_cast<std::uint32_t>(args[1]));}
+        else if(name=="dkr_legacy_memory_service") {
+            arity(4);for(unsigned i=0;i<4;++i)if(args[i]>UINT32_MAX)throw mods::Error("Invalid owned memory-safety ABI.");
+            result=dkr_legacy_memory_service(ram,ctx,static_cast<unsigned>(args[0]),static_cast<unsigned>(args[1]),
+                static_cast<std::uint32_t>(args[2]),static_cast<std::uint32_t>(args[3]));
+        }
         else if(name=="dkr_legacy_asset_cache_capacity"){arity(1);if(args[0]>=4)throw mods::Error("Unknown owned asset cache kind.");result=dkr_legacy_asset_cache_capacity(ram,ctx,static_cast<unsigned>(args[0]));}
         else if(name=="dkr_legacy_asset_cache_guard"){
             arity(2);if(args[0]>=4 || args[1]>UINT32_MAX)throw mods::Error("Invalid owned asset cache bound.");

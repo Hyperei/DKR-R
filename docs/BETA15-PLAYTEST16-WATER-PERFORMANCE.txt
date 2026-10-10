@@ -1,0 +1,36 @@
+DKR-R 1.0.5 Beta 15 - Playtest 16
+Windows and Linux enhanced-water performance candidate
+
+Quality-preserving optimisation pass:
+- Racer wake motion is calculated once per compute group, not per water cell.
+- Grid-aligned wake history uses exact direct reads; fractional shifts retain
+  the original filtering. Wake resolution and reflection sample counts remain
+  unchanged. Reset steps still inject the original wake/shore response.
+- Existing wake textures survive wet/dry transitions instead of being shrunk
+  and recreated. History resets on transitions to avoid stale trails.
+- Colour, depth, original-colour and HiZ captures process the relevant viewport
+  with aligned guards. Wide-screen mappings and odd-size edge coverage remain.
+- Unused mask-only draws are skipped, but required water depth passes remain.
+- Exact unchanged ray geometry retains its acceleration structure, even when
+  a texture reload rebuilds material metadata. Actual geometry changes rebuild.
+- Repeated camera matrix inversions are cached/reused by exact matrix value.
+- SSR mip dimensions are derived outside texture queries; reflection search
+  ray origin/direction are projected once instead of matrix-multiplied at every
+  sample. Search steps, refinements, hardware-ray fallback and quality are
+  unchanged. This is full-resolution shading, not a reduced-resolution effect.
+
+Optional developer timing: set DKRR_WATER_PROFILE to a new CSV output filename
+before launching. This enables per-pass GPU timestamp reporting and writes that
+file; leave unset for normal play. Do not choose a file you need to preserve.
+The normal workload fence is reused, with no added GPU drain.
+
+Preserved: adventure/widescreen reflection fixes, normal online backends,
+custom mods, offline save isolation, Track Lab and the Blender add-on.
+Android is deferred for this pass. No ROMs, saves or user mods are packaged.
+
+Qualification: headless policy, resource, projection, ray and original-vs-new
+wake checks do not replace real gameplay verification. Please compare the same
+scene/settings in Sherbet Island, Whale Bay, Pirate Lagoon, Bubbler and Adventure.
+No measured gameplay FPS guarantee is made, including 1440p/120 FPS on RTX 2080
+Super. Full-resolution high-quality hybrid reflections remain a substantial GPU
+workload; this build reduces redundant work without lowering your image quality.

@@ -50,7 +50,7 @@ Bundle export_legacy(const std::filesystem::path& input_path,std::string revisio
             }
             const bool character=kind==TrackCatalog::Kind::Character;
             out.manifest.content.push_back({character?Kind::Character:Kind::Track,item.id,item.name,item.patch,item.artifact,item.bank,
-                character?CharacterAdapterVersion:TrackAdapterVersion});
+                character?CharacterAdapterVersion:TrackAdapterVersion,item.behaviour_identity,item.behaviour_abi});
         }
     }
     out.manifest=canonical(std::move(out.manifest));return out;

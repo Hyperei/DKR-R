@@ -1,0 +1,17 @@
+DKR-R 1.0.5 Beta 15 - Playtest 15 Fix 1
+
+Track Select and failed-session retry correction
+
+- A pending stock track preview is an explicit restoration of retail assets,
+  represented by an empty mod identity. Its rollback checkpoint now restores
+  that request only for retail level IDs 0-64, instead of rejecting it as an
+  unadmitted custom course. Custom IDs/carriers remain strictly catalog-bound.
+- Fresh host/join connections clear a previous failed match's launch roster,
+  retired experimental generations, native receive queue and pending save
+  completions. Same-lobby retirement and conflicting-start checks stay intact.
+- Predictive menu animation, rollback performance improvements, image quality,
+  legacy backend protocols, installed mods and separate offline saves are kept.
+
+All racers should update to this corrected build before testing together.
+Verification is headless; real-device and Internet gameplay remain playtests.
+This correction is not a claim that every online edge case is now bug-free.

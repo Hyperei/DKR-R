@@ -1,6 +1,7 @@
 #pragma once
 #include "online_mod_manifest.hpp"
 #include "online_mod_bundle.hpp"
+#include "online_mod_wire_version.hpp"
 #include <optional>
 #include <map>
 
@@ -13,7 +14,7 @@ inline constexpr std::size_t transfer_window_bytes(std::size_t chunk) {
 }
 enum class Operation : std::uint8_t {
     Offer=1,ManifestRequest,ManifestChunk,Consent,PayloadRequest,PayloadChunk,
-    Preparing,Verified,Cancel,ConsentAck,PreparingAck,Progress
+    Preparing,Verified,Cancel,ConsentAck,PreparingAck,Progress,ManifestCredit,PayloadCredit
 };
 enum class ProgressPhase : std::uint8_t {Review=1,Downloading,Preparing,Verified};
 struct Message {
@@ -79,7 +80,7 @@ private:
     std::shared_ptr<const Bundle> bundle_;
     std::shared_ptr<const Bytes> metadata_,source_;
     std::string digest_,payload_;
-    std::uint32_t offset_=0,end_=0;
+    std::uint32_t offset_=0,end_=0,sent_high_water_=0;
     std::size_t chunk_=0;
     bool consented_=false,preparing_=false,cancelled_=false;
 };

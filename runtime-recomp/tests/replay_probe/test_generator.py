@@ -494,12 +494,16 @@ class InstrumentationTests(unittest.TestCase):
     def test_audited_native_source_contracts_do_not_drift(self):
         root=Path(__file__).resolve().parents[3]
         pins={
-            "runtime-recomp/src/game/runtime_stubs.cpp":"2552788db2decd11c30ae8d6609c42d51d3072578118e4a1d1f3bbd7cec34f31",
+            "runtime-recomp/src/game/runtime_stubs.cpp":"7ab0b1f43932ea68be360212b2082930b0daf1b79add714412b8e341307b988a",
+            "runtime-recomp/src/game/audio_event_queue.h":"efb6c0cdadbc5a1fbab30ee7ff524f558ea54523a43a3424727bba4a997535c2",
+            "runtime-recomp/src/game/audio_event_queue_state.h":"ca400d843e9018f5d69c2aa75ec40889a303574c7789a7297185369dcde79b18",
             "runtime-recomp/src/game/runtime_enhancements.cpp":"7a868375b1a8e4e0f3e5e1c60036795fa2630e7d4b3cd6e954308495743918de",
             "runtime-recomp/src/game/runtime_hud_layout.cpp":"9ec1d648e835dfb6b61495f888a6685d10ce75daf3137c7308e368709ab4d7ad",
             # Audited camera-clearance metadata: read-only guest observations
             # and local matrix bindings; no simulation/checkpoint writes.
-            "runtime-recomp/src/game/presentation_identity.cpp":"b145359db534a8ac4aa2d2c3a39a2dde91a0ef409b1b77e6e19fc10679297a42",
+            # Preserve the already-shipped water camera-root/time metadata.
+            # These are bounded renderer sidecars, not guest simulation writes.
+            "runtime-recomp/src/game/presentation_identity.cpp":"a07c70710997d02d87247b1592209dfd9c42a6371d32e4c00df28ee03386f7d8",
             "runtime-recomp/src/game/widescreen_policy.hpp":"b926703163fa542f8fbd7af1aee297595c1a58a74c61a82d457c8fbae4ccbb62",
             "extern/dkr-decomp/src/save_data.c":"898df1a185c17e1d6ba11302fc5c140a1d7bd10ff3d8b86ff937c834bb13a607",
             "extern/dkr-decomp/src/thread3_main.c":"437434837706ee88e91578ce9e1aa2cd960e65e1e3a6f1aa47ae3b6289892d8e",

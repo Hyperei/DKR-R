@@ -1,0 +1,113 @@
+DKR-R - NSO controller investigation and launcher options
+4 October 2026; candidate based on v1.0.5-beta.15-playtest.10
+
+SCOPE AND STATUS
+The controller work is an investigation, not a claimed confirmed fix. No
+controller drivers, polling policy, rumble policy, netplay or SDL dependency
+were changed. No game, launcher, controller or gameplay tests were run by the
+assistant. Visual and device qualification remain with the user/team.
+
+CONFIRMED SOURCE FINDINGS
+1. Auto is a selector, not a third input implementation.
+   src/game/input_backend_policy.hpp: resolve_input_backend chooses SDL2 on
+   non-Steam-Deck systems and SDL3 on Steam Deck, if its input host is built.
+   runtime_platform.cpp: IsSteamDeckHost returns false on Windows. Therefore,
+   in this checkout, Auto and explicit SDL2 resolve to the SAME Windows input
+   backend. Explicit SDL3 selects the separate SDL3 input helper process.
+
+2. There is no periodic Auto switching/retry loop in the inspected code.
+   configure_input restores the preference once. ShouldTrySdl3Input runs at
+   initialization. ApplyPendingInputBackendSwitch acts only on a pending
+   preference change; it returns immediately if no switch is requested.
+   A failed SDL3 helper falls back to SDL2 through EnsureInputBackendHealthy;
+   there is no automatic repeated SDL3 retry in that health path.
+   LoadSettings runs at UI configuration, not on every UI frame.
+
+3. SDL2 controller updates can block a shared DKR-R mutex.
+   runtime_platform.cpp: poll_input and update_ui_gamepad_navigation call
+   SDL_GameControllerUpdate while owning g_platform_mutex. RefreshControllers
+   enumerates/reconciles devices on events and a one-second fallback. Already
+   opened devices are retained, rather than reopened every frame. Failed
+   device opens can be retried on later inventory checks.
+   set_rumble calls SDL_GameControllerRumble under the same mutex. A slow
+   native update/open/rumble call can delay other input/audio/UI operations
+   requiring that mutex. These paths are shared by Auto and explicit SDL2.
+
+4. A three-second device-discovery fallback exists in SDL itself.
+   The pinned SDL3 src/hidapi/SDL_hidapi.c uses a 3000ms fallback when device
+   change notifications cannot be obtained. Its HIDAPI_JoystickDetect compares
+   the device-change counter and refreshes the device list. SDL2 release-2.26.3
+   has the same conditional 3000ms discovery mechanism. The Windows build
+   currently links that bundled SDL2 release, not a newly updated SDL2 build.
+   This timing fits the report, but neither notification failure nor a slow
+   enumeration was measured on an affected machine. Do not treat the timing
+   match as proof of the root cause or as exclusive to Auto.
+
+5. Nintendo Bluetooth rumble/sensor issues are a secondary hypothesis.
+   Upstream SDL issue #9106 reports Joy-Con lag with rumble/motion enabled.
+   It is about related Nintendo devices, not proof of this NSO N64 issue.
+   Mapping issues such as #10658 can explain wrong buttons but do not alone
+   explain whole-game periodic frame spikes. The available local logs do not
+   provide an affected NSO N64 timing capture.
+
+PRIMARY REFERENCES
+https://github.com/libsdl-org/SDL/blob/release-2.26.3/src/hidapi/SDL_hidapi.c
+https://github.com/libsdl-org/SDL/blob/release-2.26.3/src/joystick/hidapi/SDL_hidapijoystick.c
+https://github.com/libsdl-org/SDL/issues/9106
+https://github.com/libsdl-org/SDL/issues/10658
+
+NEXT CONTROLLER STEPS - BEFORE CHANGING BEHAVIOUR
+A. Confirm affected OS, controller connection (USB/Bluetooth), build, whether
+   Steam Input/controller-remapping software is active, and whether manually
+   selected SDL2 still helps after a full restart. Compare the same scene,
+   settings and connected devices. Auto controller assignment is separate
+   from the backend dropdown and should not be confused with it.
+B. Ask for the startup/input lines of a runtime.log from Auto and explicit
+   SDL2/SDL3. Confirm the active implementation and whether fallback occurs.
+C. If necessary, add bounded opt-in timing for SDL event pumping, mutex wait,
+   controller updates, inventory/open and rumble, with no per-frame disk logs.
+   A trace must separate native HID enumeration from rumble/driver latency.
+D. If native enumeration is proven slow, repair notification/discovery or
+   isolate blocking HID work away from the main game path. Do not disable
+   hotplug globally or move SDL video/event APIs to an arbitrary thread.
+   Any SDL changes must use the checksummed Patch Pipeline.
+E. If redundant rumble traffic is proven responsible, coalesce duplicate
+   requests with bounded refresh and preserve immediate stop, reassignment,
+   disconnect, strength changes and rollback side-effect gating. Do not
+   globally disable rumble or assume all Nintendo controllers behave alike.
+F. Verify Bluetooth/USB, hotplug, rumble, gyro, overlay and all three backend
+   selections on Windows and Linux/Deck before claiming a fix.
+
+IMPLEMENTED LAUNCHER CHANGES
+- Play has a Portable mode checkbox. Enabling creates portable.txt beside
+  the actual Windows executable or the OUTER Linux AppImage. Disabling
+  removes only that marker; it does not remove any save/config directory.
+- The application location is resolved independently of the working
+  directory. The AppImage's temporary read-only mount is not the marker path.
+- Existing ordinary markers are not overwritten when enabling. Directories,
+  symbolic/reparse links and multiply-linked markers are refused on change.
+  Permission and write errors are shown, and the checkbox returns to the
+  observed state on failure. Android does not offer this desktop marker UI.
+- Changes apply on the next launch. The current process retains its frozen
+  save/config route. No automatic copying, migration or merging of profiles
+  occurs. The current data folder and restart requirement are displayed.
+  Explicit command-line config selection continues to take priority.
+- Desktop window creation now honors the saved Graphics window-mode option:
+  windowed or desktop/borderless fullscreen. No display resolution changes,
+  gameplay renderer rewrites or Android fullscreen policy changes were made.
+
+USER QUALIFICATION CHECKLIST
+- Windowed preference: fully exit and reopen; launcher starts windowed.
+- Fullscreen preference: fully exit and reopen; launcher starts fullscreen.
+  Check game launch, overlay, Alt+Enter/F11 and graceful return to launcher.
+- Portable enable: verify portable.txt exists beside the launched file;
+  current data folder stays unchanged until restart; next launch selects
+  adjacent dkr-runtime-data. Disable and verify normal profile resumes.
+- Verify BOTH profiles' saves remain intact. Different progress after a
+  profile switch is not deletion; use Save Manager recovery/export/import
+  intentionally if transferring progress is desired.
+- Check a relocated AppImage, a different working directory, a read-only
+  application directory and an explicit --config override. Read-only marker
+  failures must not alter the current save route or profile.
+- This candidate retains Playtest 10 save protection and previous gameplay
+  patches. It does not claim the reported NSO-controller stutter is fixed.

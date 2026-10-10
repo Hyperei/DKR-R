@@ -1,0 +1,177 @@
+DKR-R legacy behaviour compatibility update - 10 October 2026
+
+Scope and safety
+This update enables reviewed legacy behaviour, rather than running a patched
+ROM wholesale. It preserves original courses, characters, unlock flags and
+offline saves. The same authored adapters are used offline, by Host Prediction,
+by Strict Input Sync and by Experimental Rollback. Unknown executable bytes
+are not granted execution permission simply because the asset parser accepts
+their surrounding ROM. No native DLL loading, filesystem/network access from
+mod code, arbitrary guest memory instructions, or whole-game interpretation.
+
+Inspection and identity
+Pre-asset differences are recorded separately from extracted asset hashes.
+Header checksum changes are excluded from code evidence. Exact source and
+replacement instructions are checked against pinned v1.0/v1.1 signatures.
+Code-only editions cannot collapse into the same asset-only content identity.
+Names are extracted only from a structurally anchored character-name table;
+ambiguous tables retain the existing import label. Rebuilt images can contain
+relocated functions and linked data: a raw byte difference is not proof of a
+new character ability. Unknown layouts remain labelled unclassified; the
+specific rebuilt profiles described below have now received a complete audit.
+
+Follow-up: the remaining eighteen rebuilt character packages
+An isolated NON_MATCHING IDO reference build of the local decomp source was
+compiled separately with each package's authored title names. Protected source
+and generated runtime directories were not edited. All words in each complete
+pre-asset prefix were compared against that build. Compiler relocation tables
+identified changed call/address operands; data pointers, object-file alignment,
+cartridge checksums and the asset-boundary checksum loads were accounted for.
+No unknown opcode/global-data word remains in those eighteen exact profiles.
+The production registry admits only their complete SHA-256 prefix hashes,
+never a broad compiler mask or a mod-provided claim of compatibility.
+
+Ten packages are rebuilt native-equivalent profiles: Yooka, Taj, Mario, Donkey
+Kong, Fungus, Kazooie, King K. Rool, Shovel Knight, Tiny Kong and Dixie Kong.
+Eight contain one actual changed routine: Bottles, Bowser, blue Jinjo, Laylee,
+Luigi, Sabreman, Waluigi and Yoshi share random animated-texture batch phases.
+All eight contain the same 432-byte obj_tex_animate body, SHA-256:
+aa8b58c5f6697819cab72448590ac0496603c9fccf10150e11fca6fb083f970f
+The authored native adapter preserves the FIRST earlier random-animated batch
+for the same texture pointer, including aliases, copies phase/direction bits,
+and keeps non-random batches independent. Native tex_animate_texture and RNG
+remain the only animation callback; all mutable state remains checkpointed
+guest RAM. A fixed-size lookup avoids the ROM hack's quadratic batch scan.
+Only the admitted custom character's vehicle/stage header IDs enable it.
+Stock characters, unrelated scenery and other custom profiles retain the
+original animation path. Both revision policies and the private rollback
+closure include the same hash-pinned, scoped entry hook.
+
+This is not unrestricted execution of arbitrary patched ROM code. These exact
+packages no longer have unclassified pre-asset behaviour; unknown future code,
+whole-campaign changes, unsupported MISC/GLOBAL_DATA layouts and invalid
+geometry still need separate compatibility work. No byte-count relabelling
+or unsafe geometry fallback was used to claim broader compatibility.
+
+Reviewed executable components
+Seventeen known constant-load edits have compatibility contracts. Three course
+spawn/setup sites execute checked ADDIU components only while their explicitly
+selected custom course owns the scene. The remaining access edits are handled
+by DKR-R's additive custom roster/course menus instead of overwriting the
+original game's unlock globals. Each component has one instruction, no memory
+access, no calls and no mutable VM state. Normal and owned Patch Pipeline
+outputs contain the same guarded hooks for both supported ROM revisions.
+
+Native data adapters
+Per-custom-racer weight, handling and the third native racer parameter table
+are supported with finite-value budgets. Values are selected by logical human
+or AI identity, not by replacing a donor's global table. Two characters using
+the same donor can retain different values while the original donor stays
+unchanged. Unselected participants, boss objects and unmatched identities
+retain native values. Other MISC tables still require additional adapters.
+
+Native-layout object headers support reviewed changes to model scale, shadow
+and water-effect scale, ambient/diffuse lighting, intensity, shadow angles and
+draw distance. Values are validated and owned by the custom asset namespace or
+course. Pointer layouts, model types/counts, attachment counts, particles,
+behaviour IDs and other structural changes are rejected, not transplanted.
+Existing portrait, animation, selection/race voice and music adapters remain
+in place; a missing authored resource cannot be invented by this update.
+
+Replay and online ownership
+Contracts are immutable. Scene/roster sidecars already checkpoint the selected
+logical identity, so restoration selects the same behaviour without adding
+untracked VM state or writing renderer/audio effects during replay. The online
+manifest is now schema 2 and binds the behaviour digest and ABI to each root.
+The negotiated build identity includes those contracts and authored mod code.
+Every peer in a lobby must update together. A client reconstructs against its
+own verified original ROM and verifies the exact host artifact/contract before
+admission. Only missing payloads are downloaded; matching installed/cached
+assets remain reusable. Downloaded mods can still be retained, inactive, in
+the offline library. Preparation failures never fall back to a different ABI.
+
+Existing libraries
+Existing asset-only editions remain selectable and retain their old identities
+and isolated saves. In Mods / Hacks, open the mod's Details, expand Import
+Details and choose PREPARE SOURCE IMPORT AGAIN. This inspects the retained
+patch and creates behaviour-aware editions where applicable. Select the new
+edition deliberately. The old edition is not silently upgraded or deleted.
+Help & imports now also offers PREPARE ALL SOURCE IMPORTS AGAIN. It gathers
+unique retained sources from import cards and both installed catalogues,
+including hidden editions, prepares them serially with the installed original
+ROMs, shows source/worker progress and a per-import result, and can be cancelled.
+One failed source does not stop unrelated sources. Existing activation,
+visibility, editions and offline save routing are preserved. Newly prepared
+editions remain inactive until deliberately selected; missing source patches
+or ROMs are reported rather than silently replaced or downloaded.
+Details now distinguish asset-only, native-adapted and partial compatibility,
+and explain the retained ABI. Whole-campaign/unlock/global-data changes do not
+become globally active through an additive course/character import. Features
+outside these reviewed boundaries still need their own native adapters.
+
+Initial-pass qualification (superseded corpus classification below)
+Both retail ELF policies passed signature, ownership-conflict and idempotence
+checks (nine gameplay hook sites per revision). The standalone Windows legacy
+suite passed 25 tests. ROM-backed safety/identity tests passed for v1.0/v1.1.
+The full Windows runtime headless suite passed all 125 project tests with
+assertions enabled, including current and incompatible-old admission contracts.
+Fifty retained patches were checked: 18 asset-only, 14 exact-reviewed and 18
+partial linked-layout packages. Thirty-four character roots and 94 prepared
+track/revision variants passed materialization, persistence, original-asset
+preservation and pristine-world checkpoint checks. Four invalid course
+root/revision variants remain blocked, including Space Rain's invalid BSP.
+The corpus completed 183,199 assertions without changing user activation.
+Course scene/checkpoint restoration passed 430 additional assertions.
+Old-library online reconstruction/retention/reuse passed 220 checks; new
+behaviour-aware host/client reconstruction and zero-worker offline reuse passed
+for both revisions. No game windows or automated gameplay sessions were run.
+
+Follow-up headless qualification
+All eighteen exact reference prefixes passed profile admission; 288 mutated
+prefixes were rejected. Animation tests covered aliased textures, independent
+non-random phases, direction propagation, unchanged caller registers, malformed
+final-batch rejection before writes/RNG consumption and deterministic replay.
+The new corpus pass completed 183,223 assertions: fifty retained patches,
+eighteen asset-only and thirty-two reviewed profiles, zero partial prefixes.
+The same thirty-four characters and ninety-four track/revision variants passed;
+four invalid track/revision variants remain explicitly blocked. The user's
+installed catalogues were read-only. Bulk preparation/cancellation/retry tests
+preserved active launch fingerprints, stock EEPROM and Controller Pak files.
+Both retail policies passed ten hook-site signature, ownership and idempotence
+checks. The full Windows and Linux x64 suites passed all 125 project tests on
+each platform. Native mod-world isolation/checkpoint checks passed 1,209 tests
+on each ROM revision, including scoped texture-animation header membership.
+The three-source online behaviour corpus (course, native-equivalent character
+and texture-phase character) passed 24 cold-reconstruction, inactive offline
+retention and zero-worker installed-reuse checks across both revisions. The
+ROM-backed bulk library fixture passed 98 checks. The bulk action also accepts
+online-retained installed sources beyond the normal import-history limit;
+the validated catalogue limits and one-at-a-time worker transactions still
+bound its memory/process usage. No game windows or gameplay sessions were run.
+
+Release-qualification caveat (not a claimed fix)
+The first full Windows and Linux runs passed all 125 tests. Later Linux repeats
+each passed 124/125: one Experimental Quick Join scene-convergence check reached
+its 20-second deadline; another Quick Join lifecycle/checkpoint-pressure run
+aborted with "free(): corrupted unsorted chunks". These headless tests load no
+mods and do not render the game. Neither failure was reproduced in an immediate
+Quick Join recheck plus twenty consecutive repeats, ten normal lifecycle
+repeats, a lifecycle debugger run, or twenty address-sanitized lifecycle-driver
+runs. The separately linked networking SDK was not fully sanitizer-instrumented.
+Those results do NOT explain or fix the intermittent failures. The original
+failure logs are retained, no assertion/deadline was relaxed, and this rebuilt
+Linux candidate is not being certified as crash-free or cleanly release-qualified.
+The mod profile/import checks passed independently; gameplay qualification and
+further networking investigation remain necessary.
+
+Gameplay qualification remains with the user
+Headless checks cannot certify every third-party mod or guarantee crash-free
+play. Please test old and newly prepared editions, original/custom courses,
+same-donor racers and custom AI, race/results/retry/Adventure transitions, all
+online backends and client download/rejoin. Keep the matching runtime log and
+crash dump for any failure. Android is outside this desktop-focused build pass.
+
+Protected inputs
+Dependency checkouts and existing RecompiledFuncs/RecompiledPatches were not
+edited. Gameplay hooks were emitted into fresh isolated Patch Pipeline output.
+Earlier packages and normal mod/save selections are preserved.

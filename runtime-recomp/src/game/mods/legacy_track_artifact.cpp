@@ -34,6 +34,7 @@ void validate_record(unsigned section,View bytes) {
     case 27:validate_geometry(inflate_asset(bytes,4*MiB),bytes.size());break;
     case 29:inspect_model_textures(bytes);break;
     case 39:inspect_sequence_directory(bytes);break;
+    case 34:slice(bytes,0,0x78);break; // native signature/field ownership checked against stock below
     case 21:case 23:case 32:break; // root/profile validation was performed by the isolated worker
     default:throw Error("Prepared content uses an unallocated asset section.");
     }
@@ -41,6 +42,7 @@ void validate_record(unsigned section,View bytes) {
 }
 std::string write_track_artifact(const std::filesystem::path& destination,
     const TrackMaterialization& track,const std::string& patch,const std::string& profile) {
+    validate_behaviour(track.root.behaviour);
     if(!track.bank || !track.directory || !digest(patch) || !known_profile(profile) ||
        track.bank->digest()!=track.root.content_id || !track.root.blockers.empty())
         throw Error("Only a reviewed, internally consistent track can be prepared.");
@@ -56,6 +58,7 @@ std::string write_track_artifact(const std::filesystem::path& destination,
         {"geometry",root.geometry},{"objects",root.object_map},{"collectables",root.collectables},
         {"race_type",root.race_type},{"vehicles",root.vehicles},{"records",json::array()}};
     std::set<std::string> stored;std::set<AssetKey> keys;std::size_t total=0;
+    if(root.behaviour.abi)manifest["behaviour_contract"]=json::parse(encode_behaviour(root.behaviour));
     for(const auto& key:track.included) {
         if(!keys.insert(key).second || keys.size()>4096) throw Error("Invalid prepared record set.");
         const auto bytes=track.bank->record(key.first,key.second);
@@ -89,6 +92,7 @@ PreparedTrack read_track_artifact(const std::filesystem::path& directory,
     PreparedTrack result;result.profile=text(manifest,"profile");result.patch_digest=text(manifest,"patch");
     if(!known_profile(result.profile) || !digest(result.patch_digest)) throw Error("Prepared content has no reviewed adapter.");
     result.root.content_id=text(manifest,"id");result.root.name=text(manifest,"name");
+    if(manifest.contains("behaviour_contract"))result.root.behaviour=decode_behaviour(manifest.at("behaviour_contract").dump());
     result.root.carrier=manifest.at("carrier").get<unsigned>();
     result.root.geometry=manifest.at("geometry").get<unsigned>();
     result.root.object_map=manifest.at("objects").get<unsigned>();
@@ -112,7 +116,11 @@ PreparedTrack read_track_artifact(const std::filesystem::path& directory,
         if(std::filesystem::is_symlink(path)) throw Error("Prepared assets must not be links.");
         auto bytes=read_file(path,size);
         if(bytes.size()!=size || sha256(bytes)!=hash) throw Error("A prepared asset failed its integrity check.");
-        validate_record(key.first,bytes);total+=size;overrides.emplace(key,std::move(bytes));
+        validate_record(key.first,bytes);
+        if(key.first==39)validate_changed_sequences(stock->record(key.first,key.second),bytes);
+        if(key.first==34 && (object_parameter_fields(stock->record(34,key.second),bytes)&~result.root.behaviour.header_fields))
+            throw Error("Prepared object parameters exceed their course behaviour contract.");
+        total+=size;overrides.emplace(key,std::move(bytes));
     }
     if(!overrides.contains({23,result.root.carrier})) throw Error("Prepared course is missing its owned level header.");
     result.bank=AssetBank::derive(std::move(stock),result.root.content_id,std::move(overrides));

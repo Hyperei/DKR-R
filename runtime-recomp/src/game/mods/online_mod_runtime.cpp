@@ -2,9 +2,18 @@
 #include "legacy_track_catalog.hpp"
 #include "legacy_asset_directory.hpp"
 #include "online_course_policy.hpp"
+#include "online_mod_cache_policy.hpp"
 #include <algorithm>
 #include <set>
 #include <chrono>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#else
+#include <sys/sysinfo.h>
+#endif
 
 namespace dkr::mods::online {
 namespace {
@@ -16,6 +25,24 @@ void cancelled(std::stop_token stop){if(stop.stop_requested())throw Error("Onlin
 std::mutex resource_cache_mutex;
 std::string resource_cache_key;
 std::shared_ptr<const RuntimeResources> resource_cache;
+std::weak_ptr<const RuntimeResources> live_resource_cache;
+std::uint64_t retention_budget() {
+#ifdef _WIN32
+    MEMORYSTATUSEX memory{};memory.dwLength=sizeof(memory);
+    return GlobalMemoryStatusEx(&memory)?resource_cache_budget(memory.ullTotalPhys,memory.ullAvailPhys,false):0;
+#else
+    struct sysinfo memory{};
+    if(sysinfo(&memory)!=0)return 0;
+    return resource_cache_budget(std::uint64_t(memory.totalram)*memory.mem_unit,
+        std::uint64_t(memory.freeram+memory.bufferram)*memory.mem_unit,
+#ifdef __ANDROID__
+        true
+#else
+        false
+#endif
+    );
+#endif
+}
 }
 std::shared_ptr<const RuntimeResources> RuntimeResources::prepare(std::shared_ptr<const Profile> profile,
     const std::filesystem::path& rom,std::stop_token stop) {
@@ -27,14 +54,14 @@ std::shared_ptr<const RuntimeResources> RuntimeResources::prepare(std::shared_pt
     const auto key=out->profile_->digest+":"+sha256(bytes);
     {
         std::lock_guard lock(resource_cache_mutex);
-        if(resource_cache && resource_cache_key==key) {
+        if(auto reusable=live_resource_cache.lock();reusable && resource_cache_key==key) {
             cancelled(stop);
             std::fprintf(stderr,"[online-mods][runtime] immutable-cache-hit=1 elapsed-ms=%lld\n",
                 static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-began).count()));
-            return resource_cache;
+            return reusable;
         }
         // Do not keep an unrelated collection while preparing a new one.
-        resource_cache.reset();resource_cache_key.clear();
+        resource_cache.reset();live_resource_cache.reset();resource_cache_key.clear();
     }
     out->stock_=AssetBank::stock(std::move(bytes));
     if(out->stock_->revision()!=out->profile_->manifest.revision)
@@ -124,11 +151,13 @@ std::shared_ptr<const RuntimeResources> RuntimeResources::prepare(std::shared_pt
         for(const auto& [key,data]:out->characters_->additions)cache_bytes+=data.size();
         for(const auto& c:out->characters_->characters)cache_bytes+=c.audio.samples.size()+c.audio.control.size()+c.race_audio.samples.size()+c.race_audio.control.size();
     }
-    if(cache_bytes<=256*MiB) {
-        std::lock_guard lock(resource_cache_mutex);resource_cache_key=key;resource_cache=out;
+    const auto budget=retention_budget();
+    {
+        std::lock_guard lock(resource_cache_mutex);resource_cache_key=key;live_resource_cache=out;
+        if(cache_bytes<=budget)resource_cache=out;
     }
-    std::fprintf(stderr,"[online-mods][runtime] roots=%zu immutable-cache-hit=0 cache-bytes=%zu cache-retained=%u elapsed-ms=%lld\n",
-        out->profile_->manifest.content.size(),cache_bytes,unsigned(cache_bytes<=256*MiB),
+    std::fprintf(stderr,"[online-mods][runtime] roots=%zu immutable-cache-hit=0 cache-bytes=%zu cache-budget=%llu cache-retained=%u elapsed-ms=%lld\n",
+        out->profile_->manifest.content.size(),cache_bytes,static_cast<unsigned long long>(budget),unsigned(cache_bytes<=budget),
         static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-began).count()));
     return out;
 }

@@ -158,7 +158,8 @@ public:
             if(mod_identity_.size()!=64)throw std::runtime_error("Custom owned resource identity is invalid.");
             mods_=std::make_unique<dkr::runtime::legacy::ModWorld>(boot.mods->new_session(),
                 dkr_owned_mod_calls::payload(),dkr_owned_mod_calls::call_dkr_character_select_animation_fraction,
-                boot.mods->authored(),boot.mods->profile()->manifest.custom_ai,dkr_owned_mod_calls::call_rand_range,boot.mods->music());
+                boot.mods->authored(),boot.mods->profile()->manifest.custom_ai,dkr_owned_mod_calls::call_rand_range,boot.mods->music(),
+                dkr_owned_mod_calls::call_tex_animate_texture);
             if(boot.mod_bootstrap.empty() || boot.mod_bootstrap.size()>256U*1024U ||
                !mods_->commit_checkpoint(mods_->stage_checkpoint(boot.mod_bootstrap)))
                 throw std::runtime_error("Custom native bootstrap ownership could not be admitted.");
@@ -976,9 +977,7 @@ private:
            audio.next_frame<confirmed_count_ || audio.next_frame==UINT32_MAX) return false;
         for(unsigned i=0;i<audio.guards.size();++i) {
             const auto& g=audio.guards[i];
-            if(g.immediate_events>256 || g.logged_empty>1 || g.logged_corrupt>1 ||
-               (g.queue && ((g.queue&3) || g.queue<0x80000000U || g.queue>0x80FFFFECU)) ||
-               (!g.queue && (g.immediate_events || g.logged_empty || g.logged_corrupt))) return false;
+            if(!dkr_audio_guard_valid(&g)) return false;
             for(unsigned j=0;j<i;++j) if(g.queue && g.queue==audio.guards[j].queue) return false;
         }
         return true;

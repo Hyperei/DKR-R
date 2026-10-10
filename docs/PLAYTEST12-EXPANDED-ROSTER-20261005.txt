@@ -1,0 +1,84 @@
+DKR-R Playtest 12 expanded-roster rebuild - 5 October 2026
+
+WHAT CHANGED
+The fixed sixteen-enabled-character ceiling is removed from the launcher,
+catalogue, native menu, character materializer and host-managed online profile.
+Four animated stage positions stay exactly where they were. L/R cycles the
+enabled library while reserving the other displayed characters; player cursors
+do not jump to a different stage position. The original roster is untouched.
+
+This is deliberately not a promise of literal infinity. Native delayed/spatial
+sound queues hold u16 identities. The private range 0x4000..0xffff supports
+1,536 logical characters with 32 tokens each (18 used voice cues). Independent
+asset-ID, transfer, staging and guest-memory budgets still apply. A heavy
+collection can reach those budgets before 1,536. Admission fails with a clear
+message; it never silently drops characters or overruns a cache. Installed
+content is retained when an enabled collection is refused.
+
+SCALING AND OWNERSHIP
+Portraits and selection/race voice controls are loaded only when needed, and
+retained until the guest session ends so already-queued sounds stay valid.
+Committed human/AI race presentation is prepared in the fixed simulation path,
+not dependent on whether a renderer frame is skipped during rollback.
+Identical verified faces, voice controls and 3D textures reuse storage. Sprite
+frame ranges remain contiguous and independently owned. Guest admission
+accounts for retained presentation, cache arrays and expanded lookup tables
+within a 2 MiB reserve budget. Existing signed asset-ID checks remain active.
+
+Private selection and race samples share one immutable, deduplicated virtual
+sample bank (64 MiB maximum), replacing full-ROM mounts per character. This
+does not replace original music or permit arbitrary executable ROM patches.
+Trophy portrait byte tokens identify up to eight race participants rather than
+library ordinals. A character beyond index 255 can therefore retain its face.
+Rollback sidecars retain sparse presentation ownership and use a compact hash
+of the ordered roster, rather than copying every content ID into every tick.
+
+ONLINE
+Manifest character bounds match the native roster. Metadata offers, parsing,
+transfer and admission share the 2 MiB manifest bound. Whole-session patch/
+package transfer remains capped at 256 MiB and still requires client consent.
+Protocol 49 prevents mixing this rebuild with older presentation/checkpoint
+formats. Every racer must install the same complete replacement package.
+Offline saves, installed libraries and the frozen host-managed mod policy are
+not changed by joining or leaving a lobby.
+
+VERIFICATION SCOPE
+Headless coverage includes the full 1,536-entry synthetic menu/manifest range,
+L/R wrap/skip behavior, retained shared resources, high u16 voice tokens through
+both patched retail revision entry points, participant portrait tokens and
+sparse checkpoint restore. A read-only installed library is also used to
+materialize 32 valid synthetic editions and resolve their distinct sample data,
+and to qualify native mod-world isolation on both US revisions. These fixtures
+are not installed in user libraries or played audibly.
+The existing cache-overflow and failed-spawn guards remain in the authored
+Patch Pipeline. No submodules or generated RecompiledFuncs/RecompiledPatches
+were manually edited. No game windows or autonomous visual tests were opened.
+Real custom-mod gameplay and real-network performance still need playtesting.
+
+COMPLETED BUILD CHECKS
+40/40 legacy tests; 15/15 Patch Pipeline guards; 46/46 replay generator tests;
+6/6 owned probe tests. Native mod-world tests passed 870 checks on each US
+revision, including 32 synthetic materialized editions and 1,536 logical
+sample-bank entries. The focused online/save/custom-content/controller suite
+passed 15/15 on Windows and 15/15 on Linux. Both complete packages passed
+importer, controller helper, virtual Pak and dummy-video input-switch checks.
+The Windows ZIP was fully read and checked for prohibited ROM/save/dump files.
+Both production builds report the same rollback contract:
+27f119533df5ed2d2f8c3000e0532b69c38289a56e0c1d96837faea42a6b6c49
+
+Package SHA-256:
+Windows ZIP: C0E137308A607B1CC40F89808DAE1E017939736DA152FD064BF1FAD4BEEA61E4
+Linux AppImage: 4EA6A39FCACDDB00A4054C0EEFD216323088F9043502168D1020567DA8A3B6BB
+
+TEST REQUEST
+Enable more than sixteen characters, browse all four stage positions, and try
+different human/AI combinations with portraits and voices in race/results/HUD.
+Check original and custom tracks, return to menus, and two/three/four-player
+online sessions with missing host mods on clients. Use the same rebuild on all
+peers. If a collection is refused, retain the exact admission message and mod
+count; if play fails, retain runtime.log from each affected peer.
+
+Prior crash-fix packages remain untouched at:
+G:/DiddykongWorkFolder/playtest12-crash-fix-20261005/packages-ready
+New expanded-roster packages are staged separately at:
+G:/DiddykongWorkFolder/playtest12-expanded-roster-20261005/packages-ready

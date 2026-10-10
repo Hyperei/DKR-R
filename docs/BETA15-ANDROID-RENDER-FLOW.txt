@@ -1,0 +1,79 @@
+DKR-R Beta 15 - Android presentation/performance candidate
+7 October 2026. Android build code: 1050029 (replaces 1050028).
+
+This is a quality-preserving candidate, not a measured claim of desktop-equivalent
+frame rate on Android. No physical Android device was available to execute it.
+
+Changes
+-------
+Android surface pre-rotation is performed in the existing final presentation
+pass. The selected transform matches the surface's current pure rotation when
+supported. Internal game targets, resolution settings, filtering, mipmaps,
+anisotropy, MSAA, FOV, scene detail and the requested FPS setting are unchanged.
+No additional intermediate image or filtering pass is introduced.
+
+Game viewport/scissor and the overlay/touch-control draw snapshot rotate
+together. Input coordinates and layout remain logical. Overlay vertices and
+clipping rectangles are restored exactly after drawing to avoid accumulated
+drift over repeated interpolated frames. Pure identity/90/180/270 transforms
+are covered. Unsupported mirror transforms/asymmetric bounds retain identity
+presentation where supported, rather than reducing resolution.
+
+Same-size orientation changes are detected by a bounded capability check
+(at most four per second). Persistent SUBOPTIMAL status alone cannot trigger
+a rebuild every frame. Existing surface-generation leases, ownership fences,
+upload drains, resource-failure handling and rollback retirement remain intact.
+
+Android's coarse presentation sleep now leaves a 250 microsecond precision
+tail instead of 2 milliseconds. The existing final precision/deadline path
+remains; neither simulation nor network/input timing is changed.
+
+Normal Android logs now publish existing renderer timing histories and bounded
+decoder, FullSync, native-fence, upload-fence and presentation-lock summaries.
+No extra GPU query pool, Java/PSS polling or performance-recording session is
+enabled. Nested/concurrent wall timings are not additive CPU utilisation.
+Experimental state staging now composes after performance measurements rather
+than replacing them. This restoration is diagnostic, not a demonstrated speedup.
+
+Evidence
+--------
+The supplied Startup Logs (9) belong to build 1050028 and demonstrate a successful
+offline launch with large frame-rate variations. The landscape surface reported
+currentTransform=2 but preTransform=1. The archive's performance.txt retained an
+older 1050025 recording, so its detailed GPU numbers were not treated as current.
+
+Android, Windows x64 and Linux x64 release native builds completed.
+39 selected headless regression suites passed on Windows; 39 passed on Linux.
+These include the new transform/overlay checks and existing Android compatibility,
+save protection, mod admission, input, presentation and rollback checks.
+Overlay checks repeat all four orientations 2,000 times each, with exact
+restoration, non-uniform DPI, texture coordinates and exception unwinding.
+Both Android final-pass shader variants compiled to SPIR-V. Push-constant member
+offsets (0/8/16/20) match the compiled C++ structure (24 bytes).
+Both retain the existing Vulkan 1.0/SPIR-V 1.0 baseline, with no higher GPU requirement.
+APK build number, v2 signature and ZIP alignment were verified. All four packaged
+native libraries are AArch64 with 16 KiB LOAD alignment. Application ID, signing
+identity and DKR-R logo remain unchanged. A Linux x64 AppImage was also rebuilt.
+
+Testing requested
+-----------------
+Install 1050029 as an update; do not uninstall or clear app data.
+Use the same resolution, FPS and texture pack for the first comparison.
+Check offline racing first, then online, portrait/landscape and reverse landscape,
+overlay/touch hit alignment, 4:3/widescreen, suspend/resume and folding if relevant.
+After a slow track has run for at least 30 seconds, export the normal Android
+Startup Logs ZIP. Performance recording is not required for the new timing data.
+Device GPU correctness, actual frame-time improvement and real online gameplay
+remain to be verified by the user. No GUI or audible game tests were performed.
+
+Reference
+---------
+https://developer.android.com/games/optimize/vulkan-prerotation
+https://docs.vulkan.org/refpages/latest/refpages/source/VkSwapchainCreateInfoKHR.html
+
+Preservation
+------------
+Protected submodules and Recompiled directories were not edited. Renderer
+dependency changes use authored checked Patch Pipeline stages. Existing user
+changes and prior fixes were retained. No reset, stash, commit or push was used.
+Docker was left untouched.

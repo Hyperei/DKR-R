@@ -1,0 +1,112 @@
+diff --git a/src/hle/rt64_draw_call.h b/src/hle/rt64_draw_call.h
+--- a/src/hle/rt64_draw_call.h
++++ b/src/hle/rt64_draw_call.h
+@@ -111,7 +111,7 @@
+         DrawExtendedType extendedType;
+         DrawExtendedData extendedData;
+         DrawExtendedFlags extendedFlags;
+-        interop::WaterMaterial waterMaterial{};
++        uint32_t waterMaterialIndex = UINT32_MAX;
+ 
+         // Raytracing parameters.
+         // TODO: This is likely better pushed elsewhere and using an index
+diff --git a/src/hle/rt64_state.cpp b/src/hle/rt64_state.cpp
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -138,7 +138,7 @@
+         drawCall.NoN = false;
+         drawCall.extendedType = DrawExtendedType::None;
+         drawCall.extendedFlags = {};
+-        drawCall.waterMaterial = {};
++        drawCall.waterMaterialIndex = UINT32_MAX;
+         drawCall.drawStatusChanges = 0;
+ 
+         // Mark everything as changed so everything on the draw call gets updated.
+@@ -461,7 +461,7 @@
+         }
+ 
+         if (drawStatus.isChanged(DrawAttribute::WaterMaterial)) {
+-            drawCall.waterMaterial = waterMaterial;
++            drawCall.waterMaterialIndex = UINT32_MAX;
+         }
+         drawStatus.clearChanges();
+     }
+@@ -482,6 +482,16 @@
+         drawCall.callIndex = workload.gameCallCount++;
+ 
+         // Add the draw call to the FB pair.
++        drawCall.waterMaterialIndex = UINT32_MAX;
++        // Pool optical payloads only for water, with a hard per-workload cap.
++        // Ordinary calls carry a four-byte handle instead of a 1664-byte
++        // material; Original allocates no material pool at all.
++        if (waterMaterial.identity.x > 0.0f && workload.waterMaterials.size() < 2048) {
++            if (workload.waterMaterials.empty() ||
++                std::memcmp(&workload.waterMaterials.back(), &waterMaterial, sizeof(waterMaterial)) != 0)
++                workload.waterMaterials.push_back(waterMaterial);
++            drawCall.waterMaterialIndex = uint32_t(workload.waterMaterials.size() - 1);
++        }
+         GameCall gameCall;
+         gameCall.callDesc = drawCall;
+         fbPair.addGameCall(gameCall);
+diff --git a/src/hle/rt64_workload.h b/src/hle/rt64_workload.h
+--- a/src/hle/rt64_workload.h
++++ b/src/hle/rt64_workload.h
+@@ -220,6 +220,7 @@
+         std::vector<FramebufferPair> fbPairs;
+         std::vector<CommandWarning> commandWarnings;
+         std::vector<SpriteCommand> spriteCommands;
++        std::vector<interop::WaterMaterial> waterMaterials;
+         std::vector<interop::PointLight> pointLights;
+         uint32_t fbPairCount;
+         uint32_t fbPairSubmitted;
+diff --git a/src/hle/rt64_workload.cpp b/src/hle/rt64_workload.cpp
+--- a/src/hle/rt64_workload.cpp
++++ b/src/hle/rt64_workload.cpp
+@@ -27,6 +27,7 @@
+ 
+         commandWarnings.clear();
+         spriteCommands.clear();
++        waterMaterials.clear();
+         pointLights.clear();
+         fbChangePool.reset();
+         fbStorage.reset();
+@@ -243,15 +244,7 @@
+         const uint32_t vertexCount = drawData.vertexCount();
+         const RenderBufferFlags rtInputFlag = worker->device->getCapabilities().raytracing ? RenderBufferFlag::ACCELERATION_STRUCTURE_INPUT : RenderBufferFlag::NONE;
+         updateOutputBuffer(worker, outputBuffers.screenPosBuffer, vertexCount * sizeof(float) * 4, RenderBufferFlag::VERTEX);
+-        outputBuffers.waterWorldActive = false;
+-        for (uint32_t f=0; f<fbPairCount && !outputBuffers.waterWorldActive; ++f) {
+-            const auto &pair=fbPairs[f];
+-            for (uint32_t p=0; p<pair.projectionCount && !outputBuffers.waterWorldActive; ++p)
+-                for (uint32_t c=0; c<pair.projections[p].gameCallCount; ++c)
+-                    if (pair.projections[p].gameCalls[c].callDesc.waterMaterial.identity.x>0) {
+-                        outputBuffers.waterWorldActive=true; break;
+-                    }
+-        }
++        outputBuffers.waterWorldActive = !waterMaterials.empty();
+         // Original retains only a descriptor-sized dummy buffer, no vertex
+         // transform writes. Do not add a full per-vertex cost to the default.
+         updateOutputBuffer(worker, outputBuffers.rasterWorldPosBuffer,
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -1804,7 +1804,9 @@
+                     }
+                 }
+ 
+-                const bool wantsWater = call.callDesc.waterMaterial.identity.x > 0.0f &&
++                const auto *waterMaterial = call.callDesc.waterMaterialIndex < p.curWorkload->waterMaterials.size()
++                    ? &p.curWorkload->waterMaterials[call.callDesc.waterMaterialIndex] : nullptr;
++                const bool wantsWater = waterMaterial && waterMaterial->identity.x > 0.0f &&
+                     instanceDrawCall.type == InstanceDrawCall::Type::IndexedTriangles && p.fbStorage->colorTarget && p.fbStorage->depthTarget;
+                 if (wantsWater && !waterRenderer && !waterUnavailable) {
+                     try {
+@@ -1819,7 +1821,7 @@
+                     (p.worker->device->getSampleCountsSupported(RenderFormat::R32_FLOAT) & p.fbStorage->colorTarget->multisampling.sampleCount);
+                 if (wantsWater && waterRenderer && waterSamplesSupported) {
+                     interop::WaterDrawParams wp{};
+-                    wp.material = call.callDesc.waterMaterial;
++                    wp.material = *waterMaterial;
+                     wp.material.surface.w=float(proj.transformsIndex);
+                     wp.screen = {float(p.fbWidth), float(p.fbHeight), float(p.targetWidth), float(p.targetHeight)};
+                     wp.screenTransform = {triangles.screenScale.x, triangles.screenScale.y, triangles.screenOffset.x, triangles.screenOffset.y};

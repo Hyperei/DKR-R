@@ -16,6 +16,9 @@
 #include "water_uv_rt64.hpp"
 #include "water_performance.hpp"
 #include "water_scroll_policy.hpp"
+#if defined(DKR_ENHANCED_WATER)
+#include "enhanced_water_rt64.hpp"
+#endif
 #include "local_scenery_rt64.hpp"
 #include "local_scenery_policy.hpp"
 #include "netplay/experimental_performance.hpp"
@@ -363,6 +366,13 @@ struct dkr::runtime::F3DDKRRT64Bridge::StateData {
     float world_window_aspect = 4.0F / 3.0F;
     presentation::WorldProjection clearance_projection{};
     presentation::WorldDepthRemap clearance_remap{};
+#if defined(DKR_ENHANCED_WATER)
+    hlslpp::float4x4 water_camera_vp{};
+    bool water_camera_valid = false;
+    float water_time = 0.0F;
+    const water::enhanced::Registry* water_registry = nullptr;
+    std::uint32_t water_camera_address = 0;
+#endif
     LocalSceneryRT64Pass* local_scenery=nullptr;
     std::uint32_t vertex_offset = 0;
     std::uint32_t texture_offset = 0;
@@ -1783,6 +1793,19 @@ void dkr::runtime::F3DDKRRT64Bridge::process(RT64::Application& application,
     *data_ = fresh;
 
     RT64::State* state = application.state.get();
+#if defined(DKR_ENHANCED_WATER)
+    // A rejected/aborted display list must not leak its optical material into
+    // the next task's shadows, HUD or ordinary scenery.
+    if(state->waterMaterial.identity.x>0) {
+        state->flush();state->waterMaterial={};
+        state->updateDrawStatusAttribute(RT64::DrawAttribute::WaterMaterial);
+    }
+    if(enhancements::modern_presentation_enabled() &&
+        water::enhanced::requested_quality.load(std::memory_order_relaxed)!=water::enhanced::Quality::Original) {
+        data_->water_registry=&water::enhanced::task_registry(*state,presentation::task_scene_generation());
+        data_->water_time=float(presentation::task_presentation_time());
+    }
+#endif
     RT64::RSP& rsp = *state->rsp;
     rsp.reset();
 
@@ -2584,6 +2607,15 @@ void dkr::runtime::F3DDKRRT64Bridge::Matrix(
         if (presentation::apply_world_depth_remap(rsp.modelMatrixStack[index], data.clearance_remap))
             rsp.modelViewProjChanged = true;
     }
+#if defined(DKR_ENHANCED_WATER)
+    if(matrix_group.camera_root) {
+        data.water_camera_address=address;
+        data.water_camera_vp=rsp.modelMatrixStack[index];
+        data.water_camera_valid=true;
+        for(unsigned row=0;row<4;++row) for(unsigned col=0;col<4;++col)
+            data.water_camera_valid &= std::isfinite(float(data.water_camera_vp[row][col]));
+    }
+#endif
 }
 
 void dkr::runtime::F3DDKRRT64Bridge::FillRect(
@@ -2947,6 +2979,15 @@ void dkr::runtime::F3DDKRRT64Bridge::Triangle(RT64::State* state,
     }
 
     const bool procedural_water = data.interpolation_groups.active_group().procedural_water;
+#if defined(DKR_ENHANCED_WATER)
+    if(data.water_registry) {
+        water::enhanced::apply_material(*state,*data.water_registry,source,count,procedural_water,
+            presentation::task_scene_generation(),data.water_camera_vp,data.water_camera_valid,data.water_time,data.water_camera_address);
+    } else if(state->waterMaterial.identity.x>0) {
+        state->waterMaterial={};
+        state->updateDrawStatusAttribute(RT64::DrawAttribute::WaterMaterial);
+    }
+#endif
     const bool skip_equal_uv = procedural_water && water::equal_uv_enabled();
     const bool coalesce_water = procedural_water && water::coalesce_enabled();
     const bool profile_water = procedural_water && water::enabled();
@@ -2998,6 +3039,15 @@ void dkr::runtime::F3DDKRRT64Bridge::Triangle(RT64::State* state,
         }
         rsp.drawIndexedTri(vertices[0], vertices[1], vertices[2]);
     }
+#if defined(DKR_ENHANCED_WATER)
+    // Seal the optical batch before restoring the ordinary material. HUD,
+    // shadows and billboards must never inherit the last water surface.
+    if(state->waterMaterial.identity.x>0) {
+        state->flush();
+        state->waterMaterial={};
+        state->updateDrawStatusAttribute(RT64::DrawAttribute::WaterMaterial);
+    }
+#endif
     if (profile_water) {
         water::bridge.triangles += count;
         water::bridge.skipped += skipped;

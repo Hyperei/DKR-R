@@ -20,6 +20,42 @@ inline std::string lower(std::string text) {
     for(auto& c:text)c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return text;
 }
+// Conservative review hints, not equivalence proofs. Names can belong to
+// unrelated mods; source/slot matches can be different behaviour editions.
+inline std::string name_key(std::string_view text) {
+    std::string key;bool space=false;
+    for(const unsigned char c:text) {
+        if(c==' ' || c=='\t' || c=='\r' || c=='\n') {space=!key.empty();continue;}
+        if(space)key+=' ';
+        key+=static_cast<char>(std::tolower(c));space=false;
+    }
+    return key;
+}
+inline std::string source_slot(const Card& card,bool characters) {
+    const auto& item=card.item;
+    if(item.patch.empty())return {};
+    return item.patch+":"+std::to_string(characters?item.base_character:item.carrier);
+}
+struct DuplicateEntry {std::string id,name,source_slot;};
+struct DuplicateMatch {
+    unsigned same_name=0,same_source=0;
+    bool matches(int filter=1) const {return filter==2?same_source>1:same_name>1 || same_source>1;}
+};
+inline std::map<std::string,DuplicateMatch> duplicates(const std::vector<DuplicateEntry>& entries) {
+    std::map<std::string,std::set<std::string>> names,sources;
+    for(const auto& entry:entries) {
+        const auto name=name_key(entry.name);
+        if(!name.empty())names[name].insert(entry.id);
+        if(!entry.source_slot.empty())sources[entry.source_slot].insert(entry.id);
+    }
+    std::map<std::string,DuplicateMatch> result;
+    for(const auto& entry:entries) {
+        const auto name=name_key(entry.name);
+        result.emplace(entry.id,DuplicateMatch{static_cast<unsigned>(names[name].size()),
+            entry.source_slot.empty()?0U:static_cast<unsigned>(sources[entry.source_slot].size())});
+    }
+    return result;
+}
 inline std::vector<Card> cards(const TrackCatalogView& view,bool characters) {
     std::map<std::string,Card> unique;
     for(const auto& item:view.tracks) {

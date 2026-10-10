@@ -2,6 +2,8 @@
 
 #include "authoritative_state.hpp"
 #include "netplay_types.hpp"
+#include "../mods/online_mod_wire_version.hpp"
+#include "../mods/online_mod_manifest.hpp"
 
 #include <string>
 #include <string_view>
@@ -32,6 +34,10 @@ inline std::string canonical_network_build_fingerprint(
            "/netplay-protocol-" + std::to_string(kProtocolVersion) +
            "/authority-schema-" +
            std::to_string(kAuthoritativeStateSchema) +
+           "/mod-transfer-" + std::to_string(dkr::mods::online::WireVersion) +
+           "/mod-manifest-" + std::to_string(dkr::mods::online::ManifestSchema) +
+           "/behaviour-" + std::to_string(dkr::mods::BehaviourAbi) +
+           "/native-guest-lifetime-1" +
            "/runtime-ae1ffbb9/gekkonet-5924b5c7";
 }
 

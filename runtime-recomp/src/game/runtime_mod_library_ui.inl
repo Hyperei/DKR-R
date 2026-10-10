@@ -144,14 +144,11 @@ LibraryCardView DescribeLibraryCard(const LibraryEntry& entry, bool characters,
         view.info = track.hd_textures
             ? "HD textures \xC2\xB7 Modern graphics" : "Modern graphics";
         if (track.bytes != 0U) view.size = FormatModSize(track.bytes);
-        view.note = "Installed. Available automatically in the in-game track menu.";
         view.status = "Installed";
         view.tone = PaddockTone::On;
         if (track.kept_online) {
             view.native_toggle = true; view.enabled = track.enabled;
             view.toggle_allowed = !locked; view.gold = track.enabled;
-            view.note = track.enabled ? "Kept from online. Enabled for offline play."
-                                      : "Kept from online. Turn on to use offline.";
             view.status = track.enabled ? "On" : "Off";
             view.tone = track.enabled ? PaddockTone::On : PaddockTone::Neutral;
         }
@@ -199,11 +196,6 @@ LibraryCardView DescribeLibraryCard(const LibraryEntry& entry, bool characters,
         view.note = "Prepare this legacy mod for the ROM version you have loaded.";
     } else if (characters && !item.enabled && active >= MaxActiveStageCharacters) {
         view.note = "The native character identity range is full. Installed mods remain available.";
-    } else if (!item.details.empty()) {
-        view.note = item.details;
-    } else {
-        view.note = characters ? "Appears in character selection when enabled."
-                               : "Appears below the original worlds in Track Select.";
     }
     view.prepare = !item.hidden && mismatch && !item.review.empty();
     return view;
@@ -222,7 +214,7 @@ float MeasureLibraryCard(const LibraryCardView& view, float width) {
     const bool info_fits = view.size.empty() ||
         PaddockMeasure(info, view.info) + 8.0F + PaddockMeasure(size, view.size) <= inner;
     height += 18.0F + (info_fits ? info.line : info.line + 8.0F + size.line) + 9.0F;
-    height += PaddockTextHeight(note, view.note, inner) + 18.0F;
+    if (!view.note.empty()) height += PaddockTextHeight(note, view.note, inner) + 18.0F;
     if (view.prepare) height += 42.0F;
     height += 2.0F + 12.0F + 42.0F + 16.0F + 2.0F;
     return std::ceil(height);
@@ -292,10 +284,12 @@ bool DrawLibraryCard(const LibraryCardView& view, ImVec2 origin, float width,
         if (!fits) y += 8.0F + size.line;
     }
     y += info.line + 9.0F;
-    const PaddockType note = PaddockReading(13.0F, false, 1.55F);
-    PaddockTextStyle note_style;
-    note_style.colour = PaddockCol(0xC0D4DF);
-    y += PaddockTextAt(draw, note, {left, y}, inner, view.note, note_style) + 18.0F;
+    if (!view.note.empty()) {
+        const PaddockType note = PaddockReading(13.0F, false, 1.55F);
+        PaddockTextStyle note_style;
+        note_style.colour = PaddockCol(0xC0D4DF);
+        y += PaddockTextAt(draw, note, {left, y}, inner, view.note, note_style) + 18.0F;
+    }
 
     bool details = false;
     if (view.prepare) {
@@ -352,6 +346,23 @@ LibraryEntry ResolveLibraryEntry(const ModBrowserState& state,
     return {nullptr, &tracks[static_cast<std::size_t>(-index - 1)]};
 }
 
+std::string LibraryEntryId(const LibraryEntry& entry) {
+    return entry.dkr != nullptr ? "dkr:" + entry.dkr->id : entry.legacy->item.id;
+}
+
+void UpdateLibraryDuplicates(ModBrowserState& state, const std::vector<DkrLibraryTrack>& tracks,
+                             bool characters) {
+    std::vector<dkr::mods::browser::DuplicateEntry> entries;
+    for (const auto& card : state.all)
+        entries.push_back({card.item.id, card.item.name, dkr::mods::browser::source_slot(card, characters)});
+    state.native_name_sources.clear();
+    if (!characters) for (const auto& track : tracks) {
+        entries.push_back({"dkr:" + track.id, track.name, {}});
+        state.native_name_sources.emplace_back(track.name, track.source);
+    }
+    state.duplicate_matches = dkr::mods::browser::duplicates(entries);
+}
+
 // Indices of the cards to show, in order: >= 0 into state.all, < 0 into
 // `tracks` (-1 is the first track).
 std::vector<int> SelectLibraryEntries(const ModBrowserState& state,
@@ -381,6 +392,10 @@ std::vector<int> SelectLibraryEntries(const ModBrowserState& state,
     for (const int index : all) {
         const LibraryEntry entry = ResolveLibraryEntry(state, tracks, index);
         const bool native = entry.dkr != nullptr;
+        if (state.duplicates != 0) {
+            const auto match = state.duplicate_matches.find(LibraryEntryId(entry));
+            if (match == state.duplicate_matches.end() || !match->second.matches(state.duplicates)) continue;
+        }
         std::string searchable = LibraryEntryName(entry);
         std::set<std::string> sources;
         bool enabled = true;
@@ -405,7 +420,7 @@ std::vector<int> SelectLibraryEntries(const ModBrowserState& state,
         if ((state.visibility == 0 && hidden) || (state.visibility == 2 && !hidden)) continue;
         if ((state.compatibility == 1 && !compatible) ||
             (state.compatibility == 2 && compatible)) continue;
-        keyed.push_back({index, browser::lower(LibraryEntryName(entry)),
+        keyed.push_back({index, state.duplicates ? browser::name_key(LibraryEntryName(entry)) : browser::lower(LibraryEntryName(entry)),
                          native ? entry.dkr->bytes : entry.legacy->item.managed_bytes,
                          native ? 0U : entry.legacy->item.imported_at,
                          native ? "dkr:" + entry.dkr->id : entry.legacy->item.id});
@@ -430,13 +445,13 @@ std::vector<int> SelectLibraryEntries(const ModBrowserState& state,
 
 bool LibraryFiltered(const ModBrowserState& state) {
     return state.search[0] != '\0' || !state.source.empty() || state.state != 0 ||
-           state.compatibility != 0 || state.visibility != 0 || state.format != 0;
+           state.compatibility != 0 || state.visibility != 0 || state.format != 0 || state.duplicates != 0;
 }
 
 void ResetLibraryFilters(ModBrowserState& state) {
     state.search[0] = '\0';
     state.source.clear();
-    state.sort = state.state = state.compatibility = state.visibility = state.format = 0;
+    state.sort = state.state = state.compatibility = state.visibility = state.format = state.duplicates = 0;
 }
 
 std::string DkrLibrarySignature(const std::vector<DkrLibraryTrack>& tracks) {
@@ -476,7 +491,8 @@ void DrawModCardBrowser(float requested_width, bool characters,
     // Toolbar: search, status, sort and the filter switch.
     const std::string filters_label = [&] {
         const int advanced = (!state.source.empty() ? 1 : 0) + (state.compatibility != 0 ? 1 : 0) +
-                             (state.visibility != 0 ? 1 : 0) + (state.format != 0 ? 1 : 0);
+                             (state.visibility != 0 ? 1 : 0) + (state.format != 0 ? 1 : 0) +
+                             (state.duplicates != 0 ? 1 : 0);
         return advanced != 0 ? "Filters (" + std::to_string(advanced) + ")" : std::string("Filters");
     }();
     const std::string filters_id = filters_label + "##filters";
@@ -554,7 +570,7 @@ void DrawModCardBrowser(float requested_width, bool characters,
             source_items.push_back(source);
         }
         PaddockBox box(width, {16.0F, 16.0F});
-        const int fields = characters ? 3 : 4;
+        const int fields = characters ? 4 : 5;
         const int columns = std::clamp(static_cast<int>((box.Inner() + 16.0F) / 186.0F), 1, fields);
         const float field_width = (box.Inner() - 16.0F * (columns - 1)) / columns;
         const ImVec2 grid = ImGui::GetCursorScreenPos();
@@ -581,6 +597,9 @@ void DrawModCardBrowser(float requested_width, bool characters,
         }
         place();
         PaddockSelect("visibility", "Visibility", &state.visibility, kVisibility, field_width);
+        place();
+        static const std::vector<std::string> kDuplicates{"All mods", "Possible duplicates", "Same source & slot"};
+        PaddockSelect("duplicates", "Duplicate review", &state.duplicates, kDuplicates, field_width);
         const int lines = (slot + columns - 1) / columns;
         ImGui::SetCursorScreenPos(grid);
         ImGui::Dummy({box.Inner(), lines * row + (lines - 1) * 16.0F});
@@ -597,12 +616,28 @@ void DrawModCardBrowser(float requested_width, bool characters,
     const std::string key = std::string(state.search) + '|' + state.source + '|' +
         std::to_string(state.sort) + ':' + std::to_string(state.state) + ':' +
         std::to_string(state.compatibility) + ':' + std::to_string(state.visibility) + ':' +
-        std::to_string(state.format) + ':' + std::to_string(g_mod_browser_revision) + '|' +
+        std::to_string(state.format) + ':' + std::to_string(state.duplicates) + ':' + std::to_string(g_mod_browser_revision) + '|' +
         (characters ? std::string{} : DkrLibrarySignature(dkr_tracks));
     if (state.filter_key != key) {
+        UpdateLibraryDuplicates(state, dkr_tracks, characters);
         state.shown = SelectLibraryEntries(state, dkr_tracks, characters);
         state.filter_key = key;
         state.layout_key.clear();
+    }
+    const auto duplicate_count = std::count_if(state.duplicate_matches.begin(), state.duplicate_matches.end(),
+        [](const auto& entry) { return entry.second.matches(); });
+    if (duplicate_count != 0 || state.duplicates != 0) {
+        if (state.duplicates == 0) {
+            if (PaddockButton("Review duplicates##review-duplicates", PaddockButtonKind::Settings)) {
+                ResetLibraryFilters(state);
+                state.duplicates = 1;
+                state.visibility = 1; // Include hidden copies when reviewing.
+            }
+        } else {
+            PaddockText(PaddockReading(13.0F, false, 1.5F), PaddockRgb(0xC7DCE6),
+                "Matching names or the same source and original slot may be different editions. Compare Details, then remove only the copy you do not want. Use Visibility: All to include hidden copies.", width);
+        }
+        PaddockGap(12.0F);
     }
     const std::size_t total = state.all.size() + (characters ? 0U : dkr_tracks.size());
 
@@ -800,6 +835,37 @@ void DrawModManagement(ModBrowserState& browser, bool characters, bool locked) {
                 PaddockModalText("IMPORTED: Unknown (older import)");
             }
             if (!item.details.empty()) PaddockModalText(kWarm, item.details);
+            // Compare conservatively: never silently discard a name match or
+            // a behaviour-enabled edition of an older asset-only import.
+            const auto name = browser::name_key(item.name);
+            const auto source = browser::source_slot(*card, characters);
+            const auto match = browser.duplicate_matches.find(item.id);
+            if (match != browser.duplicate_matches.end() && match->second.matches() &&
+                ImGui::CollapsingHeader("COMPARE POSSIBLE DUPLICATES")) {
+                PaddockModalText("These can be different editions. Removal applies only to the chosen content ID; other mods and saves are kept.");
+                for (const auto& other : browser.all) {
+                    if (other.item.id == item.id) continue;
+                    const bool same_name = !name.empty() && browser::name_key(other.item.name) == name;
+                    const bool same_source = !source.empty() && browser::source_slot(other, characters) == source;
+                    if (!same_name && !same_source) continue;
+                    PaddockModalText(other.item.name + " - " + (same_source ? "same source & slot" : "same name"));
+                    PaddockModalText(other.item.hidden ? "Hidden" : other.item.enabled ? "Active" : "Inactive");
+                    for (const auto& pack : other.sources) PaddockModalText("SOURCE: " + pack);
+                    PaddockModalText("CONTENT ID: " + other.item.id.substr(0, 12));
+                    ImGui::PushID(other.item.id.c_str());
+                    if (PaddockModalButton("VIEW THIS COPY")) {
+                        browser.manage_id = other.item.id;
+                        ImGui::SetScrollY(0);
+                    }
+                    ImGui::PopID();
+                }
+                if (!characters) for (const auto& [native_name, native_source] : browser.native_name_sources) {
+                    if (!name.empty() && browser::name_key(native_name) == name)
+                        PaddockModalText("Also named: " + native_name + " (DKR-R track, " + native_source + "). Inspect its card in My mods.");
+                }
+            }
+            PaddockModalText(item.behaviour_abi ? "BEHAVIOUR CONTRACT: reviewed native adapter ABI " + std::to_string(item.behaviour_abi)
+                                               : "BEHAVIOUR CONTRACT: asset-only preparation (re-prepare the retained source import to inspect behaviour support)");
             if (!characters) {
                 ImGui::TextWrapped("VEHICLES: %s%s%s", item.vehicles & 1 ? "Car " : "",
                                    item.vehicles & 2 ? "Hovercraft " : "", item.vehicles & 4 ? "Plane" : "");
@@ -853,7 +919,8 @@ void DrawModManagement(ModBrowserState& browser, bool characters, bool locked) {
                 }
                 ImGui::EndDisabled();
                 PaddockModalText("This explicitly restores removed entries from this source import. "
-                                 "Existing hidden entries remain hidden.");
+                                 "Existing hidden entries remain hidden. Behaviour-enabled editions have separate identities; "
+                                 "the older edition and its isolated saves are retained, not overwritten. Choose which edition to activate after preparation.");
             }
         }
         if (PaddockModalButton("CLOSE")) ImGui::CloseCurrentPopup();
@@ -878,6 +945,7 @@ void DrawModManagement(ModBrowserState& browser, bool characters, bool locked) {
                   "to restore the card. Restoring does not activate it.");
             if (remove) {
                 PaddockModalText(kWarm, "Prepared content is deleted. Reimport its source patch to install it again.");
+                PaddockModalText("ONLY THIS CONTENT ID: " + card->item.id);
             }
             ImGui::BeginDisabled(locked);
             if (PaddockModalButton(remove ? "REMOVE THIS MOD" : "DEACTIVATE AND HIDE", 44)) {

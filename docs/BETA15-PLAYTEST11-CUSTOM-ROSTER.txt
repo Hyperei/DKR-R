@@ -1,0 +1,48 @@
+DKR-R v1.0.5 Beta 15 Playtest 11 - Custom Character Roster
+
+Offline custom characters remain separate from the vanilla online backends.
+Track Lab, the original roster, unlocks, HUD layout, and save isolation remain.
+
+Enable up to 16 custom characters in Mods / Hacks. Four appear at once: two
+on the lower lawn and two at the ends of the upper wooden shelf. Highlight a
+custom racer and press L or R to cycle additional enabled characters. Confirm
+and cancel with the original controls. Other players' highlighted/confirmed
+characters stay visible. L/R now replaces only the actor in your current slot,
+skipping all characters displayed in the other three positions, even if nobody
+is highlighting them. A shared DOUBLEVISION slot stays pinned until one player
+moves away, rather than changing another player's character underneath them.
+Only four stage models remain live; replacements load before old actors retire.
+If a replacement cannot fit the native model budget, the prior selection stays.
+
+The additions now share the frontal orientation of the selection camera, rather
+than toeing inward toward its position. The existing smooth music-driven dance
+clock is unchanged. These positions/orientation need your visual approval.
+The facing-correction rebuild reverses all four custom stage actors by 180
+degrees relative to the first Playtest 11 candidate. Shelf/lawn positions,
+animation timing, portraits and L/R browsing are unchanged by this correction.
+
+Enabled custom characters now join unlocked vanilla characters in the offline
+computer-racer pool. Each AI slot draws without replacement; human identities
+are excluded. A custom racer and its original donor may race together. Native
+racer counts, human choices, vehicle statistics and gameplay rules stay intact.
+Three/four-player races that have no native AI slots do not gain extra racers.
+Bosses, hub worlds, time trials/ghosts, rolling demos and online remain excluded.
+AI identities reset at the next scene; portraits and voices follow the chosen
+custom content, using the patch's original-face/voice fallback where applicable.
+
+Portrait routing remains per racer/content identity, not donor-global. Build
+admission now rejects payloads missing any portrait, HUD, cinematic or voice
+hook. The log reports the selected content's private portrait texture and
+whether its imported patch actually supplies a replacement face. A patch that
+retains the donor bitmap cannot supply a new face; that fallback is intentional.
+No existing library identities, receipts, modded saves or imported files change.
+
+Please check: Yooka/Dixie/Haunter facing; four shelf positions; L/R with five or
+more enabled mods; simultaneous multiplayer selection; confirmation/cancel;
+results, trophy and minigame portraits; AI custom racers across car/hover/plane
+races; starting/restarting races; returning to stock characters; Track Lab.
+Code-level checks and Windows/Linux compilation do not certify visual gameplay.
+No game test windows were opened or controlled for this update.
+
+All previous experimental-online limitations/deferred scenery and audio work
+remain as documented in the included scope notes. No custom mods online yet.

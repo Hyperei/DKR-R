@@ -1,0 +1,28 @@
+diff --git a/src/hle/rt64_state.cpp b/src/hle/rt64_state.cpp
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -6,1 +6,2 @@
+ #include "rt64_state.h"
++#include "android_frame_budget.hpp"
+ #include "performance_trace.hpp"
+@@ -800,2 +801,3 @@
+     void State::fullSync() {
++        dkr::runtime::android_frame_budget::Scope frameTiming(dkr::runtime::android_frame_budget::Region::FullSync);
+         dkr::runtime::performance_trace::Scope measure(dkr::runtime::performance_trace::Region::FullSync);
+@@ -1480,4 +1482,7 @@
+                 framebufferRenderer->waitForUploaders();
+                 ext.framebufferGraphicsWorker->execute();
+-                ext.framebufferGraphicsWorker->wait();
++                {
++                    dkr::runtime::android_frame_budget::Scope nativeWait(dkr::runtime::android_frame_budget::Region::NativeFence);
++                    ext.framebufferGraphicsWorker->wait();
++                }
+ 
+@@ -1591,3 +1596,6 @@
+             ext.framebufferGraphicsWorker->execute();
+-            ext.framebufferGraphicsWorker->wait();
++            {
++                dkr::runtime::android_frame_budget::Scope uploadWait(dkr::runtime::android_frame_budget::Region::UploadFence);
++                ext.framebufferGraphicsWorker->wait();
++            }
+             ext.textureCache->waitForGPUUploads();

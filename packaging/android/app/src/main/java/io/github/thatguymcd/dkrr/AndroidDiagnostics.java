@@ -44,6 +44,14 @@ final class AndroidDiagnostics {
                         + "\nLogs may contain local paths or session information. Review before sharing.\n");
                     log(zip, "runtime.log", "config/logs/runtime.log");
                     log(zip, "runtime-previous.log", "config/logs/runtime-previous.log");
+                    File history = new File(activity.getFilesDir(), "config/logs/history");
+                    File[] retained = history.listFiles(file -> file.isFile() &&
+                        file.getName().matches("runtime-[0-9-]+\\.log"));
+                    if (retained != null) {
+                        java.util.Arrays.sort(retained, java.util.Comparator.comparing(File::getName).reversed());
+                        for (int i = 0; i < Math.min(20, retained.length); ++i)
+                            DiagnosticLogSnapshot.write(zip, "history/" + retained[i].getName(), retained[i], MAX_LOG_BYTES);
+                    }
                     log(zip, "rt64.log", "config/rt64/rt64.log");
                     log(zip, "performance.txt", "performance-report.txt");
                     if (Build.VERSION.SDK_INT >= 30) addExitInfo(zip);

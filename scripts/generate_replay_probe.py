@@ -42,6 +42,10 @@ PROJECT_IMPORTS = {
     "dkr_legacy_character_cinematic_id": ("unsigned", ["uint8_t*", "recomp_context*", "unsigned", "unsigned"]),
     "dkr_legacy_character_race_sound": ("unsigned", ["uint8_t*", "recomp_context*", "uint32_t", "unsigned"]),
     "dkr_legacy_character_ai_event": ("void", ["uint8_t*", "recomp_context*", "unsigned", "recomp_func_t*"]),
+    "dkr_legacy_memory_service": ("uint32_t", ["uint8_t*", "recomp_context*", "unsigned", "unsigned", "uint32_t", "uint32_t"]),
+    "dkr_legacy_course_component": ("uint32_t", ["uint8_t*", "recomp_context*", "unsigned", "uint32_t"]),
+    "dkr_legacy_racer_stat": ("uint32_t", ["uint8_t*", "recomp_context*", "unsigned", "uint32_t", "uint32_t"]),
+    "dkr_legacy_texture_animation": ("int", ["uint8_t*", "recomp_context*", "recomp_func_t*"]),
 }
 
 # The native mod owner may call ONLY these private, instrumented guest
@@ -67,7 +71,7 @@ def owned_mod_calls_header():
     lines=['// New Patch Pipeline output: private C fault trampolines only.', '#pragma once',
            'extern "C" {', '#include "imports.h"', '}',
            'namespace dkr_owned_mod_calls {']
-    names=set(OWNED_MOD_CALLS.values()) | {"dkr_character_select_animation_fraction", "rand_range"}
+    names=set(OWNED_MOD_CALLS.values()) | {"dkr_character_select_animation_fraction", "rand_range", "tex_animate_texture"}
     for name in sorted(names):
         lines.append(f'inline void call_{name}(uint8_t* ram,recomp_context* ctx) {{')
         lines.append('    ctx->f_odd=ctx->mips3_float_mode?&ctx->f1.u32l:&ctx->f0.u32h;')
@@ -416,18 +420,29 @@ INPUT_NATIVE_HASH = {
     # closed private guest callback table; no live/default dispatch fallback.
     # Oct 6: bounded sparse model-slot scan and pre-dereference allocation
     # fences. Pure guest-memory checks only; no live I/O or pointer repair.
-    "runtime-recomp/src/game/runtime_legacy_mods.cpp": "f46d550853e6ab9f049b0328b6fda6487cc870285d37eec639c2efd97abed84a",
+    "runtime-recomp/src/game/runtime_legacy_mods.cpp": "186fb8756657a6a0d53fc3b018a49651266230fa9e653e9fc51874e7ceaba2d7",
+    # Oct 9: guest-owned deferred queue/reserve; no shortened borrower lifetime.
+    "runtime-recomp/src/game/mods/legacy_memory_safety.h": "17b293ec170dd7d8d25377a01a73b9c5cdfca9636b2c959d06930c178d02cd85",
     "runtime-recomp/src/game/mods/legacy_model_safety.hpp": "64520d21f6721b9caf40ee51f88548266ffaf5bc8821a7c17e6bdc72fa244bb7",
     # Expanded character identities, sparse retained presentation and one
     # immutable sample mount are shared by offline and replay-owned sessions.
     "runtime-recomp/src/game/mods/legacy_character_limits.hpp": "d74576f3bcd7aa61283ac4e8e68d3a234e9182dca5f09f6398f285ca9353c55a",
     "runtime-recomp/src/game/mods/legacy_character_audio.cpp": "00fdd1fa4dbae442ee471cd4ef71631db95c4df6055ea092c9b368f1cf12d124",
-    "runtime-recomp/src/game/mods/legacy_character_materialize.cpp": "2c9b955225098954793ac86d1ab16f225ad70d63602955dcc5074939fc78898b",
-    "runtime-recomp/src/game/mods/legacy_character_presentation.cpp": "789cbb5ddef03614452b6e2ff356c4973bd4938e6817122c669f889127fec374",
-    "runtime-recomp/src/game/mods/legacy_guest_checkpoint.cpp": "247afd7092df00267d15150f1a0fee7c8783b0ec2ba1882c74e0d072adbbca33",
+    "runtime-recomp/src/game/mods/legacy_character_materialize.cpp": "6d9657e9dabb748a13f9733e201411b02cb8f94cb1b33f14bca64fa90f4db203",
+    "runtime-recomp/src/game/mods/legacy_character_presentation.cpp": "311f633c84b103a63d5e2538af1caa377c07e311df3aae1cf52a3fb77aa208b7",
+    # Preserve the already-shipped stock-preview restore correction: empty
+    # custom identity is allowed only for a pending retail preview, not races.
+    "runtime-recomp/src/game/mods/legacy_guest_checkpoint.cpp": "4748e2ef4b83b4772373e0cf6719945fb3c420a7e60f716cef00834114cde789",
     # Prepared immutable-template instantiation preserves mount/allocation
     # order and owns a separate mutable bus for every replay world.
-    "runtime-recomp/src/game/mods/legacy_runtime_session.cpp": "f1f3785b95e01292706448bc82aad89bc870d33bea4303b6c76f6bc6a881bdcb",
+    "runtime-recomp/src/game/mods/legacy_runtime_session.cpp": "96c08d60df6917e29fef2e92099ab447ee257ea5199e05f4c3bd05a4f786cecf",
+    # Oct 10: closed constant-load components and finite per-instance data;
+    # immutable identities only. No memory instructions, new guest globals,
+    # filesystem/network operations, or non-checkpointed interpreter state.
+    "runtime-recomp/src/game/mods/legacy_behaviour.cpp": "816919b222963f63c0687703b899aa2633028fa409a9a22a37edac117a8ee1f4",
+    "runtime-recomp/src/game/mods/legacy_behaviour.hpp": "1ba4348c9b61d81c9a876880da71c1f048fe6b39b376e62337303b66aaee09c9",
+    "runtime-recomp/src/game/mods/legacy_runtime_character.cpp": "837ec834348710886f0182696632c8a2f55e7b0737102be660298d9e5fe71055",
+    "runtime-recomp/src/game/mods/legacy_character_roster.cpp": "4b8da3ee4ecefd8b9e73fa9ddd58d51dcfa3fc95cc2933a50881513ba28ceeb8",
     # Pure immutable namespace capacities; stock limits retained. Guards stop
     # before cache stores/null racer writes and cannot mutate replay state.
     "runtime-recomp/src/game/mods/legacy_asset_capacity.hpp": "bc6bc05cd6702a80c8e841dafc56348335a0baee3a47d48e88b219944a21386d",
@@ -441,7 +456,9 @@ INPUT_NATIVE_HASH = {
 FULL_SCENE_NATIVE_HASH = {
     "runtime-recomp/src/game/finish_presentation_policy.hpp": "0368b5447ae477d1debd7d32829a989a690a9e809fd95223a391a8574a9aed6a",
     "runtime-recomp/src/game/widescreen_policy.hpp": "b926703163fa542f8fbd7af1aee297595c1a58a74c61a82d457c8fbae4ccbb62",
-    "runtime-recomp/src/game/runtime_stubs.cpp": "2552788db2decd11c30ae8d6609c42d51d3072578118e4a1d1f3bbd7cec34f31",
+    "runtime-recomp/src/game/runtime_stubs.cpp": "7ab0b1f43932ea68be360212b2082930b0daf1b79add714412b8e341307b988a",
+    "runtime-recomp/src/game/audio_event_queue.h": "efb6c0cdadbc5a1fbab30ee7ff524f558ea54523a43a3424727bba4a997535c2",
+    "runtime-recomp/src/game/audio_event_queue_state.h": "ca400d843e9018f5d69c2aa75ec40889a303574c7789a7297185369dcde79b18",
     "runtime-recomp/src/game/intro_tail_policy.hpp": "5f5362ff5de40f5f9aa3a653c6e3849b8f27997b9db4592abd833022b9d47a36",
     "runtime-recomp/src/game/water_profile.cpp": "d04da9797b34f8001e9304ccbd76171ead1eef8acc4fe2a1c215406b71064efb",
     # Both revisions keep the water UV masks and append PR46's music globals.
@@ -748,6 +765,10 @@ def instrument_function(name, body):
 def native_stub(name, signature, full_scenes=False):
     ret, types = signature
     params = ", ".join(f"{t} p{i}" for i, t in enumerate(types)) or "void"
+    if name == "dkr_legacy_texture_animation":
+        if signature != PROJECT_IMPORTS[name]:
+            raise ValueError("Unreviewed texture animation hook ABI")
+        return f'int {name}({params}) {{ if(p2!=tex_animate_texture) dkr_probe_block("unowned-texture-animation"); uint64_t result=0; if(dkr_probe_mod_dispatch("{name}",p0,p1,0,0,0,0,&result)) return (int)result; dkr_probe_profile_disabled("{name}"); return 0; }}'
     if name == "dkr_legacy_character_ai_event":
         if signature != PROJECT_IMPORTS[name]:
             raise ValueError("Unreviewed character AI hook ABI")
@@ -770,6 +791,7 @@ def native_stub(name, signature, full_scenes=False):
         **{n: ("void", ["uint8_t*", "recomp_context*"]) for n in (
             "osGetCount_recomp", "osGetTime_recomp", "osSetTime_recomp")},
         "dkr_audio_event_queue_next": ("uint32_t", ["uint8_t*", "recomp_context*"]),
+        "dkr_audio_event_queue_initialize": ("void", ["uint8_t*", "recomp_context*"]),
         **{n: ("int", ["uint8_t*", "recomp_context*"]) for n in (
             "dkr_audio_voice_guard", "dkr_audio_bus_guard")},
         **{n: ("void", ["uint8_t*", "recomp_context*"]) for n in (
@@ -962,7 +984,7 @@ def generate(source_dir: Path, header_path: Path, output: Path, roots, revision,
     rsp_headers, rsp_source = audio_rsp_payload(rsp_source) if audio_services else ({}, None)
     roots = list(roots)
     if mod_services:
-        roots = list(dict.fromkeys(roots + list(OWNED_MOD_CALLS.values()) + ["rand_range"]))
+        roots = list(dict.fromkeys(roots + list(OWNED_MOD_CALLS.values()) + ["rand_range", "tex_animate_texture"]))
     if authored_cpu:
         roots.append("dkr_probe_authored_main_cpu")
         roots.append("dkr_probe_authored_video_cpu")

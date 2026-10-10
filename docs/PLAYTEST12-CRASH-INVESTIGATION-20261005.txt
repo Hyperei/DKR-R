@@ -1,0 +1,71 @@
+DKR-R Playtest 12 crash investigation / corrective rebuild - 5 October 2026
+
+EVIDENCE
+Examined both supplied runtime logs and all five Windows minidumps against the
+matching Playtest 11 executable, not against a newer binary's addresses.
+
+Every dump faults at native RVA 0x352EFF in track_setup_racers, corresponding
+to guest PC 0x8000D7A4. spawn_object returned NULL; retail race setup then tried
+to write a halfword through that NULL guest pointer. The exception context,
+rather than the crash-handler's own thread context, establishes this result.
+
+All five also contain a texture cache beyond its allocated extent:
+  Crash time     gNumberOfLoadedTextures
+  16:12:35       739
+  16:14:19       741
+  17:03:46       701
+  17:04:37       707
+  17:06:41       717
+
+In these v1.0 captures gTextureCache = 0x801D0850 and the next allocation,
+gCiPalettes = 0x801D1E30. Their difference is exactly 5600 bytes: 700 cache
+entries at 8 bytes each. The reviewed retail load_texture writes both fields
+of the next entry BEFORE checking whether its count exceeds 700. These are
+out-of-bounds writes into adjacent guest allocations, not merely a warning
+about a theoretical limit. HUD sprite-load failures appear before the crash.
+
+The reports involve offline custom-character races. The expanded enabled
+roster and randomized custom AI increase simultaneous unique texture/model
+use. Extra RDRAM alone did not enlarge the fixed metadata arrays. The new
+online transfer protocol is not the cause identified in these five dumps.
+
+CORRECTION
+The authored, hash-pinned Patch Pipeline now composes four allocation operands,
+their three matching load-limit comparisons, three pre-store bounds guards,
+and the failed-racer-spawn guard. Allocation hooks preserve JAL delay-slot
+semantics, allocator calls and colour tags. No generated functions or submodule
+sources were manually edited. All previous hooks and instruction patches were
+verified retained in both regenerated retail payloads.
+
+For additive content, cache sizes derive from the immutable boot asset bank:
+  Texture cells: max(700, 2D texture count + 3D texture count)
+  Sprite cells:  max(100, sprite count + 1)
+  Model cells:   max(70, model count + 1)
+  Free-model indices: max(100, model cells)
+The spare model/sprite cell preserves their strict retail post-increment check.
+Unmodified games retain allocations of 700 / 100 / 70 / 100. No gameplay AI,
+HUD layout, save format, renderer quality or asset content is changed here.
+
+The same callbacks are supported by the owned experimental rollback dispatcher
+with checked arguments and independent per-world namespaces. Unexpected bounds
+or allocation failure stops at the existing termination boundary before an
+invalid store; it does not silently drop a racer or invent a successful load.
+
+VERIFICATION
+Headless regenerated-function tests passed on US v1.0 and US v1.1, including
+1024 simultaneous textures, 128 sprites, 100 models, neighboring-allocation
+canaries, cache-hit reuse, stock sizes, out-of-bounds rejection and injected
+NULL racer spawns. Both native mod-world revision checks passed (2299 checks
+each). The 40-test legacy suite, 15 Patch Pipeline tests, 46 replay-generator
+tests and six owned-probe tests passed. The 11-test focused online/save/
+custom-content suite passed on both Windows and Linux, as did both packages'
+helper/Pak/input checks. Archive integrity and absence of private ROM/save/dump
+files were checked; the Windows binary contains Track Lab and both safeguards.
+
+Windows and Linux x86_64 AppImage release artifacts are in:
+G:/DiddykongWorkFolder/playtest12-crash-fix-20261005/packages-ready
+Use these complete packages, not the earlier same-numbered online-mod candidate.
+Every online peer must use the same rebuild. No private game windows or visual
+gameplay tests were run; playtesters still need to qualify the actual scenes,
+custom rosters, transitions and online matches. This addresses the common fault
+in all five supplied dumps; it is not a guarantee against unrelated crashes.

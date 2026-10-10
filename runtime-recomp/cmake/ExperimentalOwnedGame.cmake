@@ -59,6 +59,11 @@ function(dkr_add_experimental_owned_game target generated)
         "${generated}/blocked_imports.c" "${generated}/private_audio_rsp.cpp" ${guest})
     target_compile_features(${target} PRIVATE c_std_11 PUBLIC cxx_std_20)
     target_include_directories(${target} BEFORE PRIVATE "${generated}" "${probe}")
+    # Reuse the pinned runtime's ARM SIMD compatibility headers read-only.
+    # The private RSP header must not depend on the desktop include closure.
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
+        target_include_directories(${target} PRIVATE "${DKR_MODERN_RUNTIME_SOURCE}/thirdparty/sse2neon")
+    endif()
     target_include_directories(${target} PUBLIC "${probe}")
     target_compile_definitions(${target} PRIVATE DKR_PROBE_REVISION=${revision}
         DKR_PROBE_HAS_SCENE_CUTS=1 DKR_PROBE_HAS_AUDIO=1 DKR_PROBE_HAS_INPUT=1
@@ -84,6 +89,9 @@ function(dkr_add_experimental_owned_game target generated)
     else()
         target_compile_options(${target} PRIVATE -UNDEBUG -fno-strict-aliasing
             $<$<COMPILE_LANGUAGE:C>:-Werror=implicit-function-declaration>)
+        # All peers use separately rounded multiplies/adds. ARM64 compilers
+        # otherwise fuse these where baseline x64 SSE does not.
+        target_compile_options(${target} PRIVATE -ffp-contract=off -fno-fast-math)
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
             target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-msse4.1>)
         endif()

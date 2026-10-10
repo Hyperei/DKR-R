@@ -10,6 +10,10 @@
 #include "save_manager.hpp"
 #include "ultramodern/config.hpp"
 #include "monocypher.h"
+#if defined(__ANDROID__)
+#include "graphics_health.hpp"
+#include "../../android/android_platform.hpp"
+#endif
 #include <SDL.h>
 #include <algorithm>
 #include <atomic>
@@ -546,6 +550,22 @@ bool run_runtime(ultramodern::renderer::WindowHandle window,const std::filesyste
             std::fprintf(stderr,"[rollback][check] queued ordinary overlay shortcut step=%u\n",++overlay_check);
         }
         platform::pump_window_events(nullptr);platform::poll_input();
+#if defined(__ANDROID__)
+        // Owned play bypasses game_main's ordinary runtime loop. Preserve its
+        // Android fault reporting here too; never leave peers awaiting input
+        // from a failed Vulkan owner or pretend a failed GPU fence completed.
+        if (graphics_health::failed()) {
+            const auto failure = graphics_health::failure.load(std::memory_order_relaxed);
+            char message[192];
+            std::snprintf(message, sizeof(message), "Vulkan failure during online play: %s (result %d). Export logs, then close and reopen DKR-R.",
+                graphics_health::stage_name(static_cast<graphics_health::Stage>(failure >> 32)),
+                static_cast<std::int32_t>(failure));
+            android::report_graphics_failure(message);
+            if (lobby.owned_game_active()) lobby.request_owned_match_end("A racer's graphics device failed. The match has ended.");
+            shared.fail(message);
+            break;
+        }
+#endif
         std::uint16_t buttons=0;float x=0,y=0;bool blocked=false;
         platform::get_local_online_input(&buttons,&x,&y,&blocked);
         shared.input=pack(blocked?PackedInput{}:PackedInput{buttons,std::int8_t(std::clamp(x,-1.0F,1.0F)*80),std::int8_t(std::clamp(y,-1.0F,1.0F)*80)});

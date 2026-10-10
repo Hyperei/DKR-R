@@ -1,0 +1,209 @@
+diff --git a/src/shared/rt64_water_params.h b/src/shared/rt64_water_params.h
+--- a/src/shared/rt64_water_params.h
++++ b/src/shared/rt64_water_params.h
+@@ -21,6 +21,10 @@
+     float4 shoreCounts;     // bounded static shoreline segments in each craft's world tile
+     float4 shoreSegments[4 * WATER_SHORE_SEGMENTS_PER_TILE]; // immutable mean-water intersections, XZ endpoints
+     float4 effects;         // payload v2: added spray enabled, reserved YZW
++    // DKR submits combined MVPs as model matrices. This immutable camera
++    // matrix belongs to this draw's viewport, not a later live guest camera.
++    float4x4 cameraViewProjection;
++    float4 cameraPosition;  // XYZ, W=1 marks the reviewed DKR adapter
+ };
+ 
+ struct WaterDrawParams {
+@@ -55,8 +59,8 @@
+     float4 simulation;      // step seconds, previous time, current time, tile extent
+ };
+ #ifdef HLSL_CPU
+-static_assert(sizeof(WaterMaterial) == 1584, "Water display-list ABI");
+-static_assert(sizeof(WaterDrawParams) == 1904, "Water shader ABI");
++static_assert(sizeof(WaterMaterial) == 1664, "DKR water task ABI");
++static_assert(sizeof(WaterDrawParams) == 1984, "DKR water shader ABI");
+ static_assert(sizeof(WaterDrawParams) <= 2048, "D3D structured-buffer stride limit");
+ static_assert(sizeof(WaterFieldPushConstants) == 96, "Water field shader ABI");
+ }
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -1828,6 +1828,12 @@
+                     const float t = wp.material.animation.x + (wp.material.animation.y - wp.material.animation.x) * p.interpolationWeight;
+                     wp.camera = {camera.x, camera.y, camera.z, t};
+                     wp.viewProjection = drawData.modViewProjTransforms[proj.transformsIndex];
++                    if (wp.material.cameraPosition.w == 1.0f) {
++                        wp.viewProjection = wp.material.cameraViewProjection;
++                        wp.camera.x = wp.material.cameraPosition.x;
++                        wp.camera.y = wp.material.cameraPosition.y;
++                        wp.camera.z = wp.material.cameraPosition.z;
++                    }
+                     wp.inverseViewProjection = hlslpp::inverse(wp.viewProjection);
+                     const auto fc = call.callDesc.rdpParams.fogColor;
+                     const bool fog = (call.callDesc.geometryMode & G_FOG) != 0;
+diff --git a/src/shaders/WaterVS.hlsl b/src/shaders/WaterVS.hlsl
+--- a/src/shaders/WaterVS.hlsl
++++ b/src/shaders/WaterVS.hlsl
+@@ -12,6 +12,10 @@
+     clip.xyz *= clip.w;
+     clip.xy = clip.xy * p.screenTransform.xy + p.screenTransform.zw * clip.w;
+     if (p.flags.x > 0.5) clip.z = p.flags.y * clip.w;
++    if (p.material.cameraPosition.w == 1.0f) {
++        world = mul(p.inverseViewProjection, world);
++        world.xyz /= abs(world.w)>0.000001f ? world.w : 1.0f;
++    }
+     worldPosition = world.xyz;
+     sourceColor = color;
+     surfaceNormal = normal.xyz;
+diff --git a/src/render/rt64_water_renderer.h b/src/render/rt64_water_renderer.h
+--- a/src/render/rt64_water_renderer.h
++++ b/src/render/rt64_water_renderer.h
+@@ -72,13 +72,14 @@
+     }
+ };
+ struct WaterNormalSet : RenderDescriptorSetBase {
+-    uint32_t positions, vertices, faces, normals;
++    uint32_t positions, vertices, faces, normals, draws;
+     explicit WaterNormalSet(RenderDevice *device = nullptr) {
+         builder.begin();
+         positions = builder.addStructuredBuffer(1);
+         vertices = builder.addStructuredBuffer(2);
+         faces = builder.addStructuredBuffer(3);
+         normals = builder.addReadWriteStructuredBuffer(4);
++        draws = builder.addStructuredBuffer(5);
+         builder.end();
+         if (device) create(device);
+     }
+diff --git a/src/render/rt64_water_renderer.cpp b/src/render/rt64_water_renderer.cpp
+--- a/src/render/rt64_water_renderer.cpp
++++ b/src/render/rt64_water_renderer.cpp
+@@ -690,7 +690,7 @@
+ void WaterRenderer::collectNormals(const DrawData &data, uint32_t start, uint32_t count, uint64_t group) {
+     wireStarts.push_back(uint32_t(wireIndices.size()));
+     for (uint32_t i=0; i+2<count; i+=3) {
+-        interop::uint4 f{data.faceIndices[start+i],data.faceIndices[start+i+1],data.faceIndices[start+i+2],0};
++        interop::uint4 f{data.faceIndices[start+i],data.faceIndices[start+i+1],data.faceIndices[start+i+2],uint32_t(draws.size()-1)};
+         if (draws.back().material.identity.y==12) wireIndices.insert(wireIndices.end(),{f.x,f.y,f.y,f.z,f.z,f.x});
+         for (uint32_t j=0;j<3;j++) {
+             const uint32_t v = f[j];
+@@ -728,6 +728,7 @@
+     normalSet->setBuffer(normalSet->vertices,normalVertexBuffer.get(),RenderBufferStructuredView(16));
+     normalSet->setBuffer(normalSet->faces,normalFaceBuffer.get(),RenderBufferStructuredView(16));
+     normalSet->setBuffer(normalSet->normals,normalBuffer.get(),RenderBufferStructuredView(16));
++    normalSet->setBuffer(normalSet->draws,drawBuffer.get(),RenderBufferStructuredView(sizeof(interop::WaterDrawParams)));
+ }
+ 
+ void WaterRenderer::recordNormals(RenderWorker *worker, const OutputBuffers &outputs) {
+diff --git a/src/shaders/WaterNormalsCS.hlsl b/src/shaders/WaterNormalsCS.hlsl
+--- a/src/shaders/WaterNormalsCS.hlsl
++++ b/src/shaders/WaterNormalsCS.hlsl
+@@ -1,9 +1,19 @@
++#include "shared/rt64_water_params.h"
+ struct NormalPushConstants { uint vertexCount; };
+ [[vk::push_constant]] ConstantBuffer<NormalPushConstants> params : register(b0);
+ StructuredBuffer<float4> positions : register(t1);
+ StructuredBuffer<uint4> vertices : register(t2);
+ StructuredBuffer<uint4> faces : register(t3);
+ RWStructuredBuffer<float4> normals : register(u4);
++StructuredBuffer<WaterDrawParams> waterDraws : register(t5);
++float3 worldPoint(uint index, WaterDrawParams p) {
++    float4 v = positions[index];
++    if (p.material.cameraPosition.w == 1.0f) {
++        v = mul(p.inverseViewProjection, v);
++        v.xyz /= abs(v.w)>0.000001f ? v.w : 1.0f;
++    }
++    return v.xyz;
++}
+ 
+ [numthreads(64,1,1)]
+ void CSMain(uint i : SV_DispatchThreadID) {
+@@ -11,10 +21,11 @@
+     uint4 vertex = vertices[i];
+     float3 sum = 0;
+     for (uint j = 0; j < vertex.z; ++j) {
+-        uint3 f = faces[vertex.y+j].xyz;
+-        float3 a = positions[f.x].xyz;
+-        float3 b = positions[f.y].xyz;
+-        float3 c = positions[f.z].xyz;
++        uint4 f = faces[vertex.y+j];
++        WaterDrawParams p = waterDraws[f.w];
++        float3 a = worldPoint(f.x,p);
++        float3 b = worldPoint(f.y,p);
++        float3 c = worldPoint(f.z,p);
+         float3 n = cross(b-a,c-a);
+         sum += n.y < 0 ? -n : n;
+     }
+diff --git a/src/hle/rt64_workload.h b/src/hle/rt64_workload.h
+--- a/src/hle/rt64_workload.h
++++ b/src/hle/rt64_workload.h
+@@ -175,6 +175,7 @@
+     struct OutputBuffers {
+         ComputedBuffer screenPosBuffer;
+         ComputedBuffer rasterWorldPosBuffer;
++        bool waterWorldActive = false;
+         ComputedBuffer genTexCoordBuffer;
+         ComputedBuffer shadedColBuffer;
+         ComputedBuffer worldPosBuffer;
+diff --git a/src/hle/rt64_workload.cpp b/src/hle/rt64_workload.cpp
+--- a/src/hle/rt64_workload.cpp
++++ b/src/hle/rt64_workload.cpp
+@@ -243,7 +243,19 @@
+         const uint32_t vertexCount = drawData.vertexCount();
+         const RenderBufferFlags rtInputFlag = worker->device->getCapabilities().raytracing ? RenderBufferFlag::ACCELERATION_STRUCTURE_INPUT : RenderBufferFlag::NONE;
+         updateOutputBuffer(worker, outputBuffers.screenPosBuffer, vertexCount * sizeof(float) * 4, RenderBufferFlag::VERTEX);
+-        updateOutputBuffer(worker, outputBuffers.rasterWorldPosBuffer, vertexCount * sizeof(float) * 4, RenderBufferFlag::VERTEX);
++        outputBuffers.waterWorldActive = false;
++        for (uint32_t f=0; f<fbPairCount && !outputBuffers.waterWorldActive; ++f) {
++            const auto &pair=fbPairs[f];
++            for (uint32_t p=0; p<pair.projectionCount && !outputBuffers.waterWorldActive; ++p)
++                for (uint32_t c=0; c<pair.projections[p].gameCallCount; ++c)
++                    if (pair.projections[p].gameCalls[c].callDesc.waterMaterial.identity.x>0) {
++                        outputBuffers.waterWorldActive=true; break;
++                    }
++        }
++        // Original retains only a descriptor-sized dummy buffer, no vertex
++        // transform writes. Do not add a full per-vertex cost to the default.
++        updateOutputBuffer(worker, outputBuffers.rasterWorldPosBuffer,
++            outputBuffers.waterWorldActive ? vertexCount * sizeof(float) * 4 : 16, RenderBufferFlag::VERTEX);
+         updateOutputBuffer(worker, outputBuffers.genTexCoordBuffer, vertexCount * sizeof(float) * 2, RenderBufferFlag::VERTEX);
+         updateOutputBuffer(worker, outputBuffers.shadedColBuffer, vertexCount * sizeof(float) * 4, RenderBufferFlag::VERTEX);
+         updateOutputBuffer(worker, outputBuffers.worldPosBuffer, vertexCount * sizeof(float) * 4, rtInputFlag);
+diff --git a/src/render/rt64_rsp_processor.h b/src/render/rt64_rsp_processor.h
+--- a/src/render/rt64_rsp_processor.h
++++ b/src/render/rt64_rsp_processor.h
+@@ -15,6 +15,7 @@
+             uint32_t vertexCount;
+             float prevFrameWeight;
+             float curFrameWeight;
++            uint32_t waterWorldActive;
+         };
+ 
+         struct ModifyCB {
+diff --git a/src/render/rt64_rsp_processor.cpp b/src/render/rt64_rsp_processor.cpp
+--- a/src/render/rt64_rsp_processor.cpp
++++ b/src/render/rt64_rsp_processor.cpp
+@@ -23,6 +23,7 @@
+         processCB.vertexCount = drawVertexCount - processCB.vertexStart;
+         processCB.prevFrameWeight = p.prevFrameWeight;
+         processCB.curFrameWeight = p.curFrameWeight;
++        processCB.waterWorldActive = p.outputBuffers->waterWorldActive ? 1U : 0U;
+         p.outputBuffers->screenPosBuffer.computedSize += processCB.vertexCount * sizeof(float) * 4;
+         p.outputBuffers->genTexCoordBuffer.computedSize += processCB.vertexCount * sizeof(float) * 2;
+         p.outputBuffers->shadedColBuffer.computedSize += processCB.vertexCount * sizeof(float) * 4;
+diff --git a/src/shaders/RSPProcessCS.hlsl b/src/shaders/RSPProcessCS.hlsl
+--- a/src/shaders/RSPProcessCS.hlsl
++++ b/src/shaders/RSPProcessCS.hlsl
+@@ -16,6 +16,7 @@
+     uint vertexCount;
+     float prevFrameWeight;
+     float curFrameWeight;
++    uint waterWorldActive;
+ };
+ 
+ [[vk::push_constant]] ConstantBuffer<RSPProcessCB> gConstants : register(b0);
+@@ -132,5 +133,5 @@
+     dstPos[vertexOffsetIndex] = screenPos;
+     dstTc[vertexOffsetIndex] = tc;
+     dstCol[vertexOffsetIndex] = vertexColor;
+-    dstWorld[vertexOffsetIndex] = mul(worldMat, float4(pos - vel * (1.0f - gConstants.curFrameWeight), 1.0f));
++    if (gConstants.waterWorldActive) dstWorld[vertexOffsetIndex] = mul(worldMat, float4(pos - vel * (1.0f - gConstants.curFrameWeight), 1.0f));
+ }
+\ No newline at end of file

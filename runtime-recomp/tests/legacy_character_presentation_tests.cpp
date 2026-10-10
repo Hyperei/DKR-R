@@ -140,5 +140,22 @@ int main(){try {
  shared.prepare(memory,ctx,calls,full->characters,1,samples[1],true);check(allocations==before_shared+2);
  const auto first_bank=shared.selection_bank(memory,ctx,calls,full->characters,0,samples[0]);
  check(first_bank==shared.selection_bank(memory,ctx,calls,full->characters,1,samples[1]) && allocations==before_shared+3);
+ // Identical control+sample payloads can be shared across selection/race
+ // roles too. Voices remain immutable across thousands of roster changes.
+ full->characters[2].portrait_identity="same-face";
+ full->characters[2].selection_audio_identity="same-voice";
+ full->characters[2].race_audio_identity="same-select";
+ const auto retained=allocations;
+ check(shared.selection_bank(memory,ctx,calls,full->characters,2,samples[2])!=0);
+ shared.prepare(memory,ctx,calls,full->characters,2,samples[2],true);
+ for(unsigned race=0;race<10000;++race) {
+  const unsigned i=race%3;
+  shared.prepare(memory,ctx,calls,full->characters,i,samples[i],true);
+  check(shared.selection_bank(memory,ctx,calls,full->characters,i,samples[i])!=0);
+ }
+ check(allocations==retained);
+ const auto retained_checkpoint=shared.checkpoint();
+ shared=shared.stage_checkpoint(retained_checkpoint,full->characters.size());
+ check(shared.checkpoint()==retained_checkpoint && allocations==retained);
  std::cout<<checks<<" custom portrait/race-audio ownership checks passed.\n";return 0;
  }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

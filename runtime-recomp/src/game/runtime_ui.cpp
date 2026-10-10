@@ -31,6 +31,7 @@
 #include "mods/online_mod_runtime.hpp"
 #include "netplay/online_mod_sync_link.hpp"
 #include "runtime_enhancements.hpp"
+#include "enhanced_water_settings.hpp"
 #include "runtime_hud_layout.hpp"
 #include "hud_layout_editor.hpp"
 #include "hud_basic_settings.hpp"
@@ -535,10 +536,12 @@ bool g_texture_pack_manage_request = false;
 std::string g_track_import_status;
 struct ModBrowserState {
     char search[160]{};
-    int sort=0,state=0,compatibility=0,visibility=0,format=0;
+    int sort=0,state=0,compatibility=0,visibility=0,format=0,duplicates=0;
     std::string source,manage_id,remove_id,hide_id;
     std::shared_ptr<const dkr::mods::TrackCatalogView> snapshot;
     std::vector<dkr::mods::browser::Card> all;
+    std::map<std::string,dkr::mods::browser::DuplicateMatch> duplicate_matches;
+    std::vector<std::pair<std::string,std::string>> native_name_sources;
     // Shown cards: >= 0 indexes `all`, < 0 the native tracks (-1 is the first).
     std::vector<int> shown;
     std::string filter_key,layout_key;
@@ -601,6 +604,7 @@ int g_online_maximum_players = 2;
 int g_online_synchronization = static_cast<int>(
     dkr::runtime::netplay::SynchronizationMode::Rollback);
 bool g_online_experimental_rollback = false;
+bool g_online_automatic_backend = true;
 #if defined(DKR_EXPERIMENTAL_RACE_TEST)
 std::filesystem::path g_online_experimental_rom;
 #if defined(DKR_EXPERIMENTAL_FULL_SCENES)
@@ -608,8 +612,8 @@ bool g_online_experimental_adventure = false;
 #endif
 #endif
 dkr::runtime::netplay::SynchronizationMode CurrentOnlineSynchronization() {
-    return dkr::runtime::netplay::experimental::selected_mode(
-        g_online_synchronization, g_online_experimental_rollback);
+    return dkr::runtime::netplay::experimental::resolved_host_backend(
+        g_online_synchronization, g_online_experimental_rollback, g_online_automatic_backend);
 }
 int g_online_rollback_window = 10;
 bool g_online_automatic_delay = true;
@@ -1702,6 +1706,10 @@ void SaveSettings() {
         output << "modern_water_lava_detail_multiplier="
                << dkr::runtime::enhancements::water_lava_detail_multiplier()
                << '\n';
+        output << "enhanced_water_quality=" << int(dkr::runtime::water::enhanced::requested_quality.load()) << '\n';
+        output << "enhanced_water_reflections=" << int(dkr::runtime::water::enhanced::requested_reflection.load()) << '\n';
+        output << "enhanced_water_wakes=" << int(dkr::runtime::water::enhanced::wakes_enabled.load()) << '\n';
+        output << "enhanced_water_spray=" << int(dkr::runtime::water::enhanced::spray_enabled.load()) << '\n';
         output << "modern_extended_culling="
                << (dkr::runtime::enhancements::extended_culling_requested() ? 1 : 0)
                << '\n';
@@ -1788,6 +1796,7 @@ void SaveSettings() {
         output << "online_maximum_players=" << g_online_maximum_players << '\n';
         output << "online_synchronization=" << g_online_synchronization << '\n';
         output << "online_experimental_rollback=" << (g_online_experimental_rollback ? 1 : 0) << '\n';
+        output << "online_automatic_backend=" << (g_online_automatic_backend ? 1 : 0) << '\n';
 #if defined(DKR_EXPERIMENTAL_FULL_SCENES)
         output << "online_experimental_adventure=" << (g_online_experimental_adventure ? 1 : 0) << '\n';
 #endif
@@ -1970,6 +1979,8 @@ void LoadSettings() {
     bool profile_value_valid = true;
     bool migrated = false;
     bool modern_scenery_settings_v2 = false;
+    bool has_automatic_backend_setting = false;
+    bool has_legacy_backend_setting = false;
     std::array<dkr::runtime::input::ShortcutBinding, kShortcutActionCount>
         shortcut_keyboard{};
     std::array<dkr::runtime::input::ShortcutBinding, kShortcutActionCount>
@@ -2089,10 +2100,28 @@ void LoadSettings() {
         if (player_gyro_key) continue;
         try {
             const int number = std::stoi(value);
+            if (key == "enhanced_water_quality") {
+                dkr::runtime::water::enhanced::set_quality(number);continue;
+            }
+            if (key == "enhanced_water_reflections") {
+                dkr::runtime::water::enhanced::set_reflection(number);continue;
+            }
+            if (key == "enhanced_water_wakes") {
+                dkr::runtime::water::enhanced::wakes_enabled.store(number!=0);continue;
+            }
+            if (key == "enhanced_water_spray") {
+                dkr::runtime::water::enhanced::spray_enabled.store(number!=0);continue;
+            }
             // Keep the opt-in independent of the legacy 0/1 setting (and of
             // the long compatibility parser below).
             if (key == "online_experimental_rollback") {
                 g_online_experimental_rollback = number == 1;
+                has_legacy_backend_setting = true;
+                continue;
+            }
+            if (key == "online_automatic_backend" && (number == 0 || number == 1)) {
+                g_online_automatic_backend = number == 1;
+                has_automatic_backend_setting = true;
                 continue;
             }
 #if defined(DKR_EXPERIMENTAL_FULL_SCENES)
@@ -2179,6 +2208,7 @@ void LoadSettings() {
                     static_cast<int>(dkr::runtime::netplay::kSupportedOnlinePlayers));
             } else if (key == "online_synchronization") {
                 g_online_synchronization = std::clamp(number, 0, 1);
+                has_legacy_backend_setting = true;
             } else if (key == "online_rollback_window") {
                 g_online_rollback_window = std::clamp(number, 2, 20);
             } else if (key == "online_automatic_delay") {
@@ -2428,6 +2458,8 @@ void LoadSettings() {
     // still owns an open handle. Migration may call SaveSettings below, so
     // release the read handle before attempting that replacement.
     input.close();
+    g_online_automatic_backend = dkr::runtime::netplay::experimental::migrated_automatic_backend(
+        has_automatic_backend_setting, g_online_automatic_backend, has_legacy_backend_setting);
     for (std::size_t channel = 0; channel < kSoundChannelCount; ++channel) {
         SetSoundMuted(channel, (sound_muted & (1U << channel)) != 0U);
     }
@@ -3416,12 +3448,19 @@ void DrawLegacyModImportModal() {
         draw->PathStroke(ImGui::GetColorU32(kWarm), 0, 3.0F);
         ImGui::Dummy({28.0F, 26.0F});
         ImGui::TextWrapped("%s", state.stage.c_str());
+        if (state.imports_total) {
+            ImGui::ProgressBar(static_cast<float>(state.imports_completed) / state.imports_total, {-1.0F, 0.0F});
+            ImGui::Text("Source imports completed: %u of %u", state.imports_completed, state.imports_total);
+        }
         if (state.total) ImGui::Text("Patch %u of %u", state.completed, state.total);
         ImGui::TextWrapped("Library work runs in the background. Original Game Paks and saves are not modified. Cancellation stops before commit; committed changes finish safely.");
         ImGui::Dummy({0.0F, 10.0F});
         if (ImGui::Button("CANCEL OPERATION", {ImGui::GetContentRegionAvail().x, 42.0F})) g_legacy_imports.cancel();
     } else {
+        const bool scroll = state.result.size() > 1500U;
+        if (scroll) ImGui::BeginChild("Import summary", {0.0F, std::min(340.0F, ImGui::GetIO().DisplaySize.y * 0.45F)}, false);
         ImGui::TextWrapped("%s", state.result.c_str());
+        if (scroll) ImGui::EndChild();
         ImGui::Dummy({0.0F, 10.0F});
         if (ImGui::Button("DONE", {ImGui::GetContentRegionAvail().x, 42.0F})) {
             g_legacy_imports.dismiss();
@@ -7313,8 +7352,8 @@ void DrawModHelpSection(float width, const dkr::mods::ModLibraryView& mods, bool
         const ImVec2 at = ImGui::GetCursorScreenPos();
         float x = at.x;
         float y = at.y;
-        constexpr std::array<const char*, 3> actions{{
-            "Refresh library", "Turn off legacy tracks", "Turn off all characters"}};
+        constexpr std::array<const char*, 4> actions{{
+            "Refresh library", "Turn off legacy tracks", "Turn off all characters", "Prepare all source imports again"}};
         for (std::size_t index = 0U; index < actions.size(); ++index) {
             const float button = PaddockButtonWidth(actions[index], PaddockButtonKind::Settings);
             if (x > at.x && x + button > at.x + width) {
@@ -7322,20 +7361,30 @@ void DrawModHelpSection(float width, const dkr::mods::ModLibraryView& mods, bool
                 y += 52.0F;
             }
             ImGui::SetCursorScreenPos({x, y});
+            const bool no_sources = (!mods.imports || mods.imports->items.empty()) &&
+                (!mods.tracks || mods.tracks->tracks.empty()) && (!mods.characters || mods.characters->tracks.empty());
+            ImGui::BeginDisabled(index == 3U && (g_mod_browser_revision == 0U || no_sources));
             if (PaddockButton(actions[index], PaddockButtonKind::Settings)) {
                 if (index == 0U) {
                     g_legacy_imports.refresh();
+                } else if (index == 3U) {
+                    if (!g_legacy_imports.prepare_all_reviews(ModReviewRoms()))
+                        g_legacy_import_status = "No retained source imports are available to prepare. Import an original ROM and refresh the library first.";
                 } else {
                     g_legacy_imports.disable_all(index == 1U ? TrackCatalog::Kind::Track
                                                              : TrackCatalog::Kind::Character);
                 }
             }
+            ImGui::EndDisabled();
             x += button + 10.0F;
         }
         ImGui::EndDisabled();
         ImGui::SetCursorScreenPos(at);
         ImGui::Dummy({width, y + 42.0F - at.y});
         PaddockGap(14.0F);
+        PaddockText(PaddockReading(13.0F, false, 1.55F), PaddockRgb(0xABC0CC),
+                    "Prepare all re-checks retained legacy sources for your imported ROMs, one import at a time. Existing editions, enabled/hidden selections and saves stay unchanged; new editions start inactive. You can cancel between transactions.", width);
+        PaddockGap(10.0F);
         if (!mods.result.empty()) PaddockFeedback(mods.result, width);
     }
     {

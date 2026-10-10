@@ -53,20 +53,31 @@ int main() {
         {
             TrackCatalog tracks,characters(TrackCatalog::Kind::Character);tracks.configure(root,{});characters.configure(root,{});wait(tracks);wait(characters);
             check(tracks.snapshot()->tracks.size()==3);
+            check(tracks.snapshot()->size_scans==3 && tracks.snapshot()->display_cache_hits==0);
+            check(characters.snapshot()->size_scans==3);
             const auto cards=browser::cards(*tracks.snapshot(),false);check(cards.size()==2);check(cards[0].revisions==3);check(cards[0].item.managed_bytes>0);
             browser::Filters filter;filter.revision=2;filter.query="LONG";check(browser::select(cards,filter).size()==1);
             filter.query="";filter.compatibility=2;check(browser::select(cards,filter).size()==1);
-            for(const auto& id:{a,b}){check(characters.set_enabled(id,true));wait(characters);}
+            const auto inactive=characters.snapshot();
+            for(const auto& id:{a,b}){
+                check(characters.set_enabled(id,true));wait(characters);
+                check(characters.snapshot()->display_cache_hits==3 && characters.snapshot()->size_scans==0);
+                check(characters.snapshot()->source_reads==0);
+            }
+            for(const auto& item:inactive->tracks)check(!item.enabled); // immutable prior snapshot
             // The current same-stage roster admits more than the original
             // two mods. Keep this fixture aligned with the existing feature.
             check(characters.set_enabled(c,true));wait(characters);
             check(browser::active_count(browser::cards(*characters.snapshot(),true))==3);
             check(characters.set_hidden(a,true));wait(characters);
+            check(characters.snapshot()->size_scans==0 && characters.snapshot()->display_cache_hits==3);
             check(browser::active_count(browser::cards(*characters.snapshot(),true))==2);
             check(characters.set_enabled(a,true));wait(characters,false);
             check(characters.set_hidden(a,false));wait(characters);check(!characters.snapshot()->tracks[1].hidden); // names are sorted, not activation order.
             check(characters.set_enabled(c,true));wait(characters);
             check(tracks.set_enabled(a,true));wait(tracks);check(tracks.set_enabled(b,true));wait(tracks);
+            check(tracks.snapshot()->size_scans==0 && tracks.snapshot()->display_cache_hits==3);
+            for(const auto& item:tracks.snapshot()->tracks)check(item.enabled); // both revision variants change together
             check(tracks.set_hidden(a,true));wait(tracks);
             for(const auto& item:tracks.snapshot()->tracks)if(item.id==a)check(item.hidden&&!item.enabled);
             check(tracks.set_hidden(a,false));wait(tracks);
@@ -78,6 +89,46 @@ int main() {
             check(tracks.refresh());wait(tracks);check(tracks.snapshot()->tracks.size()==1);check(std::filesystem::is_empty(root/"prepare-jobs"));
             check(tracks.remove(b));wait(tracks);check(tracks.snapshot()->tracks.empty());
             check(characters.remove(c));wait(characters);check(characters.snapshot()->tracks.size()==2);
+        }
+        // Selection only reuses display metadata for identical verified
+        // receipts; fresh manifests and activation files are still checked.
+        for(const bool chars:{false,true}) {
+            const auto library=root/(chars?"warm-characters":"warm-tracks");
+            const auto review=json{{"packages",json::array({json{{"patch_sha256",std::string(64,'9')},{"display_name","Test source.zip"}}})}};
+            const auto review_id=hash(review);
+            const auto review_dir=library/"reviews"/review_id;std::filesystem::create_directories(review_dir);write(review_dir/"review.json",review);
+            auto data=receipt(json::array({entry('a',"Same Name",chars),entry('b',"Same Name",chars)}),chars);
+            data["review"]=review_id;
+            auto folder=install(library/(chars?"prepared-characters":"prepared"),data,chars);
+            TrackCatalog catalog(chars?TrackCatalog::Kind::Character:TrackCatalog::Kind::Track);catalog.configure(library,{});wait(catalog);
+            check(catalog.snapshot()->source_reads==1 && catalog.snapshot()->size_scans==2);
+            check(catalog.snapshot()->tracks.front().source_name=="Test source.zip");
+            check(catalog.set_enabled(a,true));wait(catalog);
+            check(catalog.snapshot()->display_cache_hits==2 && catalog.snapshot()->size_scans==0 && catalog.snapshot()->source_reads==0);
+            // Even after warm-up, changing a manifest fails closed.
+            const auto manifest=folder/a/(chars?"character.json":"track.json");
+            const auto retained=library/"retained-manifest.json";std::filesystem::rename(manifest,retained);
+            write(manifest,{{"tampered",true}});
+            check(catalog.set_enabled(b,true));wait(catalog,false);
+            bool rejected=false;
+            try {TrackCatalog::selected_items(library,"us.v77",chars?TrackCatalog::Kind::Character:TrackCatalog::Kind::Track);}
+            catch(const std::exception&){rejected=true;}
+            check(rejected);
+            std::filesystem::remove(manifest);std::filesystem::rename(retained,manifest);
+            check(catalog.set_enabled(b,true));wait(catalog);
+            check(catalog.set_enabled(a,false));wait(catalog);
+            check(catalog.snapshot()->size_scans==0);
+            // A new hashed receipt cannot inherit old display metadata.
+            data[chars?"characters":"tracks"][0]["name"]="Updated edition";
+            const auto replacement=folder.parent_path()/hash(data);
+            std::filesystem::rename(folder,replacement);folder=replacement;
+            std::filesystem::remove(folder/"prepared.json");write(folder/"prepared.json",data);
+            check(catalog.set_enabled(a,true));wait(catalog);
+            check(catalog.snapshot()->size_scans==2 && catalog.snapshot()->display_cache_hits==0);
+            check(catalog.refresh());wait(catalog);check(catalog.snapshot()->size_scans==2 && catalog.snapshot()->source_reads==1);
+            check(catalog.remove(a));wait(catalog);
+            check(catalog.snapshot()->tracks.size()==1 && catalog.snapshot()->tracks.front().id==b && catalog.snapshot()->tracks.front().enabled);
+            check(std::filesystem::exists(review_dir/"review.json"));
         }
         // Recovery at each publication boundary: journal, retirement, publish.
         const std::string job_id(64,'8');
@@ -115,6 +166,14 @@ int main() {
         check(browser::select(cards,filter).front().item.id==b);check(browser::active_count(cards)==1);
         filter.visibility=2;check(browser::select(cards,filter).size()==1);
         check(!browser::can_activate(cards[0],true,MaxActiveStageCharacters,1,false));check(!browser::can_activate(cards[0],true,0,1,true));
+        // Revision variants and repeated IDs are one installed mod, not copies.
+        const auto duplicates=browser::duplicates({{a," Mario ","patch:0"},{a," Mario ","patch:0"},
+            {b,"MARIO","other:0"},{c,"Mario Deluxe","patch:0"},{"d","Other","patch:1"},{"e","",{}}});
+        check(browser::name_key("  Some   Name \t ")=="some name");
+        check(duplicates.at(a).same_name==2 && duplicates.at(a).same_source==2);
+        check(duplicates.at(b).matches() && !duplicates.at(b).matches(2));
+        check(duplicates.at(c).matches(2) && !duplicates.at("d").matches());
+        check(!duplicates.at("e").matches());
         std::filesystem::remove_all(root);std::cout<<checks<<" management, recovery and browser checks passed.\n";return 0;
     }catch(const std::exception& e){std::cerr<<e.what()<<"; fixture retained at "<<root<<'\n';return 1;}
 }

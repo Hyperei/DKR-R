@@ -47,7 +47,7 @@ VERSION="${DKR_RELEASE_VERSION:-${VERSION_FILE_VALUE}}"
 EXPERIMENTAL_RACE_TEST=0
 if grep -Eq '^DKR_EXPERIMENTAL_RACE_TEST:BOOL=(ON|1|TRUE|YES)[[:space:]]*$' "${BUILD_DIRECTORY}/CMakeCache.txt"; then
   EXPERIMENTAL_RACE_TEST=1
-  [[ "${VERSION}" == *experimental* || "${VERSION}" == *rollback-test* || "${VERSION}" == 1.0.5-beta.15 || "${VERSION}" == 1.0.5-beta.15-playtest.[23456789] || "${VERSION}" == 1.0.5-beta.15-playtest.10 || "${VERSION}" == 1.0.5-beta.15-playtest.11 || "${VERSION}" == 1.0.5-beta.15-playtest.12 || "${VERSION}" == 1.0.5-beta.15-playtest.14 || "${VERSION}" == 1.0.5-beta.15-playtest.15 || "${VERSION}" == 1.0.5-beta.15-playtest.15-fix.[12] ]] || { echo 'Experimental builds require a distinct experimental version or an approved Beta 15 playtest candidate.' >&2; exit 1; }
+  [[ "${VERSION}" == *experimental* || "${VERSION}" == *rollback-test* || "${VERSION}" == 1.0.5-beta.15 || "${VERSION}" == 1.0.5-beta.15-playtest.[23456789] || "${VERSION}" == 1.0.5-beta.15-playtest.10 || "${VERSION}" == 1.0.5-beta.15-playtest.11 || "${VERSION}" == 1.0.5-beta.15-playtest.12 || "${VERSION}" == 1.0.5-beta.15-playtest.14 || "${VERSION}" == 1.0.5-beta.15-playtest.15 || "${VERSION}" == 1.0.5-beta.15-playtest.15-fix.[12] || "${VERSION}" == 1.0.5-beta.15-playtest.16 || "${VERSION}" == 1.0.5-beta.15-playtest.16-fix.[12] ]] || { echo 'Experimental builds require a distinct experimental version or an approved Beta 15 playtest candidate.' >&2; exit 1; }
 fi
 # Explicit beta qualification deferral; normal release packaging still runs all checks.
 SKIP_RUNTIME_TESTS="${DKR_SKIP_RUNTIME_TESTS:-0}"
@@ -134,6 +134,10 @@ collect_linux_dependency_notices() {
 }
 
 [[ -x "${BINARY}" ]] || { echo "Missing Linux release binary: ${BINARY}" >&2; exit 1; }
+if ! strings "${BINARY}" | grep -Fx "${VERSION}" >/dev/null; then
+  echo "Release executable does not contain requested version ${VERSION}; reconfigure and rebuild before packaging." >&2
+  exit 1
+fi
 if grep -aEq 'DKR_WATER_TEST_MAP|\[perf\]\[private-water-preview\]' "${BINARY}"; then
   echo 'Release binary still contains private water qualification; rebuild after disabling it.' >&2
   exit 1
@@ -160,10 +164,14 @@ mkdir -p "${APPDIR}/usr/share/metainfo"
 install -m 0644 "${ICON_FILE}" "${ICON_STAGE}/dkr-r.png"
 install -m 0755 "${BINARY}" "${BINARY_STAGE}/DKR-R"
 EXPERIMENTAL_DEPLOY_ARGS=()
+if [[ "${VERSION}" == 1.0.5-beta.15 ]]; then
+  install -m 0644 "${PROJECT_ROOT}/docs/BETA15-RELEASE.txt" "${APPDIR}/usr/share/doc/dkr-port/BETA15-NOTES.txt"
+  install -m 0644 "${PROJECT_ROOT}/docs/BETA15-ONLINE-STABILITY-20261007.txt" "${APPDIR}/usr/share/doc/dkr-port/ONLINE-STABILITY-CORRECTION.txt"
+fi
 if [[ "${EXPERIMENTAL_RACE_TEST}" == 1 ]]; then
   # The earlier generic file describes Playtest 2; current playtests ship their own
   # current connection/scope guide instead of contradictory version guidance.
-  if [[ "${VERSION}" != 1.0.5-beta.15-playtest.8 && "${VERSION}" != 1.0.5-beta.15-playtest.9 && "${VERSION}" != 1.0.5-beta.15-playtest.10 && "${VERSION}" != 1.0.5-beta.15-playtest.11 && "${VERSION}" != 1.0.5-beta.15-playtest.12 && "${VERSION}" != 1.0.5-beta.15-playtest.14 && "${VERSION}" != 1.0.5-beta.15-playtest.15 && "${VERSION}" != 1.0.5-beta.15-playtest.15-fix.[12] ]]; then
+  if [[ "${VERSION}" != 1.0.5-beta.15 && "${VERSION}" != 1.0.5-beta.15-playtest.8 && "${VERSION}" != 1.0.5-beta.15-playtest.9 && "${VERSION}" != 1.0.5-beta.15-playtest.10 && "${VERSION}" != 1.0.5-beta.15-playtest.11 && "${VERSION}" != 1.0.5-beta.15-playtest.12 && "${VERSION}" != 1.0.5-beta.15-playtest.14 && "${VERSION}" != 1.0.5-beta.15-playtest.15 && "${VERSION}" != 1.0.5-beta.15-playtest.15-fix.[12] && "${VERSION}" != 1.0.5-beta.15-playtest.16 && "${VERSION}" != 1.0.5-beta.15-playtest.16-fix.[12] ]]; then
     install -m 0644 "${PROJECT_ROOT}/docs/EXPERIMENTAL-ROLLBACK-TESTING.txt" "${APPDIR}/usr/share/doc/dkr-port/EXPERIMENTAL-ROLLBACK-TESTING.txt"
   fi
   if [[ "${VERSION}" == 1.0.5-beta.15-playtest.3 ]]; then
@@ -218,6 +226,23 @@ if [[ "${EXPERIMENTAL_RACE_TEST}" == 1 ]]; then
 fi
 install -m 0644 "${PROJECT_ROOT}/LICENSE.md" "${APPDIR}/usr/share/doc/dkr-port/LICENSE.md"
 install -m 0644 "${PROJECT_ROOT}/THIRD_PARTY.md" "${APPDIR}/usr/share/doc/dkr-port/THIRD_PARTY.md"
+if [[ -f "${PROJECT_ROOT}/docs/ENHANCED-WATER-BETA15.txt" ]]; then
+  install -m 0644 "${PROJECT_ROOT}/docs/ENHANCED-WATER-BETA15.txt" "${APPDIR}/usr/share/doc/dkr-port/ENHANCED-WATER-BETA15.txt"
+fi
+if [[ "${VERSION}" == 1.0.5-beta.15-playtest.16 || "${VERSION}" == 1.0.5-beta.15-playtest.16-fix.[12] ]]; then
+  install -m 0644 "${PROJECT_ROOT}/docs/BETA15-PLAYTEST16-WATER-PERFORMANCE.txt" "${APPDIR}/usr/share/doc/dkr-port/BETA15-PLAYTEST16-WATER-PERFORMANCE.txt"
+fi
+if [[ "${VERSION}" == 1.0.5-beta.15-playtest.16 || "${VERSION}" == 1.0.5-beta.15-playtest.16-fix.[12] ]]; then
+  install -m 0644 "${PROJECT_ROOT}/docs/BETA15-PLAYTEST16-MEMORY-SAFETY.txt" "${APPDIR}/usr/share/doc/dkr-port/BETA15-PLAYTEST16-MEMORY-SAFETY.txt"
+  install -m 0644 "${PROJECT_ROOT}/docs/LEGACY-BEHAVIOUR-20261010.txt" "${APPDIR}/usr/share/doc/dkr-port/LEGACY-BEHAVIOUR-20261010.txt"
+fi
+if [[ "${VERSION}" == 1.0.5-beta.15-playtest.16-fix.[12] ]]; then
+  install -m 0644 "${PROJECT_ROOT}/docs/BETA15-PLAYTEST16-AUDIO-FIX.txt" "${APPDIR}/usr/share/doc/dkr-port/BETA15-PLAYTEST16-AUDIO-FIX.txt"
+fi
+if [[ "${VERSION}" == 1.0.5-beta.15-playtest.16-fix.2 ]]; then
+  install -m 0644 "${PROJECT_ROOT}/docs/BETA15-PLAYTEST16-MOD-LIBRARY.txt" "${APPDIR}/usr/share/doc/dkr-port/BETA15-PLAYTEST16-MOD-LIBRARY.txt"
+fi
+install -m 0644 "${PROJECT_ROOT}/patches/enhanced-water/LICENSE-WAVE-RACE.txt" "${APPDIR}/usr/share/doc/dkr-port/WAVE-RACE-WATER-LICENSE.txt"
 install -m 0644 "${PROJECT_ROOT}/docs/ONLINE_MULTIPLAYER.md" "${APPDIR}/usr/share/doc/dkr-port/ONLINE_MULTIPLAYER.md"
 install -m 0644 "${PROJECT_ROOT}/docs/ONLINE-STABILITY.md" "${APPDIR}/usr/share/doc/dkr-port/ONLINE-STABILITY.md"
 install -m 0644 "${PROJECT_ROOT}/docs/HUD-WORKSHOP.md" "${APPDIR}/usr/share/doc/dkr-port/HUD-WORKSHOP.md"

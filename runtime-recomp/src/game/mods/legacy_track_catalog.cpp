@@ -5,6 +5,7 @@
 #include <chrono>
 #include <random>
 #include <set>
+#include <tuple>
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
@@ -34,12 +35,14 @@ std::string field(const json& value,const char* key,std::size_t max=256) {
         throw Error("Prepared catalogue contains invalid text.");
     return text;
 }
-json read_json(const std::filesystem::path& path,std::size_t limit=MiB) {
-    if(std::filesystem::is_symlink(path) || !std::filesystem::is_regular_file(path))throw Error("Prepared metadata is missing or is not an ordinary file.");
-    const auto bytes=read_file(path,limit);
+json decode_json(View bytes) {
     return json::parse(bytes.begin(),bytes.end(),[](int depth,json::parse_event_t,json&) {
         if(depth>12)throw Error("Prepared metadata exceeds its nesting limit.");return true;
     });
+}
+json read_json(const std::filesystem::path& path,std::size_t limit=MiB) {
+    if(std::filesystem::is_symlink(path) || !std::filesystem::is_regular_file(path))throw Error("Prepared metadata is missing or is not an ordinary file.");
+    return decode_json(read_file(path,limit));
 }
 std::string nonce() {
     std::random_device random;Bytes bytes(32);for(auto& byte:bytes)byte=static_cast<std::uint8_t>(random());return sha256(bytes);
@@ -139,7 +142,7 @@ std::vector<TrackCatalogItem> group(const std::filesystem::path& folder,const st
     if(!digest(expected) || std::filesystem::is_symlink(folder/"prepared.json"))throw Error("Invalid prepared group identity.");
     const auto bytes=read_file(folder/"prepared.json",MiB);
     if(sha256(bytes)!=expected)throw Error("A prepared catalogue receipt has changed.");
-    const auto value=read_json(folder/"prepared.json");
+    const auto value=decode_json(bytes); // Parse the exact receipt whose hash was verified.
     const auto key=characters?"characters":"tracks";
     if(value.at("schema")!=1 || value.at("adapter")!=(characters?CharacterAdapterVersion:TrackAdapterVersion) || value.at("enabled")!=false ||
        !value.at(key).is_array() || value.at(key).size()>512)
@@ -151,6 +154,13 @@ std::vector<TrackCatalogItem> group(const std::filesystem::path& folder,const st
         item.storage=entry.contains("storage")?field(entry,"storage"):item.id;
         if(!digest(item.storage))throw Error("Invalid prepared storage identity.");
         if(entry.contains("details"))item.details=field(entry,"details",4096);
+        if(entry.contains("behaviour_identity")) {
+            item.behaviour_identity=entry.at("behaviour_identity").get<std::string>();
+            item.behaviour_abi=entry.at("behaviour_abi").get<unsigned>();
+            if((item.behaviour_identity.empty() && item.behaviour_abi) ||
+               (!item.behaviour_identity.empty() && (!digest(item.behaviour_identity) || item.behaviour_abi!=BehaviourAbi)))
+                throw Error("Prepared behaviour identity or ABI is unsupported.");
+        }
         item.bank=characters?item.id:field(entry,"bank");item.artifact=field(entry,"artifact");item.patch=field(entry,"patch");item.group=expected;
         if(value.contains("review")) {item.review=field(value,"review");if(!digest(item.review))throw Error("Invalid source review identity.");}
         if(characters) {
@@ -264,8 +274,13 @@ void remove_content(const std::filesystem::path& root,const std::string& id,bool
         throw;
     }
 }
-std::vector<TrackCatalogItem> scan(const std::filesystem::path& root,std::stop_token stop={},bool characters=false,bool presentation=false) {
+using DisplayKey=std::tuple<std::string,std::string,std::string,std::string>;
+DisplayKey display_key(const TrackCatalogItem& item) {return {item.group,item.storage,item.id,item.revision};}
+std::vector<TrackCatalogItem> scan(const std::filesystem::path& root,std::stop_token stop={},bool characters=false,bool presentation=false,
+    const TrackCatalogView* previous=nullptr,TrackCatalogView* work=nullptr) {
     std::vector<TrackCatalogItem> result;
+    std::map<DisplayKey,const TrackCatalogItem*> display;
+    if(presentation && previous)for(const auto& item:previous->tracks)display.emplace(display_key(item),&item);
     if(!std::filesystem::exists(root))return result;
     ordinary(root);
     if(std::filesystem::exists(journal_path(root,characters)))throw Error("A mod removal needs recovery. Refresh the library before launching.");
@@ -289,7 +304,20 @@ std::vector<TrackCatalogItem> scan(const std::filesystem::path& root,std::stop_t
             }
             seen.emplace(key,item.bank);item.hidden=hidden_id(info,item.id);item.enabled=enabled.contains(item.id) && !item.hidden;
             if(info.at("items").contains(item.id))item.imported_at=info.at("items").at(item.id).at("imported_at").get<std::uint64_t>();
-            if(presentation)item.managed_bytes=checked_tree(entry.path()/item.storage);
+            if(presentation) {
+                const auto cached=display.find(display_key(item));
+                if(cached!=display.end()) {
+                    // group() freshly checks the receipt, storage directory and
+                    // manifest. Only presentation data is reused, never asset
+                    // bytes, activation, visibility or compatibility metadata.
+                    item.managed_bytes=cached->second->managed_bytes;
+                    item.source_name=cached->second->source_name;
+                    if(work)++work->display_cache_hits;
+                } else {
+                    item.managed_bytes=checked_tree(entry.path()/item.storage);
+                    if(work)++work->size_scans;
+                }
+            }
             result.push_back(std::move(item));
             if(result.size()>(characters?MaxInstalledCharacterVariants:1024U))throw Error("Prepared catalogue exceeds its metadata budget.");
         }
@@ -300,15 +328,18 @@ std::vector<TrackCatalogItem> scan(const std::filesystem::path& root,std::stop_t
     if(presentation) {
         std::map<std::string,json> reviews;
         for(auto& item:result) {
+            if(display.contains(display_key(item)))continue;
             item.source_name="Imported patch "+item.patch.substr(0,8);
             if(item.review.empty())continue;
             // Optional display metadata never weakens artifact validation.
             try {
                 if(!reviews.contains(item.review)) {
                     const auto path=root/"reviews"/item.review/"review.json";
+                    if(std::filesystem::is_symlink(path) || !std::filesystem::is_regular_file(path))throw Error("Review metadata is missing or linked.");
                     const auto bytes=read_file(path,8*MiB);
+                    if(work)++work->source_reads;
                     if(sha256(bytes)!=item.review)throw Error("Review identity mismatch.");
-                    reviews.emplace(item.review,read_json(path,8*MiB));
+                    reviews.emplace(item.review,decode_json(bytes));
                 }
                 for(const auto& package:reviews.at(item.review).at("packages"))
                     if(package.at("patch_sha256")==item.patch && package.contains("display_name"))
@@ -345,10 +376,11 @@ bool TrackCatalog::disable_all(){return start(Action::DisableAll);}
 bool TrackCatalog::start(Action action,std::string id,std::vector<std::filesystem::path> roms) {
     {std::lock_guard lock(mutex_);if(view_.busy)return false;}
     if(thread_.joinable())thread_.join();
+    const auto previous=snapshot();
     {std::lock_guard lock(mutex_);view_.busy=true;view_.modal=action!=Action::Scan;view_.succeeded=false;
         view_.stage="Preparing custom track catalogue";view_.result.clear();view_.completed=0;view_.total=0;publish();}
     try {
-        thread_=std::jthread([this,action,id=std::move(id),roms=std::move(roms)](std::stop_token stop) {
+        thread_=std::jthread([this,action,previous,id=std::move(id),roms=std::move(roms)](std::stop_token stop) {
             std::filesystem::path job;
             try {
                 const bool characters=kind_==Kind::Character;
@@ -359,7 +391,13 @@ bool TrackCatalog::start(Action action,std::string id,std::vector<std::filesyste
                 // or activation file is damaged. Only the enablement list is
                 // replaced; content and all save files remain untouched.
                 if(action==Action::DisableAll)save_enabled(root_,{},characters);
-                auto items=scan(root_,stop,characters,true);std::string result="Custom content catalogue refreshed.";
+                TrackCatalogView work;
+                const bool selection_only=action==Action::Enable || action==Action::Disable ||
+                    action==Action::Hide || action==Action::Restore || action==Action::DisableAll;
+                // Cold scans, imports and removal retain full display walks.
+                // Runtime loading always validates the actual payload afresh.
+                auto items=scan(root_,stop,characters,true,selection_only?previous.get():nullptr,&work);
+                std::string result="Custom content catalogue refreshed.";
                 if(action==Action::DisableAll)result="All content in this library disabled. Installed files and saves were retained.";
                 if(action==Action::Prepare) {
                     if(!digest(id) || roms.empty() || roms.size()>8)throw Error("Select a saved review and its imported Game Pak first.");
@@ -420,7 +458,8 @@ bool TrackCatalog::start(Action action,std::string id,std::vector<std::filesyste
                     if(!characters && enabled.size()>512)throw Error("The enabled course catalogue is full.");
                     if(characters && enabled.size()>MaxActiveStageCharacters)throw Error("The character library exceeds the native presentation identity range. Installed characters remain available.");
                     if(stop.stop_requested())throw Error("Activation change cancelled.");
-                    save_enabled(root_,enabled,characters);items=scan(root_,{},characters,true);
+                    save_enabled(root_,enabled,characters);
+                    for(auto& item:items)item.enabled=enabled.contains(item.id) && !item.hidden;
                     result=action==Action::Enable?"Custom content enabled for the next game session.":"Custom content disabled. Its files and records were retained.";
                 } else if(action==Action::Hide || action==Action::Restore || action==Action::Remove) {
                     if(!digest(id) || std::none_of(items.begin(),items.end(),[&](const auto& item){return item.id==id;}))
@@ -430,19 +469,26 @@ bool TrackCatalog::start(Action action,std::string id,std::vector<std::filesyste
                         {std::lock_guard lock(mutex_);view_.stage="Removing selected mod; preserving other content and saves";publish();}
                         remove_content(root_,id,characters,stop);
                         result="Selected mod and its prepared revision variants removed. Other mods, original files, retained import material and all saves remain untouched.";
+                        items=scan(root_,{},characters,true,nullptr,&work);
                     } else {
                         auto info=metadata(root_,characters);
                         if(!info["items"].contains(id))info["items"][id]={{"hidden",false},{"imported_at",std::uint64_t(0)}};
                         // Disable first. A failed metadata write can leave it
                         // visible/inactive, never secretly active and hidden.
-                        if(action==Action::Hide) {auto enabled=enabled_ids(root_,characters);enabled.erase(id);save_enabled(root_,enabled,characters);}
+                        auto enabled=enabled_ids(root_,characters);
+                        enabled.erase(id);save_enabled(root_,enabled,characters);
                         info["items"][id]["hidden"]=action==Action::Hide;replace_json(metadata_path(root_,characters),info);
+                        for(auto& item:items) {
+                            if(item.id==id)item.hidden=action==Action::Hide;
+                            item.enabled=enabled.contains(item.id) && !item.hidden;
+                        }
                         result=action==Action::Hide?"Mod deactivated and hidden. Files and saves retained.":"Mod restored to the library. It remains inactive.";
                     }
-                    items=scan(root_,{},characters,true);
                 }
                 cleanup(root_,job);
-                std::lock_guard lock(mutex_);view_.tracks=std::move(items);view_.result=std::move(result);view_.succeeded=true;view_.busy=false;publish();
+                std::lock_guard lock(mutex_);view_.tracks=std::move(items);view_.result=std::move(result);
+                view_.display_cache_hits=work.display_cache_hits;view_.size_scans=work.size_scans;view_.source_reads=work.source_reads;
+                view_.succeeded=true;view_.busy=false;publish();
             } catch(const std::exception& error) {
                 cleanup(root_,job);std::lock_guard lock(mutex_);view_.result=std::string(error.what()).substr(0,1024);view_.busy=false;view_.succeeded=false;publish();
             } catch(...) {
@@ -512,7 +558,8 @@ std::vector<PreparedTrack> TrackCatalog::load_selected(std::span<const CatalogSo
             throw Error("Enabled course assets exceed this beta's 256 MiB preparation budget. Disable some tracks before starting.");
         total+=track.bank->owned_override_bytes();
         if(track.root.content_id!=item.id || track.bank->fingerprint()!=item.bank || track.patch_digest!=item.patch ||
-           track.root.carrier!=item.carrier || track.root.name!=item.name || track.root.vehicles!=item.vehicles || track.root.race_type!=item.race_type)
+           track.root.carrier!=item.carrier || track.root.name!=item.name || track.root.vehicles!=item.vehicles || track.root.race_type!=item.race_type ||
+           behaviour_identity(track.root.behaviour)!=item.behaviour_identity || track.root.behaviour.abi!=item.behaviour_abi)
             throw Error("Prepared course does not match its catalogue entry.");
         result.push_back(std::move(track));
     }
@@ -568,7 +615,8 @@ std::vector<PreparedCharacter> TrackCatalog::load_selected_characters(std::span<
         if(!digest(item.group) || !digest(item.storage) || !digest(item.artifact) || (!item.review.empty() && !digest(item.review)))throw Error("Invalid frozen character source identity.");
         if(!loaded.insert(item.id).second)throw Error("Frozen character selection has duplicate identity.");
         auto character=read_character_artifact(root/"prepared-characters"/item.group/item.storage,item.artifact,*stock);
-        if(character.root.content_id!=item.id || character.root.name!=item.name || character.root.base_character!=item.base_character || item.vehicles!=7)
+        if(character.root.content_id!=item.id || character.root.name!=item.name || character.root.base_character!=item.base_character || item.vehicles!=7 ||
+           behaviour_identity(character.root.behaviour)!=item.behaviour_identity || character.root.behaviour.abi!=item.behaviour_abi)
             throw Error("Character artifact disagrees with its catalogue metadata.");
         // Adapter v2 retained the reviewed source audio but persisted only its
         // three selection cues. Extend it in memory, on the launch worker, so

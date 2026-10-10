@@ -4,6 +4,7 @@
 #include "online_mod_cache.hpp"
 #include "online_game_pak.hpp"
 #include "legacy_track_catalog.hpp"
+#include "legacy_track_prepare_job.hpp"
 #include <json/json.hpp>
 #include <chrono>
 #include <iostream>
@@ -19,6 +20,70 @@ template<class F>void rejects(F fn){bool rejected=false;try{fn();}catch(const st
 int main(int argc,char** argv) {
     std::filesystem::path root;
     try {
+        if(argc==6 && std::string_view(argv[1])=="--behaviour-corpus") {
+            root=private_storage_path(std::filesystem::current_path()/("online-behaviour-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())));
+            check(std::filesystem::create_directory(root));
+            const auto library=root/"host",original_library=utf8_path(argv[4]),worker=utf8_path(argv[5]);
+            const std::vector<std::filesystem::path> roms{utf8_path(argv[2]),utf8_path(argv[3])};
+            for(const auto* dir:{"host","payloads","online"})std::filesystem::create_directory(root/dir);
+            for(const auto* dir:{"reviews","prepared","prepared-characters"})std::filesystem::create_directory(library/dir);
+            const auto tracks_before=sha256(read_file(original_library/"track-catalog.json",MiB));
+            const auto chars_before=sha256(read_file(original_library/"character-catalog.json",MiB));
+            std::set<std::string> tracks,chars,patches;
+            for(const auto& review:std::filesystem::directory_iterator(original_library/"reviews")) {
+                const auto bytes=read_file(review.path()/"review.json",MiB);const auto doc=nlohmann::json::parse(bytes.begin(),bytes.end());
+                for(const auto& package:doc.at("packages")) {
+                    const auto patch=package.at("patch_sha256").get<std::string>();
+                    // Reviewed course loads, rebuilt-equivalent Yooka, and
+                    // Bottles' actual shared random-texture behaviour.
+                    if(patch!="7cbd144de1a17fd942559bea6af5d2221e3142005e014525136ff02e3a21ffb3" &&
+                       patch!="7a74449593616a29d0f3a625df6e720a892830dab2db3f2c130cbf9bf747f598" &&
+                       package.value("profile",std::string{})!="yooka-relocated-assets")continue;
+                    if(!patches.insert(patch).second)continue;
+                    const auto job=root/("review-"+patch);
+                    stage_import(review.path()/"patches"/(patch+".xdelta"),roms,job);
+                    const auto receipt=read_file(job/"review.json",MiB);const auto verified_review=library/"reviews"/sha256(receipt);
+                    std::filesystem::rename(job,verified_review);
+                    for(const bool characters:{false,true}) {
+                        const auto prepared=root/((characters?"chars-":"tracks-")+patch);
+                        if(characters)prepare_imported_characters(verified_review,roms,prepared);else prepare_imported_tracks(verified_review,roms,prepared);
+                        const auto receipt=read_file(prepared/"prepared.json",MiB);const auto doc=nlohmann::json::parse(receipt.begin(),receipt.end());
+                        for(const auto& entry:doc.at(characters?"characters":"tracks")) {
+                            check(entry.at("behaviour_abi")==BehaviourAbi);
+                            (characters?chars:tracks).insert(entry.at("id").get<std::string>());
+                        }
+                        std::filesystem::rename(prepared,library/(characters?"prepared-characters":"prepared")/sha256(receipt));
+                    }
+                }
+            }
+            check(patches.size()==3 && !tracks.empty() && !chars.empty());
+            write(library/"track-catalog.json",{{"schema",1},{"enabled",tracks}});
+            write(library/"character-catalog.json",{{"schema",1},{"enabled",chars}});
+            for(const auto* revision:{"us.v77","us.v80"}) {
+                const auto bundle=export_host(library,{},revision,true);
+                for(const auto& [id,data]:bundle.payloads)if(!std::filesystem::exists(root/"payloads"/id))write_new_file(root/"payloads"/id,*data);
+                unsigned workers=0;
+                const auto profile=prepare_profile(bundle.manifest,root/"payloads",roms,root/"online",worker,{},[&](auto stage){
+                    if(stage.find("Reconstructing locally owned assets")!=stage.npos || stage.find("Preparing two missing mods")!=stage.npos)++workers;
+                });
+                check(workers>0);validate_profile(*profile);
+                const auto resources=RuntimeResources::prepare(profile,roms[std::string_view(revision)=="us.v77"?0:1]);
+                check(resources->new_session()->checkpoint()==resources->new_session()->checkpoint());
+                check(std::ranges::any_of(resources->new_session()->characters()->characters,
+                    [](const auto& c){return c.behaviour.native_profile==2;}));
+                const auto offline=root/(std::string("kept-")+revision),labs=root/(std::string("labs-")+revision);
+                retain_profile(*profile,offline,labs);
+                const auto cache=root/(std::string("reused-")+revision);std::filesystem::create_directory(cache);workers=0;
+                const auto reused=prepare_profile(bundle.manifest,root/"payloads",roms,cache,worker,{},[&](auto stage){
+                    if(stage.find("Reconstructing locally owned assets")!=stage.npos || stage.find("Preparing two missing mods")!=stage.npos)++workers;
+                },offline);
+                check(workers==0);validate_profile(*reused);
+                check(TrackCatalog::selected_items(offline,revision,TrackCatalog::Kind::Character).empty());
+                std::cout<<revision<<": behaviour-aware host/client reconstruction, retained inactive library and zero-worker reuse PASS\n";
+            }
+            check(tracks_before==sha256(read_file(original_library/"track-catalog.json",MiB)) && chars_before==sha256(read_file(original_library/"character-catalog.json",MiB)));
+            std::filesystem::remove_all(root);std::cout<<checks<<" online behaviour contract checks passed. No game window opened.\n";return 0;
+        }
         if(argc==6 && std::string_view(argv[1])=="--installed-benchmark") {
             root=private_storage_path(std::filesystem::current_path()/("online-source-benchmark-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())));
             check(std::filesystem::create_directory(root));
@@ -51,6 +116,10 @@ int main(int argc,char** argv) {
                 start=std::chrono::steady_clock::now();
                 const auto resources=RuntimeResources::prepare(profile,roms[std::string_view(revision)=="us.v80"?1:0]);
                 const auto runtime_ms=elapsed(start);
+                // Same verified identity reuses immutable bytes, not a mutable
+                // world or the checkpoint of an earlier match.
+                const auto repeated=RuntimeResources::prepare(profile,roms[std::string_view(revision)=="us.v80"?1:0]);
+                check(repeated==resources);
                 start=std::chrono::steady_clock::now();auto a=resources->new_session(),b=resources->new_session();
                 const auto worlds_ms=elapsed(start);
                 check(a!=b && &a->bus()!=&b->bus() && a->checkpoint()==b->checkpoint());

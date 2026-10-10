@@ -887,6 +887,21 @@ def _wave_bridge(field):
                        get=read, set=set_int)
 
 
+class DKR_RenderWaterMaterial(bpy.types.PropertyGroup):
+    """A model texture-table override, independent of retail asset IDs."""
+
+    texture: IntProperty(name="Texture entry", min=0, max=255, default=0,
+        description="Ordinal in the exported level model's texture table, not a ROM texture ID")
+    kind: EnumProperty(name="Kind", items=(
+        ("auto", "Automatic", "Use the texture and surface classification"),
+        ("exclude", "Not water", "Preserve this material's original rendering"),
+        ("calm", "Calm water", "Horizontal liquid surface"),
+        ("waves", "Wavy water", "Horizontal liquid with existing wave geometry"),
+        ("waterfall", "Waterfall", "Preserve the authored texture and add flowing detail"),
+        ("fountain", "Fountain", "Preserve the authored texture and add flowing detail"),
+    ), default="auto")
+
+
 class DKR_WaterSettings(bpy.types.PropertyGroup):
     """The header's wave bytes as properties the Water panel can draw.
 
@@ -898,6 +913,20 @@ class DKR_WaterSettings(bpy.types.PropertyGroup):
 DKR_WaterSettings.__annotations__ = {
     field.name: _wave_bridge(field) for field in water.HEADER_FIELDS
 }
+DKR_WaterSettings.__annotations__.update({
+    "render_profile": BoolProperty(name="Custom water appearance", default=False,
+        description="Optical appearance for DKR-R enhanced water; original rendering and wave physics stay unchanged"),
+    "render_deep": FloatVectorProperty(name="Deep colour", subtype="COLOR", size=3, min=0, max=1, default=(0.008, 0.055, 0.075)),
+    "render_shallow": FloatVectorProperty(name="Shallow colour", subtype="COLOR", size=3, min=0, max=1, default=(0.04, 0.25, 0.28)),
+    "render_sky": FloatVectorProperty(name="Reflection sky colour", subtype="COLOR", size=3, min=0, max=1, default=(0.25, 0.45, 0.72)),
+    "render_sun": FloatVectorProperty(name="Sun direction", size=3, min=-5, max=5, default=(0.35, 0.85, 0.25)),
+    "render_absorption": FloatProperty(name="Absorption", min=0.00001, max=1, default=0.006, precision=5),
+    "render_roughness": FloatProperty(name="Roughness", min=0.02, max=1, default=0.15),
+    "render_visibility": FloatProperty(name="Visibility distance", min=1, max=100000, default=650),
+    "render_ripple": FloatProperty(name="Ripple strength", min=0, max=4, default=0.65),
+    "render_foam": FloatProperty(name="Foam strength", min=0, max=4, default=0.6),
+    "render_materials": CollectionProperty(type=DKR_RenderWaterMaterial),
+})
 
 
 CLASSES = (
@@ -905,6 +934,7 @@ CLASSES = (
     DKR_ValidationEntry,
     DKR_SceneSettings,
     DKR_RaceAiSettings,
+    DKR_RenderWaterMaterial,
     DKR_WaterSettings,
 )
 

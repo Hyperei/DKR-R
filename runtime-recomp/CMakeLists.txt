@@ -41,15 +41,21 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(CTest)
 
+if(BUILD_TESTING AND NOT ANDROID)
+    add_executable(DKREnhancedWaterPolicyTests tests/enhanced_water_policy_tests.cpp)
+    target_include_directories(DKREnhancedWaterPolicyTests PRIVATE src/game "${CMAKE_CURRENT_LIST_DIR}/../extern/rt64/src/contrib" "${CMAKE_CURRENT_LIST_DIR}/../patches/enhanced-water/native")
+    add_test(NAME DKREnhancedWaterPolicy COMMAND DKREnhancedWaterPolicyTests)
+endif()
+
 set(DKRPORT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." CACHE PATH "Root of the DKR Port repository")
 option(DKR_RUNTIME_BUILD_GENERATED "Compile N64Recomp-generated DKR CPU functions" ON)
 option(DKR_RUNTIME_BUILD_RT64 "Also configure and compile the pinned RT64 renderer" OFF)
 option(DKR_LEGACY_QUALIFICATION "Build private real-runtime legacy scene qualification hooks (not for packaging)" OFF)
 option(DKR_REPLAY_QUALIFICATION "Private real-game replay fixtures; never package" OFF)
 option(DKR_EXPERIMENTAL_RENDER_QUALIFICATION "PRIVATE generation-retirement GPU probe; never package" OFF)
-option(DKR_EXPERIMENTAL_RACE_TEST "Opt-in owned rollback backend in the existing launcher (x64)" OFF)
-if(DKR_EXPERIMENTAL_RACE_TEST AND (ANDROID OR APPLE OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$"))
-    message(FATAL_ERROR "The first experimental race test is Windows/Linux x64 only")
+option(DKR_EXPERIMENTAL_RACE_TEST "Owned rollback backend in the existing launcher (x64/ARM64)" OFF)
+if(DKR_EXPERIMENTAL_RACE_TEST AND (APPLE OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64|aarch64|arm64|ARM64)$"))
+    message(FATAL_ERROR "Integrated rollback requires a supported 64-bit Windows/Linux/Android target")
 endif()
 set(DKR_PATCH_POLICY_V77
     "${CMAKE_CURRENT_LIST_DIR}/dkr.us.v77.recomp-policy.json")
@@ -407,6 +413,9 @@ if(DKR_RUNTIME_BUILD_RT64)
     dkr_stage_patch(rt64 "${DKR_TEXTURE_LAYER_CACHE_SOURCE}" texture-layer-mip-cache
         "${DKRPORT_ROOT}/patches/rt64/texture-layer-mip-cache.patch"
         src/render/rt64_texture_cache.cpp)
+    set_source_files_properties("${CMAKE_BINARY_DIR}/generated/texture-layer-mip-cache/src/render/rt64_texture_cache.cpp"
+        TARGET_DIRECTORY rt64 PROPERTIES INCLUDE_DIRECTORIES
+        "${DKR_RT64_SOURCE}/src/render;${CMAKE_CURRENT_LIST_DIR}/src/game")
     dkr_stage_patch(rt64 "${DKR_RESOURCE_PATCH_SOURCE}" performance-renderer
         "${DKRPORT_ROOT}/patches/performance/renderer-workers.patch" src/hle/rt64_application.cpp)
     if(ANDROID)
@@ -490,17 +499,35 @@ if(DKR_RUNTIME_BUILD_RT64)
             TARGET_DIRECTORY rt64 PROPERTIES INCLUDE_DIRECTORIES "${DKR_RT64_SOURCE}/src/hle;${CMAKE_CURRENT_LIST_DIR}/src/game")
     endif()
     if(DKR_EXPERIMENTAL_RENDER_QUALIFICATION OR DKR_EXPERIMENTAL_RACE_TEST)
-        if(ANDROID)
+        if(ANDROID AND DKR_EXPERIMENTAL_RENDER_QUALIFICATION)
             message(FATAL_ERROR "Private rollback GPU qualification is desktop only")
         endif()
-        # OFF for distributable builds. Isolated copies, not vendor edits.
-        dkr_stage_patch(rt64 "${CMAKE_BINARY_DIR}/generated/performance-present-wait" experimental-present-queue
+        # Compose rollback retirement AFTER Android's surface ownership fix.
+        # Neither feature may replace the other's staged present queue.
+        set(DKR_ROLLBACK_PRESENT_SOURCE "${CMAKE_BINARY_DIR}/generated/performance-present-wait")
+        if(ANDROID)
+            set(DKR_ROLLBACK_PRESENT_SOURCE "${CMAKE_BINARY_DIR}/generated/android-present-ownership")
+        endif()
+        dkr_stage_patch(rt64 "${DKR_ROLLBACK_PRESENT_SOURCE}" experimental-present-queue
             "${DKRPORT_ROOT}/patches/netplay/experimental-present-queue.patch" src/hle/rt64_present_queue.cpp)
         set_source_files_properties("${CMAKE_BINARY_DIR}/generated/experimental-present-queue/src/hle/rt64_present_queue.cpp"
             TARGET_DIRECTORY rt64 PROPERTIES INCLUDE_DIRECTORIES
             "${DKR_RT64_SOURCE}/src/hle;${CMAKE_CURRENT_LIST_DIR}/src/game")
-        dkr_stage_patch(rt64 "${DKR_RT64_SOURCE}" experimental-present-state
+        dkr_stage_patch(rt64 "${CMAKE_BINARY_DIR}/generated/performance-measurements" experimental-present-state
             "${DKRPORT_ROOT}/patches/netplay/experimental-present-state.patch" src/hle/rt64_state.cpp)
+        set_source_files_properties("${CMAKE_BINARY_DIR}/generated/experimental-present-state/src/hle/rt64_state.cpp"
+            TARGET_DIRECTORY rt64 PROPERTIES INCLUDE_DIRECTORIES "${DKR_RT64_SOURCE}/src/hle;${CMAKE_CURRENT_LIST_DIR}/src/game")
+    endif()
+    if(ANDROID)
+        set(DKR_ANDROID_STATE_SOURCE "${CMAKE_BINARY_DIR}/generated/performance-measurements")
+        if(DKR_EXPERIMENTAL_RACE_TEST)
+            set(DKR_ANDROID_STATE_SOURCE "${CMAKE_BINARY_DIR}/generated/experimental-present-state")
+        endif()
+        dkr_stage_patch(rt64 "${DKR_ANDROID_STATE_SOURCE}" android-frame-budget
+            "${DKRPORT_ROOT}/patches/android/frame-budget.patch" src/hle/rt64_state.cpp)
+        set_source_files_properties("${CMAKE_BINARY_DIR}/generated/android-frame-budget/src/hle/rt64_state.cpp"
+            TARGET_DIRECTORY rt64 PROPERTIES INCLUDE_DIRECTORIES "${DKR_RT64_SOURCE}/src/hle;${CMAKE_CURRENT_LIST_DIR}/src/game")
+        include("${CMAKE_CURRENT_LIST_DIR}/cmake/android/PreRotation.cmake")
     endif()
     dkr_stage_patch(rt64 "${DKR_RT64_SOURCE}" performance-workload-wait
         "${DKRPORT_ROOT}/patches/performance/workload-queue-wait.patch" src/hle/rt64_workload_queue.cpp)
@@ -517,7 +544,11 @@ if(DKR_RUNTIME_BUILD_RT64)
             "${DKR_RT64_SOURCE}/src/hle;${CMAKE_CURRENT_LIST_DIR}/src/game")
     endif()
     if(ANDROID)
-        dkr_stage_patch(rt64 "${CMAKE_BINARY_DIR}/generated/water-renderer-history" android-render-idle-priority
+        set(DKR_ANDROID_WORKLOAD_SOURCE "${CMAKE_BINARY_DIR}/generated/water-renderer-history")
+        if(DKR_EXPERIMENTAL_RACE_TEST)
+            set(DKR_ANDROID_WORKLOAD_SOURCE "${CMAKE_BINARY_DIR}/generated/experimental-workload-history")
+        endif()
+        dkr_stage_patch(rt64 "${DKR_ANDROID_WORKLOAD_SOURCE}" android-render-idle-priority
             "${DKRPORT_ROOT}/patches/android/render-idle-priority.patch" src/hle/rt64_workload_queue.cpp)
         set_source_files_properties("${CMAKE_BINARY_DIR}/generated/android-render-idle-priority/src/hle/rt64_workload_queue.cpp"
             TARGET_DIRECTORY rt64 PROPERTIES INCLUDE_DIRECTORIES
@@ -550,6 +581,7 @@ if(DKR_RUNTIME_BUILD_RT64)
         set_property(SOURCE "${CMAKE_BINARY_DIR}/generated/performance-renderer/src/hle/rt64_application.cpp"
             TARGET_DIRECTORY rt64 APPEND PROPERTY COMPILE_OPTIONS -include render_resource_policy.hpp)
     endif()
+    include("${CMAKE_CURRENT_LIST_DIR}/cmake/EnhancedWater.cmake")
     if(MSVC AND TARGET rt64)
         # RT64 enables /MP internally. Ensure all compiler workers serialize
         # writes to the target PDB so clean RelWithDebInfo builds are reliable.
@@ -963,6 +995,7 @@ set(DKR_EXPERIMENTAL_OWNED_GENERATED "" CACHE PATH "NEW isolated owned CPU Patch
 set(DKR_EXPERIMENTAL_OWNED_GENERATED_V80 "" CACHE PATH "NEW isolated US Rev A full-scene owned CPU Patch Pipeline output")
 if(DKR_EXPERIMENTAL_OWNED_GENERATED)
     include(cmake/ExperimentalOwnedGame.cmake)
+    include(cmake/OwnedContentIdentity.cmake)
     file(READ "${DKR_EXPERIMENTAL_OWNED_GENERATED}/manifest.json" primary_manifest)
     string(JSON primary_revision GET "${primary_manifest}" revision)
     if(NOT primary_revision EQUAL 77)
@@ -1004,26 +1037,27 @@ if(DKR_EXPERIMENTAL_OWNED_GENERATED)
             continue()
         endif()
         file(GLOB owned_identity_files CONFIGURE_DEPENDS
+            "${CMAKE_CURRENT_LIST_DIR}/src/game/audio_event_queue*.h"
+            "${CMAKE_CURRENT_LIST_DIR}/src/game/runtime_legacy_mods.cpp" "${CMAKE_CURRENT_LIST_DIR}/src/game/runtime_legacy_mods.hpp"
+            "${CMAKE_CURRENT_LIST_DIR}/src/game/mods/*.cpp" "${CMAKE_CURRENT_LIST_DIR}/src/game/mods/*.hpp" "${CMAKE_CURRENT_LIST_DIR}/src/game/mods/*.h"
             "${owned_directory}/*.c" "${owned_directory}/*.cpp" "${owned_directory}/*.h" "${owned_directory}/*.hpp"
             "${CMAKE_CURRENT_LIST_DIR}/tests/replay_probe/*.c" "${CMAKE_CURRENT_LIST_DIR}/tests/replay_probe/*.cpp"
             "${CMAKE_CURRENT_LIST_DIR}/tests/replay_probe/*.h" "${CMAKE_CURRENT_LIST_DIR}/tests/replay_probe/*.hpp"
             "${CMAKE_CURRENT_LIST_DIR}/src/game/netplay/*.c" "${CMAKE_CURRENT_LIST_DIR}/src/game/netplay/*.cpp"
             "${CMAKE_CURRENT_LIST_DIR}/src/game/netplay/*.h" "${CMAKE_CURRENT_LIST_DIR}/src/game/netplay/*.hpp")
-        set(owned_identity_parts "owned-revision:${owned_revision}|")
-        foreach(owned_identity_file "${owned_directory}/manifest.json" ${owned_identity_files})
-            file(SHA256 "${owned_identity_file}" owned_identity_part)
-            string(APPEND owned_identity_parts "${owned_identity_part}|")
-            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${owned_identity_file}")
-        endforeach()
+        dkr_owned_content_identity(owned_content_parts "${CMAKE_CURRENT_LIST_DIR}" "${owned_directory}"
+            "${owned_directory}/manifest.json" ${owned_identity_files})
+        set(owned_identity_parts "owned-revision:${owned_revision}|numeric-policy:separate-fp-rounding-v1|${owned_content_parts}")
         string(SHA256 DKR_OWNED_BUILD_ID_V${owned_revision} "${owned_identity_parts}")
         message(STATUS "Owned v${owned_revision} rollback contract: ${DKR_OWNED_BUILD_ID_V${owned_revision}}")
     endforeach()
     target_compile_definitions(DKRExperimentalOwnedRegistry PRIVATE
         DKR_OWNED_BUILD_ID_V77="${DKR_OWNED_BUILD_ID_V77}" DKR_OWNED_BUILD_ID_V80="${DKR_OWNED_BUILD_ID_V80}")
     add_executable(DKROwnedRevisionRegistryTests EXCLUDE_FROM_ALL tests/owned_revision_registry_tests.cpp
-        tests/native_mod_world_test_boundaries.cpp src/game/runtime_legacy_mods.cpp)
+        tests/memory_probe_test_entries.c tests/native_mod_world_test_boundaries.cpp src/game/runtime_legacy_mods.cpp)
     target_link_libraries(DKROwnedRevisionRegistryTests PRIVATE DKRExperimentalOwnedGame)
     target_include_directories(DKROwnedRevisionRegistryTests PRIVATE src/game
+        "${DKR_EXPERIMENTAL_OWNED_GENERATED}"
         "${DKR_MODERN_RUNTIME_SOURCE}/librecomp/include"
         "${DKR_MODERN_RUNTIME_SOURCE}/ultramodern/include"
         "${DKR_MODERN_RUNTIME_SOURCE}/thirdparty/concurrentqueue")
@@ -1091,7 +1125,7 @@ if(TARGET DKRPortGame AND (DKR_EXPERIMENTAL_RENDER_QUALIFICATION OR DKR_EXPERIME
         "${CMAKE_CURRENT_LIST_DIR}/src/game/netplay/experimental_checkpoint_hash.cpp")
     target_include_directories(rt64 INTERFACE "${DKR_MODERN_RUNTIME_SOURCE}/thirdparty")
 endif()
-if(TARGET DKRPortGame AND DKR_RUNTIME_BUILD_RT64 AND NOT ANDROID AND NOT APPLE)
+if(TARGET DKRPortGame AND DKR_RUNTIME_BUILD_RT64 AND NOT APPLE)
     set(DKR_PRESENTATION_PROBE_SOURCES ${DKR_GAME_SOURCES})
     list(REMOVE_ITEM DKR_PRESENTATION_PROBE_SOURCES src/game/game_main.cpp)
     add_executable(DKRExperimentalGpuProbe EXCLUDE_FROM_ALL
@@ -1145,6 +1179,8 @@ if(TARGET DKRPortGame AND DKR_RUNTIME_BUILD_RT64 AND NOT ANDROID AND NOT APPLE)
         # not just the driver. Audio/input/Pak/policy changes must reject mixed
         # packages too. Content hashes (not absolute paths) remain cross-OS.
         file(GLOB DKR_OWNED_CLOSURE_ID_FILES CONFIGURE_DEPENDS
+            "${CMAKE_CURRENT_LIST_DIR}/src/game/runtime_legacy_mods.cpp" "${CMAKE_CURRENT_LIST_DIR}/src/game/runtime_legacy_mods.hpp"
+            "${CMAKE_CURRENT_LIST_DIR}/src/game/mods/*.cpp" "${CMAKE_CURRENT_LIST_DIR}/src/game/mods/*.hpp" "${CMAKE_CURRENT_LIST_DIR}/src/game/mods/*.h"
             "${CMAKE_CURRENT_LIST_DIR}/tests/replay_probe/*.c"
             "${CMAKE_CURRENT_LIST_DIR}/tests/replay_probe/*.cpp"
             "${CMAKE_CURRENT_LIST_DIR}/tests/replay_probe/*.h"
@@ -1155,7 +1191,7 @@ if(TARGET DKRPortGame AND DKR_RUNTIME_BUILD_RT64 AND NOT ANDROID AND NOT APPLE)
             "${DKR_EXPERIMENTAL_OWNED_GENERATED}/*.c"
             "${DKR_EXPERIMENTAL_OWNED_GENERATED}/*.cpp"
             "${DKR_EXPERIMENTAL_OWNED_GENERATED}/*.h")
-        foreach(DKR_OWNED_ID_FILE
+        set(DKR_OWNED_CONTRACT_FILES
                 "${DKR_EXPERIMENTAL_OWNED_GENERATED}/manifest.json"
                 ${DKR_INTERACTIVE_SOURCE} tests/replay_probe/probe_driver.cpp
                 tests/replay_probe/probe_bridge.h tests/replay_probe/probe_native.c
@@ -1171,12 +1207,8 @@ if(TARGET DKRPortGame AND DKR_RUNTIME_BUILD_RT64 AND NOT ANDROID AND NOT APPLE)
                 src/game/save_manager.cpp src/game/save_manager.hpp
                 src/game/save_storage.hpp src/game/runtime_save_routing.cpp src/game/runtime_save_routing.hpp
                 ${DKR_OWNED_CLOSURE_ID_FILES})
-            get_filename_component(DKR_OWNED_ID_FILE "${DKR_OWNED_ID_FILE}" ABSOLUTE
-                BASE_DIR "${CMAKE_CURRENT_LIST_DIR}")
-            file(SHA256 "${DKR_OWNED_ID_FILE}" DKR_OWNED_ID_PART)
-            string(APPEND DKR_OWNED_ID_PARTS "${DKR_OWNED_ID_PART}|")
-            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${DKR_OWNED_ID_FILE}")
-        endforeach()
+        dkr_owned_content_identity(DKR_OWNED_ID_PARTS "${CMAKE_CURRENT_LIST_DIR}"
+            "${DKR_EXPERIMENTAL_OWNED_GENERATED}" ${DKR_OWNED_CONTRACT_FILES})
         string(SHA256 DKR_OWNED_BUILD_ID "${DKR_OWNED_ID_PARTS}|v77:${DKR_OWNED_BUILD_ID_V77}|v80:${DKR_OWNED_BUILD_ID_V80}")
         message(STATUS "Owned rollback contract: ${DKR_OWNED_BUILD_ID}")
         if(DKR_EXPERIMENTAL_RACE_TEST)
@@ -1264,6 +1296,21 @@ foreach(config Debug Release RelWithDebInfo MinSizeRel)
 endforeach()
 
 if(BUILD_TESTING)
+    add_executable(DKRAndroidPresentationPolicyTests tests/android_presentation_policy_tests.cpp)
+    target_compile_features(DKRAndroidPresentationPolicyTests PRIVATE cxx_std_20)
+    target_include_directories(DKRAndroidPresentationPolicyTests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/src/game")
+    add_test(NAME DKRAndroidPresentationPolicy COMMAND DKRAndroidPresentationPolicyTests)
+    if(DKR_RUNTIME_BUILD_RT64 AND NOT ANDROID)
+        add_executable(DKRAndroidImGuiRotationTests tests/android_imgui_rotation_tests.cpp
+            "${DKR_RT64_SOURCE}/src/contrib/imgui/imgui.cpp"
+            "${DKR_RT64_SOURCE}/src/contrib/imgui/imgui_draw.cpp"
+            "${DKR_RT64_SOURCE}/src/contrib/imgui/imgui_tables.cpp"
+            "${DKR_RT64_SOURCE}/src/contrib/imgui/imgui_widgets.cpp")
+        target_compile_features(DKRAndroidImGuiRotationTests PRIVATE cxx_std_20)
+        target_include_directories(DKRAndroidImGuiRotationTests PRIVATE
+            "${CMAKE_CURRENT_LIST_DIR}/src/game" "${DKR_RT64_SOURCE}/src/contrib/imgui")
+        add_test(NAME DKRAndroidImGuiRotation COMMAND DKRAndroidImGuiRotationTests)
+    endif()
     add_executable(DKRRenderIdlePolicyTests tests/render_idle_policy_tests.cpp)
     add_executable(DKRRenderPassPolicyTests tests/render_pass_policy_tests.cpp)
     target_compile_features(DKRRenderPassPolicyTests PRIVATE cxx_std_20)
@@ -1689,6 +1736,32 @@ if(BUILD_TESTING)
     add_executable(DKRNetplayInputLatencyTests tests/netplay_input_latency_tests.cpp)
     target_link_libraries(DKRNetplayInputLatencyTests PRIVATE DKRNetplayCore)
     add_test(NAME DKRNetplayInputLatency COMMAND DKRNetplayInputLatencyTests)
+    add_executable(DKRLegacyMemorySafetyTests tests/legacy_memory_safety_tests.cpp)
+    add_test(NAME DKRLegacyMemorySafety COMMAND DKRLegacyMemorySafetyTests)
+    set(DKR_MEMORY_FIXTURE_ROOT "" CACHE PATH "Fresh one-function-per-file Patch Pipeline fixtures for headless crash regression")
+    if(DKR_MEMORY_FIXTURE_ROOT)
+        foreach(revision IN ITEMS 77 80)
+            set(memory_guest_sources "tests/legacy_memory_guest_tests.cpp")
+            foreach(fn IN ITEMS mempool_init_main mempool_init mempool_alloc mempool_alloc_safe
+                    mempool_slot_find mempool_slot_assign mempool_slot_clear mempool_get_pool mempool_free
+                    mempool_free_addr mempool_free_queue mempool_free_queue_clear mempool_free_timer
+                    transition_begin transition_end transition_update transition_fullscreen_start
+                    transition_init_shape transition_init_circle transition_init_blank
+                    transition_update_fullscreen transition_update_shape transition_update_circle transition_update_blank)
+                list(APPEND memory_guest_sources "${DKR_MEMORY_FIXTURE_ROOT}/fixtures-v${revision}/${fn}.c")
+            endforeach()
+            add_executable(DKRLegacyMemoryGuest${revision}Tests ${memory_guest_sources})
+            target_compile_definitions(DKRLegacyMemoryGuest${revision}Tests PRIVATE DKR_MEMORY_TEST_REVISION=${revision})
+            target_include_directories(DKRLegacyMemoryGuest${revision}Tests PRIVATE
+                "${DKR_MEMORY_FIXTURE_ROOT}/fixtures-v${revision}"
+                "${DKRPORT_ROOT}/extern/n64-modern-runtime/N64Recomp/include")
+            if(NOT MSVC)
+                target_compile_options(DKRLegacyMemoryGuest${revision}Tests PRIVATE -Wno-implicit-function-declaration)
+                target_link_libraries(DKRLegacyMemoryGuest${revision}Tests PRIVATE m)
+            endif()
+            add_test(NAME DKRLegacyMemoryGuest${revision} COMMAND DKRLegacyMemoryGuest${revision}Tests)
+        endforeach()
+    endif()
     if(TARGET DKRLegacyGuestIO)
         add_executable(DKRLegacyCacheCapacityTests tests/legacy_cache_capacity_tests.cpp)
         target_link_libraries(DKRLegacyCacheCapacityTests PRIVATE DKRLegacyModCore)
@@ -2148,6 +2221,14 @@ if(BUILD_TESTING)
         tests/custom_music_sequence_tests.cpp
         src/game/custom_music_sequence.cpp
     )
+    add_executable(DKRAudioEventQueueTests tests/audio_event_queue_tests.cpp)
+    target_include_directories(DKRAudioEventQueueTests PRIVATE src/game "${DKR_RECOMP_SOURCE}/include")
+    if(MSVC)
+        target_compile_options(DKRAudioEventQueueTests PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(DKRAudioEventQueueTests PRIVATE -UNDEBUG)
+    endif()
+    add_test(NAME DKRAudioEventQueue COMMAND DKRAudioEventQueueTests)
     target_include_directories(DKRCustomMusicSequenceTests PRIVATE
         "${CMAKE_CURRENT_LIST_DIR}/src/game"
     )

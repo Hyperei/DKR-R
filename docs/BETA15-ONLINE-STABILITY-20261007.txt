@@ -1,0 +1,34 @@
+DKR-R v1.0.5 beta 15 - online stability correction (2026-10-07)
+
+Install the complete new package in a fresh folder on EVERY peer. Do not copy
+only DKR-R.exe: the bundled importer and transfer protocol changed. Existing
+offline saves/mod selections are retained; downloaded mods still remain usable
+offline without the host overriding local enablement.
+
+Corrections:
+- Native shutdown now retires running, paused and never-started guest threads
+  before freeing RDRAM or capturing the rollback bootstrap. This unwinds custom
+  asset-read leases. The scheduler's native queue is reset only after retirement.
+- Corrected linked-list removal of a non-head guest thread. Failed startup no
+  longer attempts a mod checkpoint or reports a secondary empty-bootstrap error.
+- Receiver-aware 256 KiB rolling transfer credits, with a bounded 512 KiB staging
+  queue, explicit missing-offset retries and per-recipient fair upload bursts.
+  Download consent, payload SHA-256 checks and host authority are unchanged.
+- Two missing patches can share verified ROM sources in one bounded importer.
+  Individual completed receipts are cached independently. A limited batch falls
+  back to ordinary per-item limits; importer memory/CPU limits were not raised.
+- Matching installed offline assets are referenced, not reconstructed/copied.
+  Immutable runtime assets can be reused across joins/retries under a memory-aware
+  retention budget (desktop ceiling 512 MiB; Android ceiling 256 MiB), with weak
+  reuse for resources already held by a live lobby. Mutable worlds remain separate.
+- Up to 20 historical runtime logs are kept in logs/history (128 MiB budget),
+  alongside runtime.log and runtime-previous.log. Support exports include bounded
+  startup/tail snapshots. Review paths/session details before sharing diagnostics.
+- Added bounded phase, retry, credit and batch timing diagnostics.
+
+Android package build code: 1050030.
+No changes to image quality, online backend choices or offline save ownership.
+Native runtime changes use checked staged Patch Pipeline copies, not submodules.
+
+Verification is headless. These checks cannot certify Internet/driver behaviour
+or promise no crashes; real multi-machine playtesting remains necessary.

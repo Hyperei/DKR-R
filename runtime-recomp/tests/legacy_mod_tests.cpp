@@ -166,26 +166,32 @@ void process_tests(const std::filesystem::path& executable) {
     rejects([&]{run_worker(temporary.path/"absent-program",temporary.path/"request",{});});
 }
 void audio_tests() {
-    Bytes bank(12+72);put16(bank,0,0x5331);put16(bank,2,1);
-    put32(bank,4,12);put32(bank,8,72);
+    constexpr unsigned length=80;
+    Bytes bank(12+length);put16(bank,0,0x5331);put16(bank,2,1);
+    put32(bank,4,12);put32(bank,8,length);
     put32(bank,12,68);put32(bank,12+64,480);
-    bank[12+68]=0;bank[12+69]=0xff;bank[12+70]=0x2f;bank[12+71]=0;
+    // A real compact-MIDI note, its duration, then end-of-track. A silent
+    // placeholder is no longer valid as replacement music after safety checks.
+    const std::uint8_t events[]{0,0x90,60,100,60,60,0xff,0x2f};
+    std::copy(std::begin(events),std::end(events),bank.begin()+12+68);
     const auto inspected=inspect_sequence_directory(bank);
-    require(inspected.records.size()==1 && inspected.maximum_loaded_length==72);
-    require(build_sequence_bank(bank,{},72)==bank);
+    require(inspected.records.size()==1 && inspected.maximum_loaded_length==length);
+    require(build_sequence_bank(bank,{},length)==bank);
     auto replacement=Bytes(bank.begin()+12,bank.end());replacement[68]=1;
-    const auto replaced=build_sequence_bank(bank,{{0,replacement}},72);
+    const auto replaced=build_sequence_bank(bank,{{0,replacement}},length);
     require(inspect_sequence_directory(replaced).records[0].digest!=inspected.records[0].digest);
-    rejects([&]{build_sequence_bank(bank,{{1,replacement}},72);});
-    rejects([&]{build_sequence_bank(bank,{{0,replacement}},71);});
+    rejects([&]{build_sequence_bank(bank,{{1,replacement}},length);});
+    rejects([&]{build_sequence_bank(bank,{{0,replacement}},length-1);});
+    auto silent=replacement;silent[68]=0;silent[69]=0xff;silent[70]=0x2f;
+    rejects([&]{build_sequence_bank(bank,{{0,silent}},length);});
     auto odd=replacement;odd.push_back(0);
-    rejects([&]{build_sequence_bank(bank,{{0,odd}},73);});
+    rejects([&]{build_sequence_bank(bank,{{0,odd}},length+1);});
     auto bad=bank;put16(bad,0,0);rejects([&]{inspect_sequence_directory(bad);});
     bad=bank;put16(bad,2,257);rejects([&]{inspect_sequence_directory(bad);});
     bad=bank;put32(bad,4,8);rejects([&]{inspect_sequence_directory(bad);});
     bad=bank;put32(bad,4,0xfffffff0);rejects([&]{inspect_sequence_directory(bad);});
     bad=bank;put32(bad,8,0xffffffff);rejects([&]{inspect_sequence_directory(bad);});
-    bad=bank;put32(bad,12,72);rejects([&]{inspect_sequence_directory(bad);});
+    bad=bank;put32(bad,12,length);rejects([&]{inspect_sequence_directory(bad);});
     bad=bank;put32(bad,12+64,0);rejects([&]{inspect_sequence_directory(bad);});
     for(std::size_t size=0;size<bank.size();++size)
         rejects([&]{inspect_sequence_directory(View(bank).first(size));});

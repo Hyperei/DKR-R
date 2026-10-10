@@ -1,0 +1,45 @@
+DKR-R 1.0.5 Beta 15 Playtest 14 - online mod admission rebuild
+
+Install the entire archive into a NEW folder. Do not update only DKR-R.exe:
+libexec/dkr-r/DKR-R-ModWorker.exe is a required part of the Windows release.
+All racers must use this rebuild; it adds mod-admission progress messages.
+Linux users should replace the AppImage as a whole.
+
+Client downloads
+- Download & Join offers "Keep in Mods/Hacks for offline play" (on by default).
+- Only completely verified, reconstructed mods are copied into the local library.
+- Newly kept mods are OFF. Enable them in My Mods for offline use after leaving
+  the lobby. Existing copies retain their previous activation/visibility.
+- Identical content is reused. Conflicting existing content is never overwritten.
+- Saving an offline copy is optional: a disk/catalogue error reports a warning
+  but does not prevent admission using the verified session cache.
+- Offline ROMs and saves are not copied, replaced, activated or removed.
+
+Admission diagnostics
+- The packaged worker is checked before downloading, and before reconstruction.
+- A stale/missing worker produces an explicit full-package installation message
+  instead of failing at "Mod 1" with "Unsupported legacy worker operation".
+- Both packaging scripts check the staged worker's online preparation capability.
+
+Host visibility
+- Each approved joining racer has their own acknowledged download byte progress.
+- The host also sees consent, reconstruction, verification and offline-copy stages.
+- 100% downloaded is not "ready": admission still requires validated runtime
+  resources and the existing mod/save/session gates.
+- Progress is rate-limited display telemetry. It never admits a racer and cannot
+  change the host's selected mods, the gameplay backend or simulation timing.
+
+Qualification uses isolated, headless checks. Real remote Quick Join play and
+visual presentation remain for the playtesting team; no game windows are opened.
+
+Modded game-start correction (2026-10-06)
+- Host and client logs showed successful save/checkpoint admission, followed by
+  "owned-mod-service-failure" when the INTRO loaded the level-header table.
+- That table is legitimately reloaded after the display heaps already exist.
+  The adapter now accepts the reload only when all four display-list budgets
+  match their frozen boot contract. It never resizes an existing allocation.
+- Missing/mismatched budgets and unsafe late growth remain rejected.
+- Rollback failures now include the underlying native mod/asset error in the
+  runtime log, rather than reporting only the generic service-failure label.
+- This does not alter mod downloads, offline retention, save isolation, lobby
+  admission, rollback prediction settings or the stable online backends.
