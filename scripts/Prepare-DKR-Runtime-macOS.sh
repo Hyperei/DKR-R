@@ -134,14 +134,20 @@ target, root = (pathlib.Path(p).resolve() for p in sys.argv[1:])
 blocked = [pathlib.Path.home().resolve(), root, root / "extern",
            root / "runtime-recomp" / "RecompiledFuncs",
            root / "runtime-recomp" / "RecompiledPatches"]
-if target == pathlib.Path(target.anchor) or any(
-        target == p or target in p.parents for p in blocked) or any(
-        p == target or p in target.parents for p in blocked[2:]):
-    raise SystemExit("--output must be a dedicated generated-build directory")
+stages = [target] + [(root / "build" / "decomp" / ("v" + str(r))).resolve()
+                     for r in (77, 80)]
+for stage in stages:
+    if stage == pathlib.Path(stage.anchor) or any(
+            stage == p or stage in p.parents for p in blocked) or any(
+            p == stage or p in stage.parents for p in blocked[2:]):
+        raise SystemExit("output and decomp stages must be dedicated build directories")
 for revision in (77, 80):
     child = target / ("v" + str(revision))
     if child.is_symlink():
         raise SystemExit("refusing symlinked generated revision: " + str(child))
+    tree = root / "build" / "decomp" / ("v" + str(revision))
+    if tree.is_symlink():
+        raise SystemExit("refusing symlinked decomp stage: " + str(tree))
 print(target)
 PY
 )" || fail "Unsafe generated output directory."
