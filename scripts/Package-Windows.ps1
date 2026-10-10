@@ -49,6 +49,9 @@ if (Test-Path -LiteralPath (Join-Path $resolvedBuild 'CMakeCache.txt')) {
     }
 }
 $zip = "$stage.zip"
+if ($Version -eq '1.0.5' -and $SkipRuntimeTests) {
+    throw 'Public release packaging requires all runtime checks; SkipRuntimeTests is beta-only.'
+}
 $deniedExtensions = @('.z64', '.v64', '.n64', '.eep', '.mpk', '.sra', '.fla', '.o2r', '.otr', '.dkr-probe', '.dkr-bootstrap', '.dkr-component')
 $runtimeFiles = @('DKR-R.exe', 'SDL2.dll', 'dxcompiler.dll', 'dxil.dll')
 $experimentalRaceTest = (Test-Path -LiteralPath (Join-Path $resolvedBuild 'CMakeCache.txt')) -and

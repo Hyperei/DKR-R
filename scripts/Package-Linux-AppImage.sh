@@ -56,6 +56,9 @@ SKIP_RUNTIME_TESTS="${DKR_SKIP_RUNTIME_TESTS:-0}"
 [[ "${SKIP_RUNTIME_TESTS}" == 0 || "${SKIP_RUNTIME_TESTS}" == 1 ]] || {
   echo 'DKR_SKIP_RUNTIME_TESTS must be 0 or 1' >&2; exit 1;
 }
+if [[ "${VERSION}" == 1.0.5 && "${SKIP_RUNTIME_TESTS}" != 0 ]]; then
+  echo 'Public release packaging requires all runtime checks.' >&2; exit 1
+fi
 ARCH="${DKR_LINUX_ARCH:-x86_64}"
 case "${ARCH}" in
   x86_64) ELF_MACHINE='Advanced Micro Devices X86-64' ;;
