@@ -53,6 +53,10 @@ New-Item -ItemType Directory $notices | Out-Null
 foreach ($file in @('LICENSE.md','THIRD_PARTY.md','runtime-recomp/COPYING-NOTICE.md')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot $file) -Destination $notices
 }
+if ((Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw).Trim() -eq '1.0.5') {
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/PUBLIC-1.0.5-NOTES.txt') -Destination $notices
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging/RELEASE-README.md') -Destination (Join-Path $notices 'README.md')
+}
 if (Test-Path -LiteralPath (Join-Path $projectRoot 'docs/ENHANCED-WATER-BETA15.txt')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/ENHANCED-WATER-BETA15.txt') -Destination $notices
 }
