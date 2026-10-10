@@ -66,6 +66,14 @@
       "purpose": "MPL-2.0 WebRTC data channels and WebSocket signaling for optional Quick Join transport"
     },
     {
+      "name": "usrsctp",
+      "repository": "https://github.com/paullouisageneau/usrsctp.git",
+      "commit": "fec583d54493f879d2ae44a743423bf8a04371ab",
+      "destination": "extern/libdatachannel/deps/usrsctp",
+      "managedBy": "libdatachannel git submodule",
+      "purpose": "SCTP stack used by libdatachannel; fixes a use-after-free when completing partially delivered unordered messages"
+    },
+    {
       "name": "mbedtls",
       "repository": "https://github.com/Mbed-TLS/mbedtls.git",
       "commit": "c765c831e5c2a0971410692f92f7a81d6ec65ec2",
