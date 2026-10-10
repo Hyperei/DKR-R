@@ -104,6 +104,9 @@ With Xcode setup complete and [Homebrew](https://brew.sh/) installed:
 
 This installs tools, prepares both ROMs, builds and tests the Metal runtime.
 Launch with `./Run-macOS.sh`. Playing requires only one supported ROM.
+Add `--package` to also create a self-contained app ZIP in `dist/` (ad-hoc
+signed, not notarized). It bundles the Homebrew SDL libraries, which are built
+for the host's macOS, so the ZIP runs on that macOS version or newer.
 
 ## Release safety
 

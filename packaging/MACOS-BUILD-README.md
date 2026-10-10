@@ -1,3 +1,3 @@
 # macOS builds
 
-See `docs/BUILDING.md` for setup, building and playing. Release packaging is not provided.
+See `docs/BUILDING.md` for setup, building, playing and the optional `--package` flag.

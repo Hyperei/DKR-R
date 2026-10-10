@@ -10,6 +10,7 @@ set -euo pipefail
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 prepare_args=()
 jobs="${CMAKE_BUILD_PARALLEL_LEVEL:-}"
+package=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --rom-v77 | --rom-v80 | --jobs)
@@ -22,6 +23,7 @@ while [[ $# -gt 0 ]]; do
     shift
     ;;
   --skip-deps | --force) prepare_args+=("$1") ;;
+  --package) package=1 ;;
   -h | --help)
     cat <<'EOF'
 Usage: ./Build-macOS.sh --rom-v77 PATH --rom-v80 PATH [options]
@@ -32,6 +34,8 @@ Prepare, build and test DKR-R on macOS.
   --jobs N        Limit parallel build jobs (default: host CPU count)
   --skip-deps     Skip Homebrew installation
   --force         Regenerate payloads even when inputs are unchanged
+  --package       Also create a self-contained, ad-hoc-signed app ZIP in dist/
+                  (runs on this Mac's macOS version or newer: Homebrew SDL sets the floor)
   -h, --help      Show this help
 
 Prerequisites: Xcode and Homebrew. Quote ROM paths with spaces.
@@ -138,3 +142,6 @@ cleanup() { rm -rf -- "${pak_test}"; }
 trap cleanup EXIT
 "${executable}" --self-test-pak "${pak_test}"
 printf '\nBuild and tests passed. Launch with ./Run-macOS.sh.\n'
+if [[ "$package" -eq 1 ]]; then
+  python3 "${project_root}/scripts/package_macos.py" "${build_dir}" "${version}"
+fi
