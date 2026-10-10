@@ -10,7 +10,7 @@ than being allowed to address host memory. Presentation groups attach stable
 semantic identities to moving objects, vehicle parts, billboards, shadows and
 animated surfaces so RT64 can interpolate between owned workload endpoints.
 
-The decoder reads an immutable 8 MiB task snapshot. It may use the snapshot's
+The decoder reads an owned 8 MiB task snapshot. It may use the snapshot's
 reserved translation workspace, but it never writes renderer data back to live
 simulation RDRAM. Accurate mode bypasses Modern semantic identities and retains
 the original display cadence.

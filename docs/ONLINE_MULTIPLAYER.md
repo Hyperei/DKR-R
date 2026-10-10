@@ -1,268 +1,168 @@
-# Online multiplayer
+# DKR-R Online
 
-DKR-R supports two to four players through a native deterministic input-sync
-path. Player 1 is always the host and approved guests are assigned Players 2-4.
-Local multiplayer remains unchanged. Online play is player-hosted: DKR-R does
-not require an account or gameplay relay. Quick Join uses a public PeerJS
-rendezvous only to exchange WebRTC connection descriptions; gameplay, input
-and synchronized save data remain on the authenticated peer connection.
+Race with friends through Quick Join or friend invites. No separate launcher,
+account or manual port forwarding is needed. Player 1 is the host; approved
+clients become Players 2–4. Races and minigames support 2–4 racers, and Adventure
+supports two.
 
-## Quick Join
+Use the same complete DKR-R package on every machine, including its private
+workers. The same original ROM revision, compatible build, gameplay rules and
+session mod identity must be admitted before the game starts.
 
-Create a lobby and share the displayed five-character
-code. A guest enters that code and selects **REQUEST TO JOIN**. The rendezvous
-service introduces the two copies of DKR-R, WebRTC negotiates the direct route,
-and the existing encrypted admission request still waits for explicit host
-approval. No account, adapter selection or port forwarding is required.
+## Starting a lobby
 
-Quick Join does not use a gameplay server or relay. Both players' public IP
-addresses may be visible to each other as part of direct peer routing. Some
-carrier-grade, enterprise or symmetric NATs cannot establish a route using the
-bundled STUN configuration. DKR-R deliberately does not expose a manual
-address, adapter or port configuration fallback. Treat the code as a private
-invitation. It expires when the lobby closes and no later than six hours after
-creation.
+1. Select your original ROM and local input profile. The profile supplies your
+   controls; it is independent of the online player number.
+2. Enable the mods you want before hosting. Open **DKR-R Online → Host settings**
+   and choose the backend, menu ownership, maximum racers and input settings.
+   These rules are frozen when the lobby is created.
+3. In **Host / Quick Join**, name the lobby, choose the Online Adventure save
+   source and select **CREATE LOBBY**.
+4. Share the five-character code, or invite authenticated online friends.
+   Guests use **REQUEST TO JOIN** or accept the invitation.
+5. Review/approve pending guests. If mods are required, the client must consent
+   and finish verified preparation before admission completes.
+6. Everyone selects **READY TO RACE**. The host starts the synchronised countdown.
+7. DKR-R boots through the normal game flow. Initial-state and scene barriers
+   release only when the connected racers are ready.
 
-## Lobby workflow
+By default, the host guides shared menus until Player Select. Every occupied
+online slot then receives the right native player, without asking clients to
+remap their physical controller to another local port.
 
-Lobby admission uses the reliable Quick Join control lane. The guest repeats
-its authenticated request until the host acknowledges it, and the host repeats
-the pending-approval acknowledgement until the request is accepted or declined.
-If the host cannot be reached, DKR-R stops the attempt with a clear Quick Join
-error instead of remaining on `Connecting` forever.
+There is no joining a match after loading starts. If a racer leaves or an
+unrecoverable connection/state error occurs, the match ends and surviving
+copies return to the launcher/lobby with a reason. This deliberately avoids
+continuing with a missing input owner.
 
-The launcher keeps the common path on **QUICK JOIN**: choose the local control
-profile, create a lobby or enter a friend's code. Less common host options live
-under **HOST SETTINGS**. Networking and controller-input overlay controls have
-their own **OVERLAYS** tab and remain editable from the in-game settings
-overlay. During a session, **LOBBY** contains approvals, the starting grid and
-ready controls, while detailed telemetry is isolated under **CONNECTION**.
+## Choosing a backend
 
-1. Every player selects the same supported Game Pak revision, gameplay
-   settings and Magic Codes. Player 1's validated Adventure save becomes the
-   session save.
-   Each machine also selects the local controller/keyboard profile that will
-   author its racer. That physical profile is independent from the network
-   player number assigned by the host.
-2. The host sets the lobby rules and selects **CREATE QUICK JOIN LOBBY**.
-3. Guests enter the five-character code and select **REQUEST TO JOIN**.
-4. A request receives no player slot or lobby state until the host explicitly
-   selects **APPROVE**. The host may decline, block for the session, lock the
-   lobby, remove a guest, or revoke and replace the invitation.
-5. Every admitted player selects **READY TO RACE**. Player 1 can start only
-   when at least two compatible players are present and everyone is ready.
-6. Player 1 begins one host-authoritative five-second countdown. Every peer
-   displays the same centred **DKR-R ONLINE STARTING IN...** notification. The
-   first four ticks use the same short N64-style tone and the final tick uses
-   a higher tone. Duplicate or late control packets cannot replay a tone or
-   launch the game twice.
-7. DKR-R launches on every machine and holds the synchronized start until all
-   connected players report the same canonical cold-boot checkpoint. The game
-   does not execute simulation frame 0 if any peer boots into different state.
-8. By default Player 1 guides shared menus until character select. The host can
-   choose a different shared-menu ownership policy before creating the lobby.
-9. At character select, DKR-R creates one native game player for every occupied
-   lobby slot. The host remains Player 1 and approved guests remain Players 2-4.
-   Each machine's selected physical controller is routed automatically to its
-   assigned online player; guests do not need to remap their controller to a
-   different local port.
+| Host setting | Behaviour |
+|---|---|
+| Auto | Default for fresh settings; selects Experimental Rollback. It is a preference, not a fourth network protocol or automatic mid-match fallback. |
+| Experimental rollback | Predicts missing remote inputs within a bounded window, restores owned game checkpoints and replays when late actual input differs. |
+| Host prediction (legacy Rollback) | The older host-authoritative prediction path. Published commits are not rewound; portable host state repairs replicas. |
+| Strict input sync (Lockstep) | Waits for the required input set before advancing. No gameplay prediction/replay; latency and jitter can cause waits. |
 
-### Two-player Adventure
+Existing explicit saved backend selections remain respected. Change the backend
+before creating the lobby; switching does not happen underneath a running match.
 
-The `JOINTVENTURE` Magic Code keeps the retail game's shared-hub design: the
-hub intentionally has one viewport and one visible racer. Standard races and
-minigames use both gameplay slots, but boss races retain the original game's
-single viewport, one human racer and one boss. DKR-R keeps both authenticated
-online input slots stable and lets the game's native controller-ID table select
-which player owns the shared hub or boss racer. Online player identities never
-swap. Inputs are neutralized across hub/race transition barriers, preventing a
-held direction or button from leaking into the newly assigned owner. Boss
-introductions may resolve through a separate cutscene map; the synchronized
-handoff tracks that requested destination separately from the resolved scene
-used by the gameplay barrier.
+Experimental Rollback is genuine gameplay rollback, not the older mode renamed.
+It owns replay-safe guest/native state and keeps renderer output, confirmed
+audio and persistence outside speculative replay. It supports admitted US
+v1.0/v1.1 payloads and synchronised session mods in the integrated builds.
+Its platform gates and real-world qualification still matter:
+[platform support](PLATFORMS.md). It remains experimental.
 
-Quick Join codes expire after six hours and become useless when the host closes the
-lobby. **REKEY CODE** or **REVOKE AND REPLACE** invalidates the current admission capability immediately
-without disconnecting already approved racers. Treat the code as a secret.
+## Delay, prediction and stutters
 
-## Inviting friends
+Use **Automatic input delay** as a starting point, particularly across longer
+distances. For Experimental Rollback the UI recommends a 10-frame prediction
+window for distant players; the selectable window is 2–20 frames.
+A two-frame window may be shorter than the connection can deliver.
 
-When a Quick Join lobby is open, Player 1 can select **INVITE FRIENDS** from
-the active lobby or its dedicated host tab. Only online, unblocked friends
-whose authenticated presence channel is ready are offered. The host can send
-one invitation per friend, see whether it was delivered, accepted or declined,
-and cancel it before it is used.
+A bigger window allows more prediction, but also increases correction/replay
+work. It does not remove latency or make a struggling machine fast. Manual
+delay is a next-lobby rule, not a live fix for an already frozen session.
 
-The invited racer receives the same bottom-left notification style used for
-friend-online alerts. The invitation also remains in **OPEN LOBBIES** until it
-is accepted, declined, cancelled or expires, so dismissing the notification
-does not lose it. **ACCEPT AND JOIN** performs the normal build, ROM, save and
-settings compatibility checks before joining. An accepted friend invitation
-uses a random, single-use admission capability delivered only over that
-friend's authenticated encrypted channel; replaying it falls back to normal
-host approval. Invitations expire after five minutes and are invalidated if
-the host closes, locks or rekeys the lobby. Manual five-character Quick Join
-continues to require explicit host approval and is unchanged.
+“Waiting for Player Inputs” can mean the bounded prediction window is exhausted.
+Loading/scene/finish barriers can also wait for peer readiness or confirmation.
+Neither mode is allowed to advance indefinitely on guessed input or discard
+actual controls just to keep a frame counter moving.
 
-The **ONLINE PROFILE** privacy controls are stored with the local friend
-profile. **APPEAR OFFLINE** keeps the secure presence route available while
-reporting the racer as offline and withholding any hosted-lobby advertisement;
-manual Quick Join remains available. **ALLOW FRIEND LOBBY INVITES** can be
-disabled independently. New one-click invitations are then declined at the
-authenticated friend-service boundary and never enter the notification or
-Open Lobbies queues. Disabling either privacy option does not delete friends,
-Friend Codes or profile identity.
+Compare offline performance with the same scene and graphics settings first.
+Use the detailed network overlay to distinguish input waits, replay work,
+loading and presentation drops. When reporting a problem, send host and client
+logs from the same attempt, the backend, player count, settings and scene.
+See [troubleshooting](TROUBLESHOOTING.md).
 
-## Compatibility checks
+## The host is the Mod Master
 
-Joining fails closed unless all peers match on:
+The host's enabled legacy tracks, characters and Track Lab courses form an
+immutable lobby manifest. Clients see the required set and consent before any
+missing content is downloaded or activated for that session.
 
-- DKR-R release and netplay protocol;
-- CPU architecture and deterministic floating-point mode;
-- normalised Game Pak revision and hash;
-- recompilation Patch Pipeline policy;
-- simulation rate, gameplay-affecting settings and Magic Codes;
-- a checksum-valid Adventure save, synchronized from Player 1 after approval.
+Matching installed offline mods are reused even when locally hidden or disabled,
+provided their source hashes, prepared assets, behaviour contracts and required
+revision match. Verified caches are also reusable. Only missing payloads need
+transfer, and completed preparation can survive retries.
 
-The save comparison uses a canonical checksum-valid representation. Equivalent
-retail erased slots and Save Builder empty slots therefore compare identically.
-If a 512-byte EEPROM contains invalid DKR checksums, DKR-R preserves an exact
-backup and rebuilds only the derived checksum bytes before it is used. DKR-R
-never transfers a Game Pak. If a guest's Adventure data differs, host approval
-transfers Player 1's canonical 512-byte EEPROM over the authenticated peer
-channel. The guest's existing EEPROM is backed up before an atomic,
-checksum-validated install; no save data is sent to any third party.
+The host and client can see download/preparation progress. Downloading is only
+one stage: source decoding, reconstruction against the client's own ROM and
+verification must finish before readying. Declining or failing preparation does
+not partially admit a racer or fall back to different behaviour.
 
-## Transport and synchronization
+Verified received content is retained as inactive offline library entries where
+applicable. It does not copy the host's activation/visibility over your choices.
+No ROM, save collection or user-supplied executable is distributed.
+Only share patches/artwork you have permission to distribute.
 
-Initial admission uses an invitation capability plus ephemeral X25519 key
-agreement. Each approved peer then has its own authenticated
-XChaCha20-Poly1305 session channel; the host does not reuse one symmetric
-gameplay key for every guest. Quick Join carries that protocol over a reliable
-WebRTC data channel protected by DTLS. Invalid, replayed, tampered or
-unapproved traffic is discarded.
+After changing a mod set, close and recreate the lobby. For import formats,
+reviewed adapters and limits, see [custom tracks and characters](LEGACY-MODS-BETA.md).
 
-Ready, load and start state is repeated until observed. Automatic input delay
-derives the complete host-feedback round-trip budget from the slowest measured
-guest, adds jitter/loss headroom, and freezes that value in the launch
-descriptor. That full route matters because an already published Player-1
-commit is immutable. Automatic and manual values are both constrained to the
-same zero-to-nine-frame protocol range.
+## Saves and Adventure
 
-Player 1 is the only race-state authority in both synchronization modes. Five
-times per authored second, Player 1 publishes a compact portable state for a
-future simulation boundary containing the simulation RNG, race lifecycle,
-roster and racer/actor physics fields. A delayed guest installs the newest
-usable complete sample and then resumes the authenticated commit chain. The
-sample retires real frame debt without advancing DKR's 30 Hz authority clock.
-Graphics, audio and other presentation-only state remain local and are not
-copied across machines.
+The host chooses to copy offline Adventure, start fresh or continue previous
+online progress. Copying reads the host's save; it does not replace it.
+Clients install the checksum-validated session EEPROM in separate online
+storage, never into their personal offline Adventure.
 
-The live state stream uses a bounded latest-frame-wins lane. A slow route
-cannot accumulate seconds of obsolete checkpoints; missing fragments are
-requested selectively from a 48-frame retained history that covers twice the
-maximum 24-frame host lead. A damaged or late live sample is disposable and is
-superseded by a later host sample rather than halting the game. Track start,
-synchronized recovery and finish remain separate reliable, exact barriers.
+The route remains held until all runtime/save owners retire. Confirmed rollback
+progress is the only progress persisted; a disconnect cannot turn an online
+save worker into an offline one. Online Controller Paks are also separate.
+See [saves and recovery](SAVES.md).
 
-The host chooses one input synchronization mode before creating the lobby:
+Two-player Adventure keeps the original shared-hub arrangement: a single
+viewport/visible racer in the hub, and shared ownership chosen by the game's
+controller-ID table. Boss/fly-in topology can differ from an ordinary race.
+Online identities remain stable across those transitions; a one-racer scene
+does not mean the second authenticated player has disappeared.
+Three/four-player Adventure is not offered.
 
-- **Rollback** is the default user-facing internet mode. Its active production
-  coordinator is host-authoritative prediction: Player 1 may commit hold-last
-  input within the configured prediction runway, but the measured guest lead
-  remains hard-bounded to 8-24 frames. Player 1 parks briefly at that boundary
-  until the guest clears a three-frame hysteresis band. Late input never rewrites
-  an already published commit; live replicas and explicit shared recovery
-  repair the guest instead.
-- **Lockstep** waits for the authenticated input set selected by Player 1 before
-  every simulation frame. It avoids prediction and replay but directly exposes
-  latency and packet variation as input delay or stalls. It is intended for
-  exceptionally stable, low-latency peer connections.
+## Local settings and presentation
 
-The mode, input delay and prediction window are immutable launch rules and are
-validated by every peer. Gameplay packets use the existing per-peer encrypted
-channels. The retired GekkoNet coordinator is not on the production execution
-path; no second socket, public service or unauthenticated data path is opened.
+Your input profile, renderer settings, texture packs and master volume are local.
+Texture packs need not match the host's cosmetic selection.
 
-Before controller initialization, DKR-R installs the same four-port virtual
-controller topology on every peer. The host is always virtual Player 1 and each
-approved guest is routed to its assigned Player 2-4 slot. Physical input is
-sampled privately, sent only for the peer's assigned slot, and is exposed to
-the game only after the synchronized input set for that simulation frame has
-been confirmed. Later device-discovery or latency polls cannot replace that
-committed frame. A keyboard or controller cannot accidentally author a second
-online player, and the lobby cannot be readied without a usable local input
-source.
+In Experimental Rollback, local scenery retention/view distance currently apply
+to restored eligible billboards, not every actor/mesh. FOV, vehicle LOD and
+other simulation-affecting camera/detail values remain canonical.
+The offline Modern camera is disabled online.
+Individual sound-category mixing is deferred; master volume stays local.
+Saved preferences remain available offline and in the legacy modes.
+See [Graphics](GRAPHICS.md) and [Sound](SOUND.md).
 
-Peers validate a canonical cold-boot checkpoint before simulation frame 0,
-then validate frontend and level-transition checkpoints. At the start of each
-gameplay scene, every peer parks at a shared ready barrier. The barrier is an
-incremental state machine serviced by the normal host loop: it never sleeps on
-the authored game thread, so the renderer, audio device, overlay and network
-worker remain responsive while another racer is loading. The host publishes
-one portable frame-zero gameplay state, waits for every occupied peer to
-install and acknowledge the exact bytes, and only then broadcasts the shared
-resume command. Race-finish and recovery barriers use the same non-blocking
-model. Host pointers and renderer/audio sidecars never enter the portable
-network state. Confirmed-state hashes remain diagnostic:
-an ordinary racer/RNG difference is repaired by the next live Player 1 frame,
-while a guest that cannot install that stream requests the existing explicit
-shared recovery transaction.
+## Friends and privacy
 
-Immediately before post-race code may delete or compact racer objects, both
-modes leave speculative gameplay, publish one final portable Player 1 state,
-wait for every occupied peer to install and acknowledge it, complete a shared
-transition barrier, and retire gameplay recovery. This explicit finish seal
-prevents late rollback from crossing into a menu whose object topology has
-already changed. Rendering, audio output, the launcher and settings overlay
-remain local presentation consumers; they are not streamed.
+**INVITE FRIENDS** offers authenticated online, unblocked friends. The receiver
+gets a notification and an invitation under **OPEN LOBBIES**.
+Invitations expire after five minutes and use a single-use authenticated
+capability; normal code entry still requires host approval.
 
-A prolonged live-state outage parks every peer at a future shared boundary and
-performs one host-authored repair. Missing confirmed input, a failed repair, or
-an in-race disconnect stops the session rather than allowing a divergent race
-to continue. The Online MP page remains responsive so a terminal failure can
-be read and acknowledged. When recording is enabled, confirmed four-player
-inputs are written to `netplay/replays` below the local DKR-R configuration
-directory.
+**APPEAR OFFLINE** hides advertised presence while preserving the secure route
+and manual Quick Join. **ALLOW FRIEND LOBBY INVITES** can be disabled separately.
+Neither deletes the friend list or profile.
 
-Protocol 43 negotiates predictive rollback or lockstep explicitly, carries the live
-Player 1 replica stream, losslessly compresses portable authoritative state,
-supports Quick Join transport bootstrap and the synchronized launch countdown,
-and scopes gameplay packets
-to the active scene epoch. Delayed packets from a retired scene cannot enter
-the next one. The detailed network overlay reports frame debt, pacing, progress
-age, host holds, late inputs, commit repairs, and live-replica request/miss/
-window/decode counts for route diagnosis.
+Treat lobby codes as private invitations. They expire when the lobby closes
+and no later than six hours after creation. Rekey/revoke controls invalidate
+admission capabilities without giving strangers a player slot.
 
-Encrypted traffic is scheduled in independent lanes. Lifecycle and recovery
-control is reliable and bounded; authored input and recovery packets have a
-dedicated real-time lane; recovery checkpoints have a separate non-evicting
-lane; and live replicas use a latest-frame-wins lane. State hashes and lobby
-telemetry cannot displace live racer input. Receive replay protection tracks
-these lanes independently, so a state burst cannot make a delayed but valid
-input packet appear stale.
+## Connection and compatibility
 
-## Quick Join troubleshooting
+Quick Join uses the public PeerJS rendezvous for signalling, then authenticated
+WebRTC peer channels for gameplay. It has no bundled gameplay relay. Restrictive
+NATs, firewalls or mobile networks can prevent direct routing, and peers' public
+addresses may be visible to one another.
 
-- Quick Join does not require an inbound firewall rule, adapter selection or
-  manual port configuration.
-- Verify that both players have internet access and can reach the signaling
-  service, then re-enter the current five-character code.
-- Verify that both players use the same current DKR-R build, supported Game Pak
-  revision and gameplay settings.
-- Carrier-grade, enterprise, symmetric and some mobile NATs may be unable to
-  establish the direct WebRTC peer route. The current release deliberately has
-  no gameplay relay.
+Ephemeral X25519 agreement and per-peer XChaCha20-Poly1305 protect the native
+session protocol; WebRTC adds DTLS transport protection. Invalid, replayed and
+unapproved traffic is rejected. Reliable lifecycle/content traffic is separated
+from latency-sensitive input scheduling.
 
-## Current boundaries
+Admission checks build/protocol, ROM, Patch Pipeline identity, gameplay/Magic
+Codes, mod contracts, save proof, architecture and floating-point policy.
+An ARM64 port does not automatically permit x64/ARM64 mixed sessions.
+Use compatible peers; don't bypass a failed compatibility check.
 
-- No players may join after loading begins.
-- The host ending the session ends it for every guest.
-- There is no spectator, voice-chat, text-chat, matchmaking or public browser.
-- There is no bundled relay and no promise that Quick Join can traverse every
-  NAT or firewall.
-- Quick Join depends on the public PeerJS rendezvous being reachable for the
-  initial connection. An established peer connection does not route gameplay
-  through that service.
-- Cross-architecture sessions remain rejected until deterministic behaviour
-  has passed release certification on those architectures.
+There is no voice/text chat, spectator mode or general public matchmaking
+directory. “Open Lobbies” is not a promise of an unrestricted public browser.

@@ -1,5 +1,10 @@
 # Android quality-preserving scheduling pass — 1050026
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 ## Scope
 
 The user explicitly rejected automatic resolution budgeting: **keep image quality

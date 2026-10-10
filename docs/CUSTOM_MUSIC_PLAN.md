@@ -1,5 +1,10 @@
 # Custom music in the Blender track addon
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 Status: implementation plan, based on the current checkout, 2026-09-23.
 Updated 2026-10-02: recorded music (MP3/WAV) is implemented end to end - see
 "Recorded music" below. It is format- and unit-tested and has been heard in a

@@ -1,4 +1,10 @@
 Experimental Rollback local graphics: restored implementation status
+
+HISTORICAL BUILD RECORD
+The original findings and limits below belong to the named earlier build.
+For current 1.0.5 instructions, use docs/README.md and CHANGELOG.md in the
+source repository. These old results do not qualify later packages.
+
 ===================================================================
 Updated: 4 October 2026. This records the restored source, not a gameplay-
 qualified release. The user's latest request is for a build to test; Playtest 8

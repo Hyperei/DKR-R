@@ -1,5 +1,10 @@
 # v1.0.5 Beta 3 — finish presentation rebuild
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 This is a presentation-only rebuild of Beta 3, not a change to its online
 protocol, simulation, input, saves, shadows, mipmaps, or launcher/window lifecycle.
 Gameplay protocol remains 47. Native visual acceptance is performed by the user.

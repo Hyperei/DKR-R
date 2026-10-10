@@ -1,5 +1,10 @@
 # Online latency candidate — 1.0.5-beta.12-online.1
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 ## Scope and rollback
 
 This is a team-test candidate, not a claim of latency-free Internet play.

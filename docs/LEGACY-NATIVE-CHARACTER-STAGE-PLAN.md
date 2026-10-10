@@ -1,5 +1,10 @@
 # Native-stage custom character selection — revised proposal
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 2026-09-09. Status: approved; private implementation built on Windows/Linux;
 visual/audio qualification pending. See `LEGACY-NATIVE-STAGE-IMPLEMENTATION.md`
 for exact changes, tests, hashes and remaining gates. This supersedes the proposed

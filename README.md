@@ -1,6 +1,6 @@
 # DKR-R — Diddy Kong Racing Recompiled
 
-<img width="1672" height="941" alt="bb1a4a71-c0c0-4803-a31e-377e8f4bbf35" src="https://github.com/user-attachments/assets/c913bee2-029c-4e29-9921-0f6abe7a3bf1" />
+<img width="1672" height="941" alt="Diddy Kong Racing Recompiled" src="https://github.com/user-attachments/assets/c913bee2-029c-4e29-9921-0f6abe7a3bf1" />
 
 <p align="center">
   <a href="https://discord.com/invite/AMWfXdBjNP">
@@ -8,164 +8,149 @@
   </a>
 </p>
 
+DKR-R 1.0.5 is here! There's been a lot going on since the last update.
+We've now got custom tracks and characters, Track Lab integration, texture-pack
+priorities and online mod sharing built into the launcher.
 
-DKR-R 1.0.4 is a cross-platform static recompilation of Diddy Kong Racing for
-Windows and Linux. It runs the original game from a locally selected, legally
-obtained US v1.0 or US Rev A/v1.1 Game Pak image; no ROM or extracted
+DKR-R is a native static recompilation of Diddy Kong Racing. Bring your own
+legally obtained US v1.0 or US Rev A/v1.1 ROM; no game ROM or extracted
 Nintendo/Rare assets are included.
 
-## Version 1 highlights
+## What's new in 1.0.5
 
-- Accurate presentation: original 4:3 composition, 30 FPS cadence, audio,
-  object detail and game behaviour.
-- Modern presentation: widescreen, interpolated unlocked FPS, FOV,
-  extended scenery distance, maximum vehicle detail and anisotropic filtering.
-- Controller-first launcher and transparent in-game settings overlay.
-- Four independent local-player controller assignments and binding profiles,
-  keyboard ownership, quick race restart and two-axis gyro steering.
-- Independent live master, music, effects, vehicle and ambience levels, plus EQ.
-- Save import/export/backups, checksum-safe Save Builder and launch-time Magic Codes.
-- Optional performance overlay, CRT masks and hot-swappable RT64/Rice texture packs.
-- Compact HUD placement controls with original, safe-area and fit-to-viewport
-  modes, plus a global HUD-size control for Modern presentation.
-- Native virtual EEPROM and four independent Controller Paks, available
-  alongside rumble on the same controllers.
-- A privacy-safe support summary with exportable settings/system information,
-  optional diagnostic logging and optional crash dumps.
+- Custom tracks sit below the original worlds in Track Select, with the wooden
+  frames and previews intact. Your original tracks stay where they belong.
+- Custom characters join the original animated Player Select stage. Four are
+  shown at a time; highlight a custom slot and use L/R to browse the rest.
+  Eligible races can also use custom characters for AI racers.
+- Import legacy `.xdelta` patches and ZIPs, or make your own `.dkrmap` tracks
+  with the Blender Track Lab addon. Reviewed behaviour adapters support more
+  than asset replacements, without running arbitrary patched ROM code.
+- Online play supports 2–4 racers, with two-player Adventure. Auto selects
+  Experimental Rollback; Host Prediction and Strict Input Sync remain available.
+- The host chooses the online mod set. Clients can consent to receive missing
+  mods, reuse matching installed content and keep verified downloads for
+  offline play.
+- Multiple texture packs can be enabled together. Lower priority number means
+  higher priority when textures clash.
+- The launcher and in-game overlay share the updated styling. There's a
+  dedicated Textures page, tidier mod cards, duplicate review and bulk source
+  preparation.
+- Modern presentation includes grouped 4:3/Fit to window HUD layouts,
+  interpolation, camera clipping improvements, scenery controls and optional
+  enhanced water with screen-space or experimental hardware reflections.
+- An optional Modern camera and F7 tuning panel have been added for local races.
+- Save ownership is separated between offline, modded and online play. Support
+  tools now retain log history as well as the latest two runtime logs.
+- Performance, audio, model lifetime, water rendering and online preparation
+  have had further fixes. See the [changelog](CHANGELOG.md) for the breakdown.
 
-Game simulation, race timers, AI, input polling and audio remain on the original
-timeline when Modern interpolation is enabled.
+Experimental Rollback and hardware ray tracing are still experimental.
+A public version number does not mean every network, mod or GPU has been
+qualified. The [platform guide](docs/PLATFORMS.md) explains the current coverage.
 
-## Version 1.0.1 highlights
+## Getting started
 
-- Shadows and vehicle props have been fixed and no longer pop in and out, flicker or shrink on random frames.
-- Extended Controller compatibility! SDL2 and SDL3 compatible as well as native gyro support for the steamdeck. No longer need to use Steam Input for Gyro. 
-- Overlay and Launcher Overhaul with loads of new settings added!
-- 2 Player Online Multiplayer is now Included! 2P Adventure is also working as intended.
-  (Highly dependent on a stable internet connection for the best experience. Use the built in
-  Network Tester in the Lobby before starting your match to make sure the connection is good before playing)
-- An issue with Custom Texture Alignment has been fixed.
-- The Black bar that would appear at the bottom while using Expand to Window has been fixed.
-- Performance has been fixed in many areas.
-- You can now invert controls on a Per-vehicle basis. So if you want inverted controls for Planes only, you can!
-- Fixed an issue where users would experience a crash or black screen at un-predictable intervals. This was due to an Audio Overflow and has been fixed.
-- Encrypted two-player five-character Quick Join, host-approved
-  admission, one-click invitations for authenticated friends, synchronized
-  start barriers, connection telemetry and deterministic replay logs.
-- A host-authoritative five-second online start countdown, plus native
-  JOINTVENTURE routing that preserves DKR's shared Adventure hub while giving
-  each online racer control when the game assigns them the lead.
+1. Download the complete [release package](https://github.com/ThatGuyMcd/DKR-R/releases)
+   for your platform and check its published SHA-256.
+2. Extract the Windows ZIP and start `DKR-R.exe`, or make the Linux AppImage
+   executable and start it.
+3. In **Play**, use **Add a ROM…** and select your original ROM. The Game ROM
+   dropdown lets you switch between installed revisions.
+4. Choose **Accurate** for the original 4:3/30 FPS presentation, or **Modern**
+   for widescreen, higher presentation rates and the additional settings.
+5. Select **START DIDDY KONG RACING - RECOMPILED**.
 
-## Version 1.0.2 highlights
+`.z64`, `.v64` and `.n64` byte orders are detected from the file itself.
+Both supported revisions run inside the same application; there's no separate
+revision launcher. See [ROM setup](docs/ROM_SETUP.md) for hashes and import help.
 
-- Stability and Performance fixes. 
+Open the overlay with **Escape**, **F1** or controller **Back/View**.
+**Alt+Enter** and **F11** toggle fullscreen. The overlay keeps the game behind
+it while using the launcher's menu styling.
 
-## Playing
+Higher presentation rates interpolate the game image. They do not speed up
+race timers, physics or the original audio clock.
 
-1. Download the package for your platform.
-2. Start `DKR-R.exe` on Windows or the `.AppImage` on Linux.
-3. Select your own supported Diddy Kong Racing US ROM when prompted. Big-endian
-   `.z64`, 16-bit byte-swapped `.v64`, and 32-bit little-endian `.n64` byte
-   orders are detected automatically, regardless of the filename extension.
-4. Choose Accurate or Modern and select **START Diddy Kong Racing - Recompiled**.
+## Online play and mods
 
-The public download is one application per platform. DKR-R identifies the ROM
-before renderer or audio startup and selects the matching revision
-automatically; users never choose a revision executable. On Windows, Rev A is
-loaded as a verified in-process module, so every supported revision runs in the
-original DKR-R process and window without starting a background game process.
+Open **DKR-R Online**, choose **Host / Quick Join**, then create a lobby or
+enter a friend's five-character code. Friend invites use the same lobby system.
+Everyone needs a compatible complete build and the same original ROM revision.
+Quick Join needs no account or manual port forwarding, but restrictive networks
+can still prevent a direct connection.
 
-Supported ROM SHA-1 values after byte-order normalisation:
+The host is the Mod Master! Enable the tracks and characters before creating
+the lobby. Clients review the requirements before downloading anything.
+Only missing content is transferred, and no ROM is shared. Online activation
+does not replace the client's offline mod choices or personal saves.
 
-```text
-0cb115d8716dbbc2922fda38e533b9fe63bb9670
-6d96743d46f8c0cd0edb0ec5600b003c89b93755
-```
+For setup, backends, save handling and troubleshooting, see
+[online multiplayer](docs/ONLINE_MULTIPLAYER.md),
+[legacy mods](docs/LEGACY-MODS-BETA.md) and [save protection](docs/SAVES.md).
 
-Open the in-game overlay with Escape, F1, or controller Back/View. Alt+Enter and
-F11 toggle fullscreen.
+## Texture packs and Track Lab
 
-The Play page can export a privacy-safe support report and open the local log,
-crash-dump and report folders. Diagnostic logging and crash dumps are opt-in;
-support reports omit file paths, save data, account names, controller IDs,
-friend codes and lobby codes.
+For those of you looking for the DKR-R Community Texture Pack, it can be found
+in our [Discord server](https://discord.com/invite/AMWfXdBjNP). The pack is a
+separate download, not part of the application.
 
-The Controls page assigns connected gamepads to Players 1-4. Automatic mode
-keeps first-connected order; Manual mode remembers each assignment across
-restarts and reconnects without shifting the remaining players. A bundled
-cross-platform mapping database covers modern N64 pads and mainstream
-controllers; an in-app N64 setup wizard handles unmapped or incorrectly mapped
-devices. Only friendly controller names and supported features are shown.
-Hardware identifiers used for reliable reconnect matching remain private to
-the runtime. See [docs/CONTROLLERS.md](docs/CONTROLLERS.md).
+Use **Textures** to import packs, set their priorities and manage CRT filters.
+[Texture-pack instructions](docs/TEXTURE_PACKS.md) cover RT64/Rice formats and
+Track Lab's matching HD packs.
 
-Online multiplayer is player-hosted: Player 1 is always the host. Remote
-friends can use a five-character Quick Join code with no account or port
-forwarding; the public rendezvous exchanges signalling metadata only and never
-carries gameplay. Quick Join is the sole connection workflow, so players never
-select an adapter, exchange an address, import an invitation file or configure
-a UDP port. There is no DKR-R account, gameplay backend or relay. See
-[docs/ONLINE_MULTIPLAYER.md](docs/ONLINE_MULTIPLAYER.md).
+Want to make your own tracks? Start with the
+[Track Lab addon guide](tools/blender/README.md). The launcher integration is
+under **Mods / Hacks → Track Lab**.
 
-## Release files
+## Saves and support
 
-```text
-dist/DKR-R-1.0.4-Windows-x64.zip
-dist/DKR-R-1.0.4-Linux-x86_64.AppImage
-```
+Back up your saves before updating. **Save Manager** separates Offline, Online,
+Modded and Recovery views. Portable mode is available in Play; switching it
+takes effect on the next application launch and does not move existing saves.
 
-The Linux release is always distributed as an AppImage. macOS is supported by
-the source/build kit and requires an Apple host for signing and final testing.
+For reports, open **About DKR-R → Support summary**. Export a support summary,
+open the logs/crash-dump folders, or use the Android startup-log export when
+available. Runtime logs can contain private paths and connection information;
+review them before sharing. See [troubleshooting](docs/TROUBLESHOOTING.md).
 
-## Building
+## Platforms and building
 
-See [docs/BUILDING.md](docs/BUILDING.md). The short Windows path is:
+The current Public Build packages are:
 
-```text
-Build-DKR-Runtime.cmd
-Build-Windows.cmd
-```
+- `DKR-R-1.0.5-Windows-x64.zip`
+- `DKR-R-1.0.5-Linux-x86_64.AppImage`
+- `track_lab.zip` for Blender.
 
-The Linux build uses the already generated recompilation sources:
+Android ARM64 and Linux ARM64 have separate preview ports. macOS has source
+and build-kit support; a newly qualified macOS binary is not part of this
+Windows/Linux delivery. See [platform support](docs/PLATFORMS.md).
 
-```bash
-./Setup-Linux.sh
-./Build-Linux.sh
-```
+For a source build, follow [Building DKR-R](docs/BUILDING.md). Both ROM
+revisions and the appropriate Patch Pipeline outputs are required for a
+complete release. Never hand-edit submodules or generated recompilation files.
 
-For macOS setup, building and playing, see [the build guide](docs/BUILDING.md#macos).
+## Documentation
 
-Dependency revisions are pinned in `dependencies.lock.json`; all dependency
-changes are reproducible patches listed in `patches/manifest.json`.
-
-## Texture Pack
-
-For those of you looking for the DKR-R Community Texture pack. It can be found in our Discord Server here:
-
-<p align="center">
-  <a href="https://discord.com/invite/AMWfXdBjNP">
-    <img src="https://img.shields.io/badge/JOIN%20OUR%20DISCORD-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join our Discord">
-  </a>
-</p>
-
-
-See [docs/ASSET_POLICY.md](docs/ASSET_POLICY.md),
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
-[docs/TEXTURE_PACKS.md](docs/TEXTURE_PACKS.md), and
-[docs/ONLINE_MULTIPLAYER.md](docs/ONLINE_MULTIPLAYER.md), and
-[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+The [documentation index](docs/README.md) separates player guides, modding,
+development, proposals and historical investigations.
+[Release validation](RELEASE-VALIDATION.md) records what was checked for each
+delivery.
 
 ## Credits and licensing
 
-DKR-R was created by ThatGuyMcd with contributions from the DKR-R project.
-The DKR-R application icon was created by
-[POOTERMAN](https://www.deviantart.com/pooterman). The DKR-R HDR Texture Pack
-Project re-imagines the original artwork in crisp HD while remaining faithful
-to DKR; `sr.gu` leads that community project.
-The runtime uses N64Recomp, N64ModernRuntime, RT64, SDL2, a private headless
-SDL3 input helper, and Dear ImGui; exact credits and licences are in
-[THIRD_PARTY.md](THIRD_PARTY.md).
+DKR-R was created by ThatGuyMcd with help from the project's contributors.
+Thanks to the contributors behind the macOS support, Modern camera and
+Track Lab improvements included in 1.0.5.
 
-DKR-R does not include or grant rights to Diddy Kong Racing, its ROM, or its
-assets. Diddy Kong Racing and related properties belong to their respective
-owners.
+The application icon was created by
+[POOTERMAN](https://www.deviantart.com/pooterman). `sr.gu` leads the DKR-R HDR
+Texture Pack Project. Golden Balloon informed the grouped HUD work, and
+Wave Race 64 Recomp provided the enhanced-water renderer reference.
+
+DKR-R uses N64Recomp, N64ModernRuntime, RT64, SDL2, a private SDL3 input helper
+on supported desktop builds, and Dear ImGui. See [THIRD_PARTY.md](THIRD_PARTY.md)
+and [LICENSE.md](LICENSE.md) for credits, provenance and licensing.
+
+Diddy Kong Racing and its related names and assets belong to their respective
+owners. DKR-R does not include or grant rights to the game ROM or its assets.

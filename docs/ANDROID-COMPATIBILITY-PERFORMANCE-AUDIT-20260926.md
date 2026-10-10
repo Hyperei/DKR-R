@@ -1,5 +1,10 @@
 # Android compatibility and performance audit — 26 September 2026
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 ## Status and scope
 
 Investigation and proposed implementation plan only. No application code,

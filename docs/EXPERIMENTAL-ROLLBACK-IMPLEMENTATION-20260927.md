@@ -1,5 +1,10 @@
 # Experimental rollback — development checkpoint, updated 1 October 2026
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 ## Status: driver, input protocol and component replay tested; live gameplay NOT complete
 
 This is not a playable rollback release and must not be described as one.

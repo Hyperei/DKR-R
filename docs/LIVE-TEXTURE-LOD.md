@@ -1,5 +1,10 @@
 # Live texture LOD bias — v1.0.5-beta.1 candidate
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 ## Diagnosis
 
 Two different issues made the slider appear ineffective:

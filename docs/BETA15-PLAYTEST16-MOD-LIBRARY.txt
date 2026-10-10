@@ -1,5 +1,11 @@
 DKR-R 1.0.5 Beta 15 Playtest 16 Fix 2 - Mod library
 
+HISTORICAL BUILD RECORD
+The original findings and limits below belong to the named earlier build.
+For current 1.0.5 instructions, use docs/README.md and CHANGELOG.md in the
+source repository. These old results do not qualify later packages.
+
+
 Cards now show the name, source, supported vehicles/type, size, status and
 actions. Full compatibility/behaviour notes remain in Details. Short notices
 for hidden, unprepared or capacity-limited entries remain actionable.

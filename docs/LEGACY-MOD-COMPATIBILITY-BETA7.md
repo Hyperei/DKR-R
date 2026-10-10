@@ -1,5 +1,10 @@
 # Legacy mod compatibility — v1.0.5 Beta 7
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 ## What changed
 
 The importer previously coupled admission to a few exact reconstructed-ROM

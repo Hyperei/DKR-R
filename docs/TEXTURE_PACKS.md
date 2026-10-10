@@ -5,7 +5,7 @@ original game textures and presentation so it remains the release reference.
 
 ## CRT display filters
 
-Graphics includes six optional built-in PNG masks. A mask is drawn after the
+The Textures page includes six optional built-in PNG masks. A mask is drawn after the
 game image and before DKR-R's settings and performance overlays, so controls and
 telemetry remain readable. Scaling can stretch one mask over the viewport or
 tile it at native pixel size. Filter Density controls compositing strength and
@@ -18,7 +18,7 @@ an in-flight frame.
 
 ## Native RT64 and Rice texture packs
 
-Use **Graphics > Custom Texture Packs > Import Texture Pack** with a `.zip` or
+Use **Textures → Import Texture Pack** with a `.zip` or
 `.rtz` archive. DKR-R validates its format and lists it with a compatibility
 result. Native RT64 archives are retained as archives. Rice archives are
 converted transactionally into a managed directory; a failed conversion is
@@ -35,6 +35,26 @@ set, preloads required entries, and re-resolves resident textures. If a new set
 is rejected, DKR-R attempts to restore the previous set and does not retry a
 failed transaction every frame.
 
+## Pack priorities
+
+You can keep more than one pack enabled! Each pack has a priority number;
+**1 is highest**, and lower numbers win when enabled packs replace the same
+texture. A higher-priority pack only overrides matching replacements. Textures
+it does not contain can still come from the other active packs.
+
+Change priority from the pack controls/Details, and use the Priority sort to
+see the order. Moving a pack rearranges the stored order; disabling or hiding
+a pack does not delete its files. Search, status and visibility filters help
+manage larger collections.
+
+For example, put a character-only pack at 1 and a general HD pack at 2.
+Matching character textures come from pack 1; the remaining replacements come
+from pack 2. This is whole-replacement precedence, not alpha blending between
+packs. The same resolved order is used in-game and retained across launches.
+
+Priorities are local presentation settings, including online. Track-owned HD
+packs still have their own ownership and matching-export checks described below.
+
 ## Rice compatibility bridge
 
 Rice PNG names such as `Game#CRC#format#size_rgb.png`, `_a.png`, and
@@ -48,7 +68,7 @@ Rice PNG names such as `Game#CRC#format#size_rgb.png`, `_a.png`, and
   images when supplied;
 - generates a collision-checked RT64 database and stable 64-bit native aliases;
   and
-- reports source-image, identity, and merged-pair coverage in the Graphics UI.
+- reports source-image, identity, and merged-pair coverage in the Textures UI.
 
 The RT64 patch pipeline computes the same Rice identity from DKR's live texture
 load operation. It selects the alias only when an enabled pack contains that

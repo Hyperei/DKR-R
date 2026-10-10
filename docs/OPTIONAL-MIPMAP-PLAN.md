@@ -1,5 +1,10 @@
 # Optional generated texture mipmaps — approved plan and implementation record
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 Status: implemented for **v1.0.5 Beta 2**. The original approved plan is retained
 below for traceability. Actual implementation, measurements and qualification
 limits are recorded in [Generated mipmap validation](GENERATED-MIPMAP-VALIDATION.md).

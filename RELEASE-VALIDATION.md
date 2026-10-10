@@ -1,5 +1,70 @@
 # Release validation
 
+## 10 October 2026 — 1.0.5 Public Build
+
+The current desktop delivery combines the preserved local work with PR #49
+head `3c5e28ae8d6eb6465c3dc5e5fb128a85a14c6180` and PR #50 head
+`dba2b742bed706cb9bab8ffbf2e901cff2cf1dbd`. Validated runtime source:
+`6bbc2e373ffa3f0f1cdfd14b7c08e20a6a5d750b`. The subsequent documentation-only
+refresh does not change that runtime or its recorded package hashes.
+
+- Windows Release runtime suite: 129/129 passed.
+- Linux Release runtime suite: 129/129 passed.
+- Owned revision dispatch: 58 production checks passed on each platform.
+- Build tooling: 18 tests per platform; Linux passed all, Windows had three
+  Bash-only skips.
+- Release metadata: 1.0.5 and 48 pinned patch hashes validated.
+- Packaged SDL3/import workers, online import capability and Controller Pak
+  checks passed; two SDL2/SDL3 ownership round trips passed on each platform.
+- Track Lab retained the byte-identical addon that passed 35 suites, including
+  six Blender-background suites.
+- Source export asset scan: 1,189 files passed. Protected dependency/generated
+  trees remained unchanged from the preservation checkpoint.
+
+Package SHA-256 values:
+
+| Artifact | SHA-256 |
+|---|---|
+| DKR-R-1.0.5-Windows-x64.zip | `461aaaee0dc3369a84e59b5ed4c37328b3d2038515eff12e0de72049ca9c4f00` |
+| DKR-R-1.0.5-Linux-x86_64.AppImage | `2cc723ed4a56fbebad788e81ccdad316533be412f5493451eb962e7f1682a2ff` |
+| track_lab.zip | `4acb705d63c1d92ef8051aecf63acaed70db5c0cdd2bb9b4499660aa51df3100` |
+
+These are the runtime packages produced before the documentation refresh;
+they have not been repackaged by editing this record. Their staged VALIDATION
+and SHA256SUMS records identify the exact delivery.
+Compilation/headless/package checks are not visual gameplay or WAN testing.
+Those checks remain user-led. Experimental Rollback remains experimental.
+This delivery does not contain new Android, ARM64 or macOS binaries; macOS
+preparation syntax/checks are not a native Mac build. No GitHub publication is
+implied by local PR integration.
+
+See [current guides](docs/README.md) and [release history](CHANGELOG.md).
+
+### Documentation refresh — 10 October 2026
+
+The current guides, release history and packaged readme templates were updated
+against the source above. This was a documentation-only pass, not another
+runtime build or gameplay test.
+
+- 44 current/reference Markdown files checked; all 297 local link targets exist.
+  Historical machine-specific paths and line numbers remain recorded snapshots.
+- All 76 dated reports/plans retain their original text beneath the new
+  historical notices. The original legacy-test milestones are retained separately.
+- Generator example arguments checked against the scripts' help; normal/owned
+  payloads and the explicit RSP input are covered in the desktop build guide.
+- Release metadata passed for 1.0.5 with 48 patch files verified.
+- Repository asset scan passed with 1,979 files inspected.
+- Whitespace checks passed. No non-document files, protected dependency/generated
+  trees or exact licence texts were changed.
+
+Existing binaries and their bundled readmes have not been replaced. The updated
+packaging templates apply when the next packages are built.
+
+## Historical results
+
+The dated entries below retain their original target, paths, counts and limits.
+They do not describe or qualify the current Public Build.
+
 ## 26 September 2026 — Beta 12 water performance rebuild
 
 See [water performance implementation and qualification](docs/WATER-PERFORMANCE-IMPLEMENTATION-20260926.md)

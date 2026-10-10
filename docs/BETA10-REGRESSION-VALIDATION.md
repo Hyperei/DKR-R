@@ -1,5 +1,10 @@
 # v1.0.5 Beta 10 — model-load crash and missing HUD investigation
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 ## Confirmed crash
 
 The supplied 15 September dump is a US v1.0/v77 session with offline custom

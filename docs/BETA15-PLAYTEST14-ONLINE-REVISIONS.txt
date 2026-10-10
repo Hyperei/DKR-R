@@ -1,5 +1,11 @@
 DKR-R v1.0.5 Beta 15 Playtest 14
 
+HISTORICAL BUILD RECORD
+The original findings and limits below belong to the named earlier build.
+For current 1.0.5 instructions, use docs/README.md and CHANGELOG.md in the
+source repository. These old results do not qualify later packages.
+
+
 REPAIRS
 The launcher identified ROMs as dkr.us.v77/dkr.us.v80, but the host mod
 catalogue and client resource preparation require us.v77/us.v80. A checked

@@ -1,5 +1,10 @@
 # Water-heavy level performance investigation — 26 September 2026
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 ## Scope and status
 
 Investigation only. No game, renderer, patch-policy, settings, generated-code or

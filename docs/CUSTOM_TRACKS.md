@@ -1,7 +1,14 @@
 # Custom tracks
 
-Status: **in progress.** The asset-table layer is implemented; the Patch
-Pipeline hooks and the UI are not yet wired.
+Custom tracks are playable in DKR-R 1.0.5. Use **Mods / Hacks → Import mods →
+DKR-R tracks**, or author a working-folder track through Track Lab. Installed
+courses share My mods with legacy tracks and appear below the original worlds
+in Track Select. Original courses remain available.
+
+This is the technical `.dkrmap` reference. For the everyday workflow, start
+with [Track Lab](../tools/blender/README.md) and [the mod guide](LEGACY-MODS-BETA.md).
+Host-managed online sessions include selected courses in their verified
+manifest; see [Online](ONLINE_MULTIPLAYER.md).
 
 ## Why this needs no instruction patching
 
@@ -728,7 +735,7 @@ each at what the same track supplied (`sibling_index`):
 
 **A track must not try to compute these**: whatever they contain is
 overwritten. Everything else in the header, `skybox` included, is the author's
-to write. A Phase 1 remix ships no model, so its authored `geometry` survives
+to write. A retail-geometry remix ships no model, so its authored `geometry` survives
 and keeps pointing at the retail track it was built on.
 
 Known ordering caveat: `objects.c` loads the object-map table *after* the
@@ -759,7 +766,7 @@ actually *loading*, because importing, arming or playing one switches the
 profile to Modern first (with a note saying so). Copying a folder into
 `custom-tracks/` by hand still works.
 
-## Two traps worth knowing
+## A few things worth knowing
 
 **Policy edits need a recompile, not just a rebuild.** Patch Pipeline hooks are
 injected while N64Recomp translates the ELF. Adding hooks to
@@ -797,17 +804,19 @@ anything that exists only in the v1.1 policy - the fourteen Rev A asset mutex
 hooks and their instruction patches - is dropped. Merge them back after
 regenerating, or Rev A silently loses its uncontended DMA fast path.
 
-## Remaining work
+## Working-folder workflow limits
 
-1. **Removing an installed track.** Track Lab can enable/disable but not delete.
-   When it can, it has to call `texture_packs::forget_track_pack(track_id)`
-   alongside, or a track's HD pack is left enabled and ownerless. The runtime
-   side of that call already exists.
+1. **Working folders and installed copies are different.** Use My mods Details
+   to remove an installed course. The Track Lab working-folder row is an
+   authoring reference, not permission to delete the author's project. HD pack
+   removal must retain its owner relationship rather than leave an enabled
+   ownerless replacement set.
 2. **Detection also at arm time.** The HD pack sibling is resolved when a track
    is installed or rescanned, not when it is armed, so a track and its pack
    arriving separately (track first, pack later) is not picked up until the
-   next rescan. Cheap to add.
-3. **Online and Accurate policy.** Map identity is already part of the online
-   contract (`dkr_netplay_gameplay_level_begin` seeds from the selected map),
-   so a custom track must either enter the session handshake or be refused
-   online. Custom tracks belong to Modern, as texture packs do.
+   next rescan.
+3. **Online and Accurate policy.** Selected custom courses are now included in
+   host-managed online content admission. Matching map/behaviour identity is
+   required on every peer; local arming is not an online bypass. Playing custom
+   courses selects Modern with a notice, while Accurate remains the original
+   presentation reference.

@@ -1,5 +1,10 @@
 # Further optimisation pass — 25 September 2026
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 Status: four builds packaged; primary comparison and timing-spike follow-up
 completed. A newly supplied OPPO/Mali startup-stall report remains unresolved;
 see `ANDROID-OPPO-STARTUP-20260925.md`. These packages are not a claimed fix for

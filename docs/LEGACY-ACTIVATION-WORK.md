@@ -1,5 +1,10 @@
 # Legacy activation phase — v1.0.5 Beta 5
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 Implementation authorized 2026-09-08. This checklist is implementation state,
 not a declaration of gameplay compatibility. Do not package as complete until
 the remaining gates are actually met.

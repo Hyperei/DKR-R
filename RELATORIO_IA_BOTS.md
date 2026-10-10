@@ -1,5 +1,9 @@
 # Relatório — Como funciona a IA (bots) do Diddy Kong Racing
 
+> Contributor research record. The original language, attribution and retail
+> findings are retained. For current custom AI/online behaviour, use the
+> [mod guide](docs/LEGACY-MODS-BETA.md) and [documentation index](docs/README.md).
+
 > **Fontes:** decomp em [extern/dkr-decomp/](extern/dkr-decomp/) (a lógica é a mesma em US v77 e v80), mais uma varredura dos
 > 136 mapas de objetos e dos level headers extraídos do ROM (`extern/dkr-decomp/assets/.vanilla/us.v77/`).
 > Os nomes `unkXX` e `func_XXXXXXXX` são os do decomp. Quando dou um nome em português ("faixa", "tag", "estado"),

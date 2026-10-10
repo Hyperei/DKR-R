@@ -1,5 +1,11 @@
 DKR-R v1.0.5 beta 15 - online stability correction (2026-10-07)
 
+HISTORICAL BUILD RECORD
+The original findings and limits below belong to the named earlier build.
+For current 1.0.5 instructions, use docs/README.md and CHANGELOG.md in the
+source repository. These old results do not qualify later packages.
+
+
 Install the complete new package in a fresh folder on EVERY peer. Do not copy
 only DKR-R.exe: the bundled importer and transfer protocol changed. Existing
 offline saves/mod selections are retained; downloaded mods still remain usable

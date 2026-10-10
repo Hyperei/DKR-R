@@ -1,5 +1,10 @@
 # Beta 12 optimisation scope and qualification
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 ## Rollback and boundaries
 
 Before this pass, existing modified/untracked source and the previous four

@@ -1,225 +1,151 @@
-# Custom tracks and characters — Beta 15 Playtest 12
+# Custom tracks and characters
+
+We've moved well beyond the first offline import beta. Legacy patches can now
+add tracks and characters without replacing your originals, and the host can
+share the required set for online play.
+
+The filename remains `LEGACY-MODS-BETA.md` so existing links keep working.
+These are the current 1.0.5 instructions.
 
 ## Import and play
 
-1. Import your legally obtained original Game Pak in **Play**.
+1. Add your original ROM in **Play**.
 2. Open **Mods / Hacks → Import mods → ROM patches → Choose patch file**.
-3. Choose an `.xdelta` file or a ZIP containing patches. The separate importer
-   identifies tracks and characters automatically. A progress modal remains
-   visible during inspection and preparation; Cancel stops the active job.
-4. Read the result. Supported content appears in **My mods**, under **Tracks**
-   (marked **Legacy**) or **Characters**. Imports do not enable themselves
-   automatically.
-5. Enable the content you want and start an offline game normally. Import both
-   original US revisions before preparing tracks if you want to switch between
-   v 1.0 and v 1.1. The library shows which variants have been prepared.
+3. Choose an `.xdelta` or ZIP containing patches. The separate importer inspects
+   it, discovers content and prepares compatible assets. Progress and Cancel
+   remain available.
+4. Check the result in **My mods → Tracks** or **Characters**. Imported legacy
+   content is not automatically enabled.
+5. Enable what you want, then launch. Import both clean US revisions before
+   preparing tracks if you want variants for both native engines.
 
-Custom courses appear below the original worlds in Track Select, using the
-original wooden-frame previews and selection flow. Fresh Track Select entry
-still starts at Dino Domain. Enabled custom characters join the original
-animated selection stage; they do not replace their stock donors.
+An xdelta needs the exact source bytes it was made against. A v1.1 ROM cannot
+decode a v1.0 patch simply because both are DKR. Prepared assets can then be
+adapted for the supported native revisions. No PAL/Japanese game engine is
+added by this importer.
 
-## Managing the library
+## Tracks and Player Select
 
-Texture Packs and CRT Overlays now live in the **Textures** sidebar page, in
-both the launcher and overlay. Mods / Hacks opens with its four sections
-closed - **My mods**, **Magic Codes**, **Track Lab** and **Help & imports** -
-and shows one at a time.
+Custom tracks appear below the original worlds with the original wooden
+frames, previews and navigation flow. Fresh Track Select entry starts at
+Dino Domain. `.dkrmap` courses from Track Lab share the Tracks library, marked
+**DKR** rather than **Legacy**.
 
-**Help & imports → Prepare all source imports again** rechecks retained patches
-for all installed legacy content, including hidden entries. It shows progress,
-supports cancellation and reports individual failures without aborting the
-remaining sources. Existing selections and saves stay unchanged. New reviewed
-editions are installed inactive; choose those editions in My mods when ready.
-The October 10 follow-up adds exact rebuilt-code profiles for the eighteen
-previously partial character packages and a scoped random-texture animation
-adapter for eight of them. Unknown code is not granted arbitrary execution.
-The sidebar sequence after Controls is **Save Manager → Textures → Mods / Hacks
-→ DKR-R Online → About DKR-R**. Navigation and visible buttons use the same order.
-**My mods** shows one full-name card per mod. Legacy courses (marked
-**Legacy**) share the **Tracks** list with installed `.dkrmap` tracks (marked
-**DKR**); custom characters have their own **Characters** list. Search (a
-controller opens the on-screen keyboard), **Status** and **Sort by** sit above
-the cards, and **Filters** adds track format, compatibility, source pack and
-Visibility. A course's Game Pak variants share one card, and its switch turns
-it on or off for the next launch.
+Four custom character actors sit on the original animated Player Select stage:
+two below and two above. With more enabled, highlight a custom actor and use
+**L/R** to cycle in that slot. Characters displayed in the other custom slots
+are skipped, so your position doesn't jump to another actor.
 
-**Details** provides activation, hide/restore, managed location, source import
-details and removal. Hidden mods are inactive; restoring never activates them.
-**Help & imports** lists every import with **Prepare this import again**, and
-can refresh the library or turn all legacy tracks or characters off.
-Up to 16 custom characters can be active, regardless of search filters. Four
-appear on the original stage: two on the lower lawn and two on the upper shelf.
-With more than four enabled, highlight a custom character and use **L / R** to
-browse the rest. Other players' highlighted/confirmed choices stay visible.
-Changes to installed content are locked while a game/lobby or import owns it.
+The current sound-token format allows up to **1,536 enabled custom identities**,
+not an infinite allocation. Installed character variants have a separate
+16,384-entry metadata bound. Scene models, retained portraits and voices still
+have memory budgets; a large collection can hit those before the identity cap.
+Failed stage replacement keeps the previous choice rather than publishing a
+half-loaded actor. Disable some content if preparation reports a budget error.
 
-Removing a card removes that content's prepared variants, not the other tracks
-or characters from its source pack. Original ROMs, ZIPs, xdeltas, retained
-source-import material and all saves remain untouched. Reimporting or explicitly
-re-preparing its source can reinstall removed content. Import dates for older
-entries may be unknown. Managed sizes exclude retained source-import material.
+Eligible normal races can draw custom AI characters alongside unlocked stock
+characters, reserving human choices and avoiding duplicates. Bosses, hubs,
+time trials/ghosts and demos do not use this random custom AI pool.
+Online draws use the frozen host roster, not a client's offline selection.
 
-Removal stages and validates surviving entries before publishing a recovery
-journal. Cancellation is honoured before commit; after commit, the transaction
-finishes (or is recovered on the next library refresh). Do not manually alter
-prepared receipts or removal journals.
+## Managing mods
 
-## Clear beta limits
+Search, Status, Sort by and Filters help manage the library. **Duplicate review**
+offers **Possible duplicates** and **Same source & slot**. Matching names alone
+do not prove two editions are interchangeable; review Details before removing.
 
-- **Host-managed online mods.** The host's enabled legacy tracks, characters
-  and Track Lab courses are frozen when the lobby is created. Clients review
-  the required files and explicitly consent before downloading, reconstruction
-  and lobby admission. Received content lives in a separate online cache and
-  never replaces offline activation, ROMs or saves. Every racer needs this
-  build and the lobby's original Game Pak revision; patch reconstruction may
-  also require the original revision named by an xdelta. No ROM is shared.
-  Host Prediction and Strict Input Sync retain their existing flow. Experimental
-  Rollback owns and checkpoints the native mod state as well as guest memory;
-  its existing US v1.0 game-engine restriction remains. Real multiplayer visual
-  and gameplay qualification of this new feature is still a playtester task.
-- **16 enabled additions, four visible at a time.** More can be stored. Stage
-  replacement is transactional and bounded by the native model budget; if a
-  replacement cannot load, the previous choice remains intact.
-- **Exact patch source required for decoding, portable assets afterwards.** An
-  xdelta cannot be decoded using the wrong source bytes. Import its required
-  original Game Pak once. Preparation creates track variants for both imported
-  US revisions, including the v 1.1 2D-texture ID shift. Prepared characters own
-  complete asset graphs and are validated against either native revision.
-  If you import another Game Pak later, prepare/reimport the track patch again.
-  PAL/Japanese game-engine support is not added by this asset adapter.
-- This is a validated asset adapter, **not arbitrary ROM-hack execution**.
-  Changed executable code is not run. Unsupported behaviour, dependencies or
-  layouts can be rejected even when a patch works in an emulator. Rebuilt code
-  is excluded rather than installed. Music instruments are compared by resolved
-  content so exporter repacking does not require replacing the live sound bank.
-- Enabled course assets have a 256 MiB aggregate preparation budget. Disable
-  some tracks if the launch check reports that budget exceeded.
-- Normal race models and native selection animations are supported for the
-  reviewed character families. Custom selection actors now use the same shared
-  animation clock as stock actors and share the selection camera's frontal
-  plane, without changing stock actor transforms.
-- Supplied custom portraits are used for the committed human racer's post-race,
-  time-trial result, finishing-order, multiplayer result and trophy/ranking
-  portraits. This changes portrait resources, not the established HUD layout.
-  The scoped challenge/Adventure HUD and trophy portrait hooks also use the
-  selected human's private assets. Saved ghost identity is not remapped. Mods
-  that retain the donor's face pixels intentionally retain that portrait; the
-  runtime log distinguishes supplied faces from that fallback.
-- Selection/cancel/confirm sounds and all eight positive/eight negative race
-  voice variants plus the horn use isolated character sound banks. Original
-  sound selection, repeat suppression and spatial mixing remain in charge.
-  A mod that supplies no replacement for a cue still sounds like its donor;
-  arbitrary hacked-code audio behaviour and replacement global music are not
-  implemented. Custom AI selections use the same scoped portrait/voice routing;
-  stock selections retain their original resources.
-- Custom record/ghost identity is not a new, independently named record system
-  yet. Retail carrier slots can share records inside a modded save. Treat custom
-  time-trial records/ghosts as experimental, not verified comparable records.
+Cards keep the main information short. **Details** holds compatibility notes,
+managed location, source import, activation, hide/restore and removal.
+Hidden mods are inactive; restoring does not automatically enable them.
+Changing installed content is locked while a game, lobby or import owns it.
 
-## Save protection
+Removing one track/character removes its prepared variants, not the other
+content in the same source pack. Original ROMs, downloaded ZIPs/patches,
+retained source-import material and saves are not deleted by card removal.
+Re-preparing a retained source can reinstall removed content.
 
-The complete enabled mod set and its original Game Pak determine an isolated
-save folder: `saves/mods/<mod-set fingerprint>/` in your DKR-R profile.
+**Help & imports → Prepare all source imports again** checks unique retained
+sources, including hidden entries, with source/worker progress and cancellation.
+One failed source does not stop the rest. New reviewed editions remain inactive;
+old editions, activation and save identities are not silently replaced.
+Individual import/Details views also offer source re-preparation.
+Missing original patches or source ROMs must be supplied, not guessed.
 
-On first launch of a mod set, its Adventure EEPROM is copied byte-for-byte from
-the normal single-player save, or a checksum-valid blank save is created if
-there is no original. Existing modded progress is never overwritten when the
-same set is launched again. Changing the enabled set creates a different save
-namespace. Controller Paks begin separately in that folder's `paks/` directory;
-normal Paks are never copied into or replaced by it.
+## What a legacy patch can do
 
-Disabling all custom mods restores the normal single-player path on the next
-game launch. Online save routing remains unchanged. The existing Save Manager
-continues to manage normal saves; modded-save management is not added there.
+This is a reviewed native compatibility system, not arbitrary ROM-code execution.
 
-## Recovery and previous imports
+- Extracted models, animation, textures, portraits, scoped voices and supported
+  course/music resources become privately owned native assets.
+- Reviewed racer parameter tables select values by custom human/AI identity,
+  without changing the original donor's global statistics.
+- Validated native-layout object-header data can adapt scale, lighting, shadows,
+  water effects and draw distance within checked bounds.
+- Known constant-load edits and exact rebuilt-code profiles use scoped authored
+  adapters. Some access/unlock changes are represented by additive menus rather
+  than overwriting the original global unlock state.
+- Reviewed random texture-animation behaviour has a scoped native adapter.
+  Unknown opcodes, structural/global-data changes and whole campaigns still
+  need separate compatibility work.
 
-Enable/disable operations are unavailable during gameplay, while preparing a
-launch, or in a lobby. Prepared assets are revalidated before guest startup.
-Preparation errors stay in a launcher modal instead of entering a partial game.
-Runtime asset faults stop the guest and return to the launcher with an error.
+Details distinguish asset-only, native-adapted and partial support. Two editions
+with identical textures but different reviewed behaviour need not have the same
+identity. Preparing again can create a behaviour-aware edition; select it
+deliberately. The [behaviour compatibility report](LEGACY-BEHAVIOUR-20261010.txt)
+records the exact reviewed corpus, not a promise that every future patch works.
 
-**Import Details / Previous Imports** retains compatibility notes and offers
-**Prepare This Import Again** for earlier review-only imports. Reimporting the
-same patch deduplicates content and does not reset activation. Each library has
-**Disable All In This Library** as a recovery action; this changes enablement
-only and retains installed files and all saves.
+A patch that works in an emulator may still require an adapter. Invalid
+geometry, unsupported dependencies and unsafe layouts are rejected rather than
+loaded with a guessed fallback. Replacement sounds/portraits only work when
+the mod supplies them; unchanged donor resources remain unchanged.
 
-The character-presentation rebuild reconstructs race sound banks from the
-retained, verified source review when preparing a launch. Existing imports do
-not need to be reimported, and their logical IDs and modded save paths remain
-unchanged. Keep the managed `reviews` data: incomplete or altered source audio
-is rejected before launch instead of playing unverified samples.
+Custom results, challenge/trophy portraits and eligible AI use scoped identity
+routing. Saved ghost identity and independently named custom records remain
+limited by retail carrier slots. Treat custom time-trial records as experimental,
+not universally comparable records.
 
-The packages include neither ROMs nor the sample mods. Use only patches you
-have permission to use and distribute. No patch is uploaded to a service.
+## Online sharing and offline retention
 
-See [Beta 7 compatibility coverage](LEGACY-MOD-COMPATIBILITY-BETA7.md) for the
-supplied seven-file test corpus, author-specific limitations and the difference
-between automated resource validation and visual/gameplay acceptance.
+Enable the set before hosting. Clients review it and consent before receiving
+missing payloads or reconstructing assets. Matching local offline content and
+verified caches are reused, regardless of offline activation/visibility.
 
-## Build boundary
+Received assets are verified against the client's original ROM and frozen host
+manifest. Completed content can be kept as inactive entries for offline play.
+This does not replace the client's offline selections or save data.
+Host/client progress covers transfer and local preparation; admission waits for
+both to complete.
 
-The Playtest 11 AI rebuild adds enabled custom characters to the offline AI
-pool alongside unlocked originals. Human identities are reserved and each AI
-draw is distinct. Native racer counts and inherited statistics are unchanged.
-Bosses, hub worlds, time trials/ghosts and demos do not receive custom AI
-identities. Playtest 12 also uses the frozen host-managed character pool for
-eligible online races; clients' offline selections are never consulted.
-L/R browsing stays in the current stage slot and skips the
-characters already displayed in the other three slots.
+Experimental Rollback checkpoints mod identity/native state for both admitted
+US revisions. Host Prediction and Strict Input Sync use their existing online
+paths with the same reviewed mod contracts.
+See [online multiplayer](ONLINE_MULTIPLAYER.md).
 
-`scripts/legacy_character_ai_policy.py` pins both original race-construction
-bodies and checks the topology, participant-index and primary-spawn ABI. Its
-four hooks are composed into the versioned policy and production generated
-payloads through the Patch Pipeline; no generated function is hand-edited.
+## Saves and recovery
 
-Normal builds include the checked scene, track-menu, character-resource and
-character-menu fragments for both revisions. Generate these with
-`scripts/generate_legacy_menu_qualification.py --characters --character-menu`
-(the historical script name does not enable the private recipe).
-The composition step includes `legacy_character_presentation_policy.py`, which
-pins both retail ELFs and checks hook ownership and instruction signatures for
-the local result-portrait and race-sound adapters.
-`DKR_LEGACY_QUALIFICATION` must be **OFF** for packaging. The package guards and
-required-hook checks remain enabled. No submodule or generated C source is
-hand-edited.
+Offline legacy mod sets use `saves/mods/<mod-set fingerprint>/`. First use
+copies ordinary Adventure progress or creates a valid blank; subsequent use of
+the same set retains its progress. Modded Paks remain separate.
+Disabling the set returns to ordinary offline storage.
 
-## Online preparation reuse
+Save Manager includes Modded and Recovery views alongside Offline/Online.
+See [save protection](SAVES.md) before restoring a different scope.
 
-The Playtest 14 synchronization rebuild checks matching installed offline mods
-after consent, regardless of their local enablement or visibility. Patch hashes,
-prepared asset identities and the track's ROM revision must match the frozen
-host selection. Reuse populates a separate online transaction; it never copies
-host enablement over the offline catalogues or writes offline saves. Track Lab
-courses can also supply matching canonical package bytes locally.
+Don't alter managed receipts, review data or transaction journals by hand.
+Retained reviews supply verified audio and reconstruction data.
+Preparation faults remain in the launcher; runtime asset faults stop the guest
+instead of leaving unsafe partial state running.
 
-Completed per-payload preparation survives failure of a larger library job.
-Fresh imports share verified ROM data and a single patch reconstruction between
-review, track and character preparation. Bounded transfer bursts and reordering
-buffers reduce network stalls; batched disk flushes retain mandatory final
-length/hash verification. Progress continues during blocking local preparation
-without granting admission. See
-[synchronization rebuild notes](PLAYTEST14-MOD-SYNC-PERFORMANCE-20261006.txt)
-for measurements, installation instructions and qualification limits.
-# Shared-source online preparation (6 October 2026)
+## Developer boundary
 
-Online host/client profiles now reference exact locally verified catalogue
-entries or independently completed importer caches. They do not copy complete
-multi-patch prepared/review groups into every payload cache or aggregate profile.
-The session index is local metadata, not wire-authorized filesystem access.
-Every root is checked against the host manifest, and runtime preparation still
-verifies selected records, native compatibility, portraits, voices and banks.
+Normal and owned rollback payloads need the composed scene, track menu,
+character resource/menu/presentation and behaviour hooks for both revisions.
+The historically named `scripts/generate_legacy_menu_qualification.py`
+composes production fragments; its name does not enable a private recipe.
 
-Offline activation/visibility/save data is never copied from the host. Keeping
-new downloaded content deduplicates whole groups, publishes complete inactive
-copies, and skips already installed source trees. Track Lab supports direct
-installed-course reuse too. Stale source indexes are rebuilt without replacing
-existing offline files; corrupt content cannot satisfy admission.
+`DKR_LEGACY_QUALIFICATION` is **OFF** for packaging. Use the full pipeline,
+required-hook checks and content identity; never hand-edit generated C or
+dependency checkouts. See [Building](BUILDING.md) and [Development](DEVELOPMENT.md).
 
-Runtime preparation retains a pristine verified world template. Fresh worlds
-use independent asset buses, mutable cache owners, resident generations and
-replay authority, with deterministic matching virtual addresses. One bounded
-in-process immutable cache accelerates unchanged retries/rematches; it is keyed
-by canonical original-ROM SHA and full manifest identity, never timestamps.
+The older [Beta 7 corpus report](LEGACY-MOD-COMPATIBILITY-BETA7.md) remains a
+historical test record, not the current compatibility list.

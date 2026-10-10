@@ -1,5 +1,10 @@
 # Beta 12 CPU/power follow-up — 25 September 2026
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 This is a rebuild of **1.0.5-beta.12**, not a new gameplay or graphics preset.
 The intended comparison is the same game, image settings and 60 FPS target.
 CPU time is measured; degrees-Celsius or Android-device gains are not inferred.

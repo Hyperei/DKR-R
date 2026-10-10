@@ -1,5 +1,10 @@
 # Android startup regression correction — build 1050023
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 ## Confirmed failure
 
 The supplied `DKR-R-Android-startup (1).zip` identifies versionCode 1050022 on

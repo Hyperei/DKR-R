@@ -1,71 +1,48 @@
 # DKR-R native recompilation runtime
 
-This directory contains the project-owned integration layer for the playable
-Diddy Kong Racing static recompilation.
+This is the project-owned integration layer for DKR-R 1.0.5.
+It combines generated DKR CPU/Rare RSP output, N64ModernRuntime, the F3DDKR/RT64
+bridge and the shared launcher/overlay.
 
-The runtime combines N64Recomp-generated DKR CPU functions, recompiled Rare
-audio/F3DDKR RSP microcode, N64ModernRuntime, the DKR-specific RT64 bridge and
-the existing native SDL2 startup/in-game UI. A private, headless SDL3 helper
-supplies optional controller and sensor snapshots without creating a window or
-loading SDL3 into the launcher/game process.
-It boots, renders, plays audio, accepts input, saves and supports both Accurate
-and Modern presentation profiles.
+Both clean US revisions run in-process in the same application.
+The runtime owns input profiles, gyro, controller mapping, scoped saves,
+audio/EQ, presentation/HUD, texture priorities, enhanced water, custom tracks/
+characters and online admission. Supported desktop builds keep SDL3 input in
+a headless private worker; Android uses SDL2 directly.
 
-Modern also provides independent live audio buses, two-axis angle-held gyro
-control, configurable anisotropic filtering, real runtime telemetry, four
-local-player controller assignments, independent binding profiles, a bundled
-cross-platform controller database, a raw-device N64 mapping wizard, a guarded
-Quick Restart chord and a controller-navigable Save Builder backed by a native
-DKR EEPROM codec. The codec validates and regenerates all Adventure,
-global-config and T.T.-record checksums while retaining unknown fields.
+## Normal and owned execution
 
-The Save Builder also exposes the 24 retail Magic Codes as a separate launch
-configuration. Codes are applied once at the first authoritative game-loop
-boundary after save initialization; they are not written into EEPROM data.
-Mutually exclusive codes follow the original game's rules, and one-shot codes
-are removed from their launch queue after injection.
+Host Prediction and Strict Input Sync retain the ordinary runtime path.
+Auto selects the separately admitted Experimental Rollback owner, built from
+isolated full-scene CPU closures for v77/v80. It restores/replays checkpoints
+while rendering, confirmed audio and persistence remain external consumers.
+
+Normal generated output alone is not a complete experimental release.
+See [Building](../docs/BUILDING.md) for policy composition, both owned outputs
+and the integrated feature settings. The backend is in the existing launcher,
+not a separate player application.
 
 ## Reproducible patch boundary
 
-Never edit `RecompiledFuncs`, `RecompiledPatches`, RT64, N64Recomp or
-N64ModernRuntime manually.
+Never hand-edit RT64, N64Recomp, N64ModernRuntime, `RecompiledFuncs` or
+`RecompiledPatches`. Use authored policies/fragments and
+`patches/manifest.json`, then regenerate into fresh output directories.
+Do not remove signature, ABI, manifest or budget gates to make a payload build.
 
-- DKR hooks are declared in the versioned `dkr.us.v77.recomp-policy.json` and
-  `dkr.us.v80.recomp-policy.json` files.
-- dependency changes are declared by the repository Patch Pipeline.
-- `Diagnose-DKR-Recompile.cmd` regenerates the CPU output from the prepared ELF.
+Development commands, tests and release checks are described in
+[Development](../docs/DEVELOPMENT.md).
+Default wrapper output is `build/dkr-runtime-rt64/bin/Release/DKR-R.exe` on
+Windows and `build/dkr-runtime-linux/bin/Release/DKR-R` on Linux.
+Custom build directories differ. Linux releases always include an AppImage.
 
-## Build output
+## ROM and save policy
 
-From the repository root run `Build-DKR-Runtime.cmd`, or run
-`Diagnose-DKR-Recompile.cmd` after a policy-only change.
+Validate the exact canonical v77/v80 ROM before registration. Byte order is
+detected independently of the extension. No ROM is modified or packaged.
 
-Windows output:
+The 512-byte EEPROM format is compatible between revisions; that does not
+permit sharing writable offline/online routes. Online and legacy mod sets hold
+separate save owners. See [Saves](../docs/SAVES.md).
 
-```text
-build/dkr-runtime-rt64/bin/Release/DKR-R.exe
-```
-
-The single executable contains both Patch Pipeline CPU payloads. Exact ROM
-identification selects the appropriate payload and address table in-process;
-both revisions share the same frontend, renderer, input system and runtime.
-
-Linux output:
-
-```text
-build/dkr-runtime-linux/bin/Release/DKR-R
-```
-
-Every Linux release must also be packaged as an AppImage with `Build-Linux.sh`
-or `scripts/Package-Linux-AppImage.sh`.
-
-For macOS builds, see [the build guide](../docs/BUILDING.md#macos).
-
-## ROM policy
-
-Diddy Kong Racing US v1.0/v77 and US Rev A/v1.1/v80 are supported in all three
-retail N64 byte orders. Exact canonical hashes are checked before selecting
-the matching in-process CPU payload, before renderer/audio startup or game
-registration. Both revisions share the compatible 512-byte EEPROM namespace;
-ROMs, extracted assets, saves, logs and local configuration must never enter
-source or release archives.
+Current user instructions are in the [documentation index](../docs/README.md);
+licensing requirements remain in [COPYING-NOTICE.md](COPYING-NOTICE.md).

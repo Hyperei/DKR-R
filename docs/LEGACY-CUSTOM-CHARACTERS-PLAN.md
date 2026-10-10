@@ -1,5 +1,10 @@
 # Additive legacy Custom Characters — implementation proposal
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 Date: 2026-09-09. Status: **approved; implementation and qualification in progress**.
 
 The user additionally supplied `yooka in dkr.xdelta` as a second test fixture.

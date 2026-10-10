@@ -1,5 +1,10 @@
 # Track Lab - Blender addon plan
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 Working plan for a Blender addon that lets a creator author a Diddy Kong Racing
 track and export a `.dkrmap` that DKR-R loads from `custom-tracks/`.
 

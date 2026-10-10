@@ -1,5 +1,10 @@
 # Android quality-preserving renderer pass — build 1050027
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 ## Scope and rollback
 
 Public version remains 1.0.5-beta.12. Android versionCode becomes 1050027.

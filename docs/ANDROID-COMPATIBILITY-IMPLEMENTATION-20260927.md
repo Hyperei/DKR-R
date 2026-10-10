@@ -1,5 +1,10 @@
 # Android compatibility candidate — 27 September 2026
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 > Superseded for Android: device testing found a deterministic startup crash in
 > build 1050022's colour-readback self-test. Do not distribute that APK. See
 > [the 1050023 correction](ANDROID-STARTUP-CORRECTION-20260927.md). The historical

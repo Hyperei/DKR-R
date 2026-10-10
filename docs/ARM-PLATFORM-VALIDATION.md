@@ -1,5 +1,10 @@
 # ARM preview validation — 2026-09-21
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 Source baseline: `ab141cb` plus the uncommitted project-owned ARM adapters.
 Version: `1.0.5-beta.11`. No protected dependency or generated-source files
 were edited. Existing desktop release packages were not replaced.

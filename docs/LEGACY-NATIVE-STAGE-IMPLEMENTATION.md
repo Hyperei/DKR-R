@@ -1,5 +1,10 @@
 # Native-stage character selector — private candidate
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 2026-09-09. Implements the approved same-stage direction in
 `LEGACY-NATIVE-CHARACTER-STAGE-PLAN.md`. This is a private qualification
 candidate, not a public Beta 6 release or a completed mod-compatibility claim.

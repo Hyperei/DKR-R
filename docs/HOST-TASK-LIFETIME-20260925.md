@@ -1,5 +1,10 @@
 # Beta 12 — host task lifetime correction
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 This is the follow-up to `ANDROID-OPPO-STARTUP-20260925.md`. The user approved
 implementation after the temporary graphics delay had reproduced a permanent
 v1.1 startup stall in the previous package. This report distinguishes the

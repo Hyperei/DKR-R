@@ -1,5 +1,10 @@
 # Beta 5 HUD reference alignment — 2026-09-08
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 ## Evidence and correction
 
 1. **Wrong / unmoved groups.** The active `BeginWidget` path formerly used

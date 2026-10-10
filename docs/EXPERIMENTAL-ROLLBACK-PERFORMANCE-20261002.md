@@ -1,5 +1,10 @@
 # Experimental rollback performance pass — 2 October 2026
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 Candidate: `1.0.5-beta.14-experimental.perf.1`. Original Beta 14 packages and
 the full pre-edit dirty source snapshot are preserved outside the checkout.
 This changes the existing experimental backend, not the stable backends or

@@ -1,5 +1,10 @@
 # Optional mipmaps — v1.0.5 Beta 2
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 ## Behaviour
 
 Graphics now offers **Generate texture mipmaps (optional)**, off by default.

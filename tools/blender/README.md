@@ -1,13 +1,19 @@
 # Track Lab - Blender addon
 
-Author a Diddy Kong Racing track in Blender: place objects, items and the AI
+Make your own Diddy Kong Racing tracks in Blender! Place objects, items and the
 AI node graph over a track's geometry, reshape the geometry itself, then write
 it all back out and package it as a `.dkrmap` for DKR-R's `custom-tracks/`
 folder.
 
-This is Phase 1 of `docs/BLENDER_ADDON_PLAN.md` - remixing an existing track -
-plus all three steps of Phase 2: the track's own geometry can be reshaped, and
-geometry can be added and removed.
+The current addon supports retail remixes and new geometry, with custom
+textures, minimaps, music and water workflows described below. DKR-R 1.0.5
+includes the launcher integration under Mods / Hacks → Track Lab and the
+matching import/runtime support. The older addon plan remains historical;
+use this guide and CHANGELOG.md for current instructions.
+
+Texture cleanup uses staged, recoverable replacement across the affected model
+files. Keep backups of your project, and do not delete transaction/recovery
+files while an edit is in progress.
 
 ## Where this lives
 

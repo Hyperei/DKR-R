@@ -1,5 +1,10 @@
 # Magic Codes: v1.0.4 repair and validation
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 ## Scope
 
 This is an authored-runtime/Patch Pipeline repair. No RT64, N64Recomp,

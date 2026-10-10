@@ -1,27 +1,36 @@
 DKR-R v1.0.5 Public Build
 Windows x64 and Linux x64 AppImage
 
-This build combines the preserved local fixes with contributor PRs #49 and #50.
-Existing Track Lab, custom mods, save protection, water, texture-priority,
-launcher/overlay and online improvements are retained.
+There's been a lot going on since the last update! Custom tracks and characters,
+Track Lab, texture priorities, host-managed online mods, save protection and
+the shared launcher/overlay are all part of this build.
 
-PR #49: macOS source/build support, portable ELF verification, dependency
-preparation and platform lifecycle fixes. A macOS binary is NOT included or
-claimed verified in this delivery.
-Includes PR #49's subsequent macOS dependency/setup recovery fixes and
-ultrawide sky-motion correction in the normal and owned render paths.
-PR #50: optional modern camera controls, the F7 camera tuning panel, and Track
-Lab geometry/texture workflow improvements. Modern camera state is reset at
-runtime handoff and disabled in online simulation. Track Lab texture remapping
-uses staged recoverable file replacement rather than sequential overwrites.
+Auto selects Experimental Rollback. Host Prediction and Strict Input Sync stay
+available. Use the same complete package on every peer, including libexec workers.
+Genuine rollback remains experimental, with documented local scenery/category
+mixing limits; the version name is not a promise of bug-free netplay.
 
-Auto, Experimental Rollback, Host Prediction and Strict Input Sync remain in
-the existing online backend selector. Experimental Rollback remains explicitly
-experimental; public version numbering is not a claim of bug-free netplay.
-Use the same complete package on every peer, including its libexec workers.
+PR #49 contributes macOS source/build support, portable ELF verification,
+dependency/setup recovery, platform lifecycle work and ultrawide sky motion.
+No newly qualified macOS binary is included in this delivery.
+PR #50 contributes the optional offline Modern camera/F7 tuning panel and
+Track Lab geometry/texture improvements. Camera state is reset at handoff and
+disabled online. Texture remapping uses recoverable multi-file replacement.
 
-Keep backups of your saves and Track Lab projects before updating. No ROMs,
-personal saves or mod assets are supplied. Import your own supported game ROM.
+Reviewed legacy behaviour adapters work offline and online for admitted content.
+Unknown ROM code/global-data changes still need their own adapters.
+Clients consent to host requirements, reuse matching local content, receive only
+missing files and can retain verified mods inactive for offline play.
+No ROM or personal save collection is shared.
 
-Validation for this delivery is automated/headless, plus compilation/package
-checks. Visual gameplay, multiplayer and hardware checks are left to testers.
+Keep backups of saves and Track Lab projects before updating.
+This desktop delivery does not replace the separate Android/ARM previews.
+No ROMs, personal saves or sample mods are included.
+
+Current guides: https://github.com/ThatGuyMcd/DKR-R/tree/main/docs
+Changes: https://github.com/ThatGuyMcd/DKR-R/blob/main/CHANGELOG.md
+Validation: https://github.com/ThatGuyMcd/DKR-R/blob/main/RELEASE-VALIDATION.md
+
+The delivery's recorded checks are automated/headless and compilation/package
+checks. Visual gameplay, real multiplayer routes and hardware acceptance remain
+user-led; see the validation record for the exact source and package hashes.

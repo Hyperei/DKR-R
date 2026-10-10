@@ -1,5 +1,10 @@
 # v1.0.5 Beta 5 — legacy importer preview
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 This is an **import-workflow testing candidate**, not the completed legacy
 modding feature. Importing a patch does not yet make its track playable.
 The previous accepted HUD build remains the rollback build.

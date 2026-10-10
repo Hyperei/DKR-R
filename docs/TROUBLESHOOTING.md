@@ -1,88 +1,128 @@
-# Troubleshooting DKR-R 1.0.4
+# Troubleshooting DKR-R
+
+Start with the symptom and keep the original data. Please don't delete your
+saves or whole profile to troubleshoot a graphics, mod or connection failure.
 
 ## ROM rejected
 
-Diddy Kong Racing US v1.0/v77 and US Rev A/v1.1/v80 are supported. Normalized
-SHA-1 values are `0cb115d8716dbbc2922fda38e533b9fe63bb9670` and
-`6d96743d46f8c0cd0edb0ec5600b003c89b93755`. The file extension does not decide
-byte order.
+Only the clean US v1.0/v77 and Rev A/v1.1/v80 engines are supported.
+[ROM setup](ROM_SETUP.md) lists the exact hashes and supported byte orders.
+Import the original ROM; import a legacy patch through Mods / Hacks instead of
+selecting its already-patched ROM as the game.
 
-Byte-swapped and little-endian dumps are converted once into a verified local
-big-endian cache. If that cache is interrupted or damaged, close DKR-R and
-remove only the `rom-cache` directory from the active configuration folder;
-the launcher recreates it from the selected ROM on the next start.
+A damaged private `rom-cache` can be recreated from the selected original.
+Close DKR-R first and remove only that cache, not saves/settings.
+The old Windows extracted Rev A engine cache is not used by current linked
+payload selection; deleting it is not a current revision-repair instruction.
 
-Players always start the single public DKR-R application; engine selection is
-automatic. On Windows, a damaged private Rev A cache can be repaired by closing
-DKR-R and removing only `%LOCALAPPDATA%\DKR-R\engines`. The verified engine is
-recreated from `DKR-R.exe` on the next Rev A launch. If verification still
-fails, restore the official package and compare its published SHA-256.
+## Saves or mods look missing
 
-## Saves or settings appear missing
+Check normal versus portable mode and any config override first. A profile
+switch does not migrate data. Check Save Manager's Offline, Online, Modded and
+Recovery scopes, then use Refresh Stored Saves. Restoration is explicit.
+See [Saves](SAVES.md); never overwrite the only surviving copy.
 
-Compatibility paths are retained:
+After source re-preparation, an existing asset-only edition can remain selected.
+Choose the new edition deliberately. Hidden content is inactive. Importing
+does not automatically turn legacy mods on.
 
-- Windows: `%APPDATA%\DKRPort`
-- Linux: `$XDG_CONFIG_HOME/dkr-port` or `~/.config/dkr-port`
+## Mod preparation or gameplay fails
 
-Portable Windows stores data in `dkr-runtime-data` beside the executable.
+Read Details for asset-only/native-adapted/partial support.
+An xdelta needs its exact original source revision; all clients must own that
+source if reconstruction requires it. A filename or successful emulator run is
+not proof of native compatibility.
 
-## Linux/SteamOS closes as gameplay starts
+Use **Help & imports → Prepare all source imports again** after supplying missing
+sources/revisions. Cancel safely; do not modify receipts/reviews/journals.
+Memory budgets remain real even with the larger character roster.
+Reduce enabled content for a budget failure without deleting the installed set.
 
-Run the AppImage from a terminal and verify Vulkan with `vulkaninfo`. Steam Deck
-must expose its native Vulkan driver rather than a software or remote desktop
-device. The launcher may appear before RT64 creates the Vulkan device, so a
-driver failure can occur only when gameplay begins.
+For an asset crash, send the log/dump, mod name/edition, original ROM revision,
+scene and whether the same track fails without mods. Do not send ROMs or
+unlicensed extracted assets. See [legacy mods](LEGACY-MODS-BETA.md).
 
-## Modern presentation is uneven
+## Online stalls or failure
 
-Start at 60 FPS with Match Display disabled. Verify Accurate remains steady at
-4:3/30 FPS. High-refresh output interpolates presentation; it must not speed up
-simulation or audio. Disable custom texture packs and CRT filters while
-isolating third-party content.
+Use compatible complete packages and the same original ROM revision.
+The host creates the lobby after choosing mods/rules; changing them requires a
+new lobby. Clients must complete consent, preparation and verification.
 
-## Overlay input
+Auto selects Experimental Rollback; it is not fallback to Host Prediction.
+Try automatic input delay and a suitable prediction window for your route.
+A bounded input wait, renderer slowdown and scene-loading barrier are different
+problems: record the network overlay state and exact scene.
 
-Open the overlay with Escape, F1 or controller Back/View. Navigate with D-pad or
-left stick, select with A/Cross, cancel with B/Circle, and change pages with
-LB/RB. Mouse input remains active while the overlay is open.
+Send host and client logs from the same attempt. Include player count, backend,
+delay/window, enabled mods, scene, and whether the overlay responds.
+Don't publish private codes or profile keys.
+See [Online](ONLINE_MULTIPLAYER.md) for direct-routing limits.
 
-## Gyro drift
+## Graphics or uneven presentation
 
-Place the controller still, calibrate, then recenter at the desired neutral
-angle. On Steam Deck, select SDL3 native input and leave the Steam Input gyro
-action set to None; DKR-R reads the built-in IMU directly when Steam's virtual
-gamepad does not advertise a sensor. Do not map gyro to mouse or joystick at the
-same time. DKR-R uses hardware sensor timestamps when available, so duplicate
-high-rate polls do not integrate the same gyro sample more than once.
+First compare the same scene offline at 60 FPS. Temporarily disable enhanced
+water/hardware tracing, packs and CRT filters to isolate additional work.
+Do not confuse presentation FPS with game speed.
 
-If the Controls page still reports no gyro, run the packaged private helper
-from a terminal with `--self-test`. A Deck should list either a gamepad with
-`gyro=yes` or at least one `Steam Deck physical gyro interface`. Zero physical
-interfaces means SteamOS did not expose the Deck's `28de:1205` HID interface to
-the application; update SteamOS and verify the standard Steam device permission
-rules are installed.
+On Linux/SteamOS, verify the native Vulkan driver; software/remote-display
+drivers are not a useful performance baseline. A launcher can open before the
+game's Vulkan device is created. If an API fails, choose Automatic on the next
+launch rather than deleting a ROM/save.
 
-## Graphics API recovery
+Some graphics/scenery controls have narrower scope in Experimental Rollback.
+See [Graphics](GRAPHICS.md) for the actual restrictions.
 
-If a selected backend cannot initialize, remove only the local graphics setting
-or choose Automatic on the next launch. Do not delete your ROM or save files.
+## Controller or gyro trouble
 
-## Recomp policy change has no effect
+Use [Controls](CONTROLLERS.md) to choose SDL2/SDL3 and run the N64 mapping wizard.
+Auto keeps one selected backend; it should not repeatedly rediscover every
+device during a race. Report periodic spikes with controller model, connection
+type, OS and backend; compare explicit SDL2/SDL3.
 
-Run `Diagnose-DKR-Recompile.cmd`. Never edit generated functions or dependency
-worktrees directly.
+Steam Deck native gyro must not also be mapped to mouse/stick by Steam Input.
+Calibrate while still, then recenter at the desired neutral angle.
+An absent physical sensor needs device/permission diagnosis, not guessed gyro
+values. The private helper's `--self-test` can report its supported interfaces.
 
-## Creating a support report
+## Audio stops
 
-Open **PLAY**, expand the support summary, then select **EXPORT SUPPORT REPORT**.
-The report records the DKR-R release, presentation and graphics settings,
-enabled texture-pack count, operating system, CPU, memory, graphics adapter and
-storage type. It deliberately excludes paths, ROM data, saves, account names,
-controller identifiers, Friend Codes and lobby codes.
+Note whether only music stopped or effects/voices stopped too, and whether
+changing tracks or returning to the title restores it. Include custom music/
+character details and the log from that session.
+See [Sound](SOUND.md). Do not claim a missing cue was supplied by a mod until
+its source actually contains it.
 
-Diagnostic logging and crash dumps are separate opt-in switches in the same
-card. Enable them only while reproducing a problem, restart if requested, and
-use **OPEN LOGS** or **OPEN CRASH DUMPS** to reach the resulting files. Turning
-either switch off does not delete existing reports. Review any file before
-sharing it publicly.
+## Android startup and performance
+
+Send device/Android version, build code, graphics settings and scene.
+Use **About DKR-R → Support summary → Export Android Startup Logs** after
+reopening the app. If performance recording or export itself crashes, stop
+retrying and report that separately. `adb logcat -d` can capture earlier
+Java/native loader failures when a normal runtime log never starts.
+
+A black screen with continuing audio differs from a silent process crash.
+Say which happened. Recording/screenshots can add load or expose driver/surface
+faults; include whether capture was active. [Platform support](PLATFORMS.md)
+does not promise every handheld is already qualified.
+
+## Logs and support reports
+
+Open **About DKR-R → Support summary → EXPORT SUPPORT SUMMARY**.
+The summary omits private paths, save contents, account/device identifiers and
+lobby codes. Raw logs/dumps are different: review them before sharing.
+
+Use **OPEN LOGS** rather than assuming a downloaded package's folder is active.
+Normal Windows uses `%APPDATA%\DKRPort\logs`; Linux uses the active
+`dkr-port/logs` config root. Portable/config overrides select their own root.
+Android uses the app export controls.
+
+`runtime.log` is the current attempt and `runtime-previous.log` the preceding
+attempt. Older rotated logs are under `logs/history`, bounded to 20 files and
+128 MiB. Diagnostic logging and crash dumps have separate switches.
+A crash dump and its matching runtime log are more useful than a later clean log.
+
+## A patch has no effect
+
+A compile-only rebuild does not regenerate game hooks. Recompose/regenerate
+both revision payloads, and owned payloads when relevant.
+Follow [Building](BUILDING.md); never edit generated C to bypass the pipeline.

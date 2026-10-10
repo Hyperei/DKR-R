@@ -1,5 +1,9 @@
 # Renderer snapshot ownership
 
+This reference describes the normal task/decode ownership. Experimental
+Rollback additionally retires owned submissions before correction and separates
+checkpoint memory from mutable presentation workspaces. See [architecture](ARCHITECTURE.md).
+
 Modern presentation uses two distinct ownership stages. Neither stage retains
 a pointer into the game's live RDRAM after its owner releases that memory.
 

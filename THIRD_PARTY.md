@@ -13,7 +13,7 @@ N64ModernRuntime must also satisfy GPL-3.0; see
 | N64ModernRuntime | libultra-compatible host services | GPL-3.0 |
 | RT64 | RDP rendering and presentation | MIT |
 | elliotttate/wave-race-64-recomp | Enhanced-water renderer reference, adapted through DKR-R's patch pipeline | MIT |
-| GekkoNet | Pinned rollback research foundation; DKR-R currently uses its certified deterministic input-delay path while native host-stack rewind remains fail-closed | BSD-2-Clause |
+| GekkoNet | Pinned netplay research dependency; DKR-R's integrated Experimental Rollback uses its project-owned checkpoint/replay runtime, not the retired GekkoNet coordinator | BSD-2-Clause |
 | Monocypher | Authenticated encryption for online multiplayer datagrams | BSD-2-Clause or CC0 (DKR-R uses BSD-2-Clause) |
 | libdatachannel | Optional WebRTC data channels and WebSocket signaling for five-character Quick Join | MPL-2.0 |
 | Mbed TLS | Static TLS/DTLS provider used by Quick Join | Apache-2.0 or GPL-2.0-or-later (DKR-R uses Apache-2.0) |

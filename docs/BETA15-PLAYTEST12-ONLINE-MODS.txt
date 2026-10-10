@@ -1,5 +1,11 @@
 DKR-R v1.0.5 Beta 15 Playtest 12 - Host-managed online custom content
 
+HISTORICAL BUILD RECORD
+The original findings and limits below belong to the named earlier build.
+For current 1.0.5 instructions, use docs/README.md and CHANGELOG.md in the
+source repository. These old results do not qualify later packages.
+
+
 CRASH-FIX REBUILD (5 OCTOBER)
 All five supplied Playtest 11 dumps captured the texture cache beyond its
 700-entry retail allocation (701-741 entries). Additive characters/AI exceeded

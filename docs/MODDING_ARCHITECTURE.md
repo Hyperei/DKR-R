@@ -1,7 +1,9 @@
 # Modding architecture
 
-Status: proposal, 2026-10-04. Nothing here is implemented yet unless it is
-listed under **Current state**.
+Status: proposal. The DKR-R `.nrm` validation/API design below is not a shipped
+feature. Its recorded baseline is 4 October 2026, not the current 1.0.5 source.
+Legacy reviewed behaviour adapters are implemented separately; see
+[the current mod guide](LEGACY-MODS-BETA.md) and [architecture](ARCHITECTURE.md).
 
 This document defines the official way DKR-R runs third-party code: the
 community-standard N64Recomp `.nrm` format, loaded by the vendored librecomp,
@@ -18,9 +20,10 @@ replaced:
 RT64 `.rtz` texture-pack containers, which other recomps register as a mod
 content type, are not adopted: DKR-R already has its own texture pack flow.
 
-## Current state
+## Recorded baseline
 
-Facts about the tree as of `d971908`, which the rest of this document builds on.
+Facts recorded from `d971908`, which the proposal builds on. Version numbers,
+hook counts and missing safeguards in this section describe that snapshot.
 
 - The game registers with librecomp as `mod_game_id = "dkr"` for **both** US
   revisions (`runtime-recomp/src/game/game_registration.cpp`).

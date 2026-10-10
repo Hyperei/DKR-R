@@ -1,5 +1,10 @@
 # Android frame-pacing pass — build 1050025
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 27 September 2026. Public version remains **1.0.5-beta.12**.
 
 ## Scope and honest outcome

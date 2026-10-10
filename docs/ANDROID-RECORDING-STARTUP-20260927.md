@@ -1,5 +1,10 @@
 # Android recording-enabled startup crash — build 1050024
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 Date: 27 September 2026. Public version remains **1.0.5-beta.12**.
 
 ## Outcome and qualification boundary

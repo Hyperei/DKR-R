@@ -1,131 +1,112 @@
 # DKR-R architecture
 
-## What kind of port this is
+DKR-R is a static recompilation, with the matching DKR decomp as the readable
+reference for symbols, structures and algorithms. We keep enhancements in the
+authored integration layer and Patch Pipeline rather than hand-editing the
+generated game or dependencies.
 
-DKR-R is a static recompilation port, not a conventional source-to-source
-decompilation port. The completed Diddy Kong Racing decompilation remains the
-authoritative readable reference for symbols, structures, algorithms and patch
-locations. The executable path is:
+## Runtime and patch ownership
 
-```text
-User-owned DKR US v1.0 or US Rev A/v1.1 ROM
-        +
-Pinned matching DKR decomp ELF and symbols
-        |
-N64Recomp-generated native CPU functions
-        |
-Project Patch Pipeline hooks and host policies
-        |
-N64ModernRuntime scheduling, saves, audio, input and RSP dispatch
-        |
-Recompiled Rare audio/F3DDKR microcode
-        |
-One SDL2 launcher/game window + private headless SDL3 controller helper
-```
+The ordinary execution path combines the user's validated ROM, matching ELF,
+N64Recomp CPU output, Rare audio/F3DDKR RSP output, N64ModernRuntime services
+and the project RT64 bridge. One SDL2 frontend owns launcher/game interaction.
+Supported desktop builds use a separate headless SDL3 input worker; Android
+uses in-process SDL2. SDL3 never replaces the frontend's window ABI.
 
-This approach preserves the original program and timing while allowing focused,
-readable host enhancements without manually rewriting the entire game.
+Protected inputs include `RecompiledFuncs`, `RecompiledPatches`,
+RT64, N64Recomp and N64ModernRuntime. Instruction/function changes belong in
+the versioned policies and composed fragments; dependency changes belong in
+checksum-pinned patches. Both ordinary and owned payloads are generated into
+new directories. See [Building](BUILDING.md) and [Development](DEVELOPMENT.md).
 
-## Protected boundaries
+The project layer owns ROM selection, controller routing/profiles/gyro,
+save leases and atomic persistence, settings UI, presentation/HUD identities,
+texture priorities, enhanced-water policy, custom asset namespaces and netplay.
 
-The following are generated or pinned dependency work areas and must never be
-edited directly:
+## Revision selection
 
-- `runtime-recomp/RecompiledFuncs`
-- `runtime-recomp/RecompiledPatches`
-- `extern/rt64`
-- `extern/n64-modern-runtime`
-- `extern/n64-modern-runtime/N64Recomp`
+Canonical ROM hashes choose US v1.0/v77 or Rev A/v1.1/v80 before game
+registration and renderer/audio startup. Both CPU payloads are linked into
+the application. The older extracted Windows Rev A module/cache architecture
+is no longer the current dispatch path. Players do not start a second engine
+executable.
 
-DKR instruction/function hooks belong in the matching versioned
-`runtime-recomp/dkr.us.v*.recomp-policy.json`. The v1.1 policy is translated
-from named v1.0 functions and checked intra-function offsets by
-`scripts/generate_revision_policy.py`; it is not produced by a global address
-delta. Dependency changes belong in `patches/manifest.json` and its referenced
-patches.
+Byte-swapped inputs are converted into a verified private cache without
+modifying the original file. Both revisions use the compatible EEPROM format,
+but online and legacy mod-set save namespaces remain separate from offline
+progress. See [ROM setup](ROM_SETUP.md) and [Saves](SAVES.md).
 
-## Runtime ownership
+## Three online backends
 
-The project-owned `runtime-recomp/src/game` layer owns:
+All concrete backends use the same lobby, Quick Join/friend admission, virtual
+port ownership and save/mod compatibility checks. Auto is a host preference
+that selects Experimental Rollback, not a new wire backend.
 
-- exact, byte-order-independent ROM validation, revision dispatch and game
-  registration;
-- one-window SDL platform integration;
-- stable hot-plug controller routing across four N64 ports, independent
-  per-player bindings, exclusive keyboard ownership, layered SDL controller
-  mappings, raw-device setup and angle-based gyro input;
-- virtual EEPROM and four channel-specific Controller Pak stores, with
-  atomic backup recovery and simultaneous platform rumble capability;
-- audio mix/EQ policy without altering the original audio clock;
-- Accurate/Modern presentation policy;
-- widescreen, interpolation, FOV, visibility and detail controls;
-- a presentation-only HUD policy covering the retail 59-entry `HudData` ABI,
-  the direct minimap draw and generated timer glyphs across every 1-4 player,
-  standard, wide and ultrawide layout variant;
-- shared controller-first startup/in-game DKR-R UI and Save Manager;
-- F3DDKR command translation and DKR-specific renderer policy.
+**Host Prediction** retains the original host-authored immutable commit chain.
+Prediction is bounded; delayed replicas use portable host state and explicit
+recovery/finish barriers. Published commits are not rewritten by late inputs.
 
-## Online multiplayer boundary
+**Strict Input Sync** advances with the required authenticated input set.
+Its input waits are intentional rather than a hidden rollback implementation.
 
-The project-owned netplay layer provides a session boundary with
-five-character WebRTC Quick Join, per-peer X25519 key agreement,
-XChaCha20-Poly1305 authentication, explicit host admission, repeated input
-history, host-authored hash-chained frame commits, portable authoritative
-gameplay correction, ready/load/start barriers, subsystem state hashes and
-replay logs. Quick Join uses a public PeerJS endpoint only for signaling and
-then carries the existing session protocol over a DTLS-protected WebRTC data
-channel. No DKR-R account service, public directory, gameplay backend or relay
-is required or built.
-The host is always N64 port 1; approved clients map to ports 2-4. All peers
-execute the same original 30 Hz simulation.
+**Experimental Rollback** uses isolated full-scene owned CPU closures for both
+supported revisions. It captures guest state plus audited native sidecars,
+predicts remote input within a bounded window and restores/replays on correction.
+The launch follows the normal retail menu flow. Scene construction, lifetime
+cuts and finish transitions stay behind explicit ownership/confirmation gates.
 
-Runtime input is resolved once at a Patch Pipeline-authored boundary before the
-game starts its SI read. Physical polling updates only a private local sample;
-it can never clear or overwrite the committed virtual N64 ports. Frontend
-lockstep, gameplay lockstep and rollback all publish the same complete,
-immutable four-port frame through the project-owned online input broker. The
-local keyboard/controller profile is independent from the immutable network
-slot, so the host remains virtual Player 1 and guests remain Players 2-4
-without requiring a user's physical pad to occupy that local index.
+The owned revision registry keeps capsules and native callback dispatch
+separate. Unknown imports, stale object/asset generations, out-of-range guest
+addresses and exhausted budgets fail closed. Restoring a checkpoint must not
+leave renderer references pointing at retired simulation memory.
 
-Shared menu ownership is released by a revision-specific named hook at
-character select. Gameplay scenes enter a synchronized baseline barrier before
-simulation. The default predictive mode lets Player 1 commit hold-last input
-inside a measured, bounded lead window; a published commit is immutable and a
-late sample is diagnostic rather than a partial rewind. Guests install compact
-portable Player-1 replicas when real frame debt develops. Exact portable host
-checkpoints remain the fail-safe recovery and finish-seal path; they exclude raw
-host pointers, audio, OS queues and renderer memory.
+Rendering consumes owned snapshots rather than live replay memory.
+Confirmed audio and persistence are separate output consumers: replay does not
+repeat audible events or persist speculative EEPROM/Pak state.
+See [renderer ownership](RENDER_SNAPSHOT_ARCHITECTURE.md).
 
-## Preset boundary
+## Network and mod admission
 
-Accurate is the regression baseline: original 4:3, original 30 FPS cadence,
-original FOV/detail/visibility/audio mix and original HUD placement.
+PeerJS introduces Quick Join peers; authenticated WebRTC channels carry native
+session traffic. There is no bundled gameplay relay. Per-peer key agreement,
+authenticated encryption, replay rejection and bounded traffic lanes keep
+unapproved/stale data out of gameplay.
 
-Modern leaves simulation, race timing, input polling and audio on that original
-timeline. It changes only presentation and explicitly selected quality-of-life
-policies. High-refresh output is interpolation, not a faster game clock. HUD
-placement and size are host-only presentation data and never enter deterministic
-simulation, replay or online-session compatibility state.
+Admission binds build/protocol, original ROM, simulation policy, architecture/
+floating-point mode, gameplay settings/Magic Codes, save proof and the frozen
+host mod manifest. Mod schema/behaviour contracts bind exact verified content,
+not names or mod-provided claims.
 
-## ROM and save boundary
+Consented preparation reuses matching offline content or verified caches and
+transfers only missing payloads. Each client reconstructs against its own
+original ROM. Offline retention publishes inactive verified copies without
+replacing personal activation or saves. Session identity and source-path
+validation remain mandatory even on a cache hit.
 
-The selected Game Pak is canonicalised for identification and validated against
-the exact v1.0/v77 or Rev A/v1.1/v80 hash. Byte-swapped and little-endian files
-are materialised once as a hash-verified big-endian file in the user's private
-`rom-cache`; the original file is never modified and no ROM is copied into a
-release. Revision selection happens before game registration, RT64 creation or
-audio startup. Windows exposes one `DKR-R.exe`; its verified Rev A engine module
-is an embedded resource extracted into a versioned private cache only when
-needed. The public executable loads that DLL with `LoadLibraryExW`, resolves the
-narrow `DkrRunRevisionEngine` ABI and runs it synchronously inside the existing
-process. The module creates only a borderless child render surface inside the
-existing client area. Resize, fullscreen, restart and close retain the original
-host window, and revision selection never starts a second game process.
-Linux exposes one AppImage and macOS one executable (or one application bundle
-with `--package`), with the alternate engine linked in privately. An internal-engine guard validates the
-ROM again before either engine can register generated code. The revisions
-intentionally share the existing compatible EEPROM/configuration namespace.
-Releases are scanned for ROM extensions and N64 ROM headers. EEPROM and four
-virtual Controller Pak files remain host files and can be managed through T.T.'s
-Save Manager.
+## Presentation and settings
+
+Accurate is the original presentation reference. Modern interpolation runs
+between authored frames without changing the simulation/audio clock.
+HUD group translation does not stretch artwork or modify race state.
+
+Renderer-only settings remain local. Settings that affect checkpointed
+construction/culling/audio cannot simply be applied privately during replay.
+Experimental scenery has a local billboard cache; a general independent
+actor/mesh builder and category output mixer remain deferred. Modern camera
+is gated offline. See [Graphics](GRAPHICS.md) and [Sound](SOUND.md).
+
+## Assets, saves and release safety
+
+Legacy imports create isolated banks and reviewed native behaviour adapters,
+not a mutable patched cartridge or unrestricted guest-code interpreter.
+Track Lab uses the additive `.dkrmap` format with confined payload paths,
+optional music and matching HD packs. Custom identity owns the relevant
+model/portrait/voice resources; retail donors stay unchanged.
+
+Every launch holds one immutable save route until all save producers retire.
+Online faults cannot fall through into offline storage. Scoped backups,
+validation and recoverable transactions protect save and Track Lab edits.
+
+No ROM, extracted Nintendo/Rare assets, user save, local profile or secret
+belongs in the repository or release. See [asset policy](ASSET_POLICY.md),
+[mod formats](CUSTOM_TRACKS.md) and [release validation](../RELEASE-VALIDATION.md).

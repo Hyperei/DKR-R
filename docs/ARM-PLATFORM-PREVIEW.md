@@ -1,5 +1,10 @@
 # ARM platform preview — 1.0.5 beta 11
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 This is an initial hardware-qualification port, not a replacement for the
 validated Windows/x86-64 Linux releases. No ROM, save, profile, mod bank or
 signing key is included. The existing desktop packages remain the rollback.

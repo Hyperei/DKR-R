@@ -1,5 +1,10 @@
 # Android mobile launcher and touch controls — preview.5
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 ## Scope
 
 This is an Android-only launcher/overlay presentation and input adapter. It

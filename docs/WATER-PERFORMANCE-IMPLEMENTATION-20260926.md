@@ -1,5 +1,10 @@
 # Water performance pass — implementation and qualification
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 Status: implementation and three-platform packaging complete. Full raced-route
 and physical-device qualification remains pending; Linux ARM packaging is blocked.
 

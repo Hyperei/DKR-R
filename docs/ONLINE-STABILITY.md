@@ -1,5 +1,10 @@
 # DKR-R v1.0.5 Beta 3: Online input delivery and boss introductions
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 8 September 2026. This is a beta for user testing, not a declaration that every
 Internet connection, device or gameplay regression gate has passed.
 

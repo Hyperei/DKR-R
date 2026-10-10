@@ -1,5 +1,10 @@
 # Standalone launcher performance — 1.0.4
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 This is a project-owned launcher performance pass, not a renderer migration.
 The active, visible launcher targets **60 frames per second**, including when
 no controls are being moved (or the reported display rate if below 60 Hz).

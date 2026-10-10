@@ -1,5 +1,10 @@
 # OPPO/Mali Android startup freeze — 25 September 2026
 
+> Historical report or implementation plan. This retains the original build
+> findings, counts and limits; it is not the current 1.0.5 user guide.
+> Use the [documentation index](README.md) for current instructions.
+
+
 Implementation follow-up: `HOST-TASK-LIFETIME-20260925.md`. The findings below
 describe the pre-fix investigation; the follow-up records the approved
 correction, regression tests and remaining physical-device gate.
