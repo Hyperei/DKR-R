@@ -1,0 +1,8 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -78,3 +78,3 @@
+ elseif (APPLE)
+-    set(PLUME_APPLE_RETINA_ENABLED OFF)
++    set(PLUME_APPLE_RETINA_ENABLED ON)
+ endif()

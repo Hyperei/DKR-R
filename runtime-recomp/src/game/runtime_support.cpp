@@ -20,6 +20,9 @@
 #include <Shellapi.h>
 #include <dxgi1_6.h>
 #include <winioctl.h>
+#elif defined(__APPLE__)
+#include <sys/sysctl.h>
+#include <unistd.h>
 #else
 #include <sys/sysinfo.h>
 #include <sys/utsname.h>
@@ -158,7 +161,7 @@ std::string WindowsDriveKind(const std::filesystem::path& path) {
     if (!ok) return "Unknown storage";
     return descriptor.IncursSeekPenalty ? "HDD" : "SSD";
 }
-#else
+#elif !defined(__APPLE__)
 std::string ReadFirstMatchingLine(const std::filesystem::path& path,
                                   const std::string& prefix) {
     std::ifstream input(path);
@@ -266,12 +269,17 @@ bool open_directory(const std::filesystem::path& directory,
 #else
     const pid_t child = fork();
     if (child == 0) {
+#if defined(__APPLE__)
+        // Finder-launched apps get a trimmed PATH; /usr/bin/open is fixed.
+        execl("/usr/bin/open", "open", directory.c_str(), static_cast<char*>(nullptr));
+#else
         execlp("xdg-open", "xdg-open", directory.c_str(),
                static_cast<char*>(nullptr));
+#endif
         _exit(127);
     }
     if (child < 0) {
-        error = "Linux could not open that DKR-R support folder.";
+        error = "Could not open that DKR-R support folder.";
         return false;
     }
 #endif
@@ -342,6 +350,22 @@ SystemSummary collect_system_summary() {
     GetModuleFileNameW(nullptr, executable,
                        static_cast<DWORD>(std::size(executable)));
     result.application_drive = WindowsDriveKind(executable);
+#elif defined(__APPLE__)
+    char text[256]{};
+    std::size_t size = sizeof(text);
+    result.operating_system =
+        sysctlbyname("kern.osproductversion", text, &size, nullptr, 0) == 0
+            ? std::string("macOS ") + text : "macOS";
+    size = sizeof(text);
+    result.cpu = sysctlbyname("machdep.cpu.brand_string", text, &size, nullptr, 0) == 0
+        ? Trim(text) : "Unknown CPU";
+    std::uint64_t memory = 0;
+    size = sizeof(memory);
+    result.memory = sysctlbyname("hw.memsize", &memory, &size, nullptr, 0) == 0
+        ? FormatBytes(memory) : "Unknown memory";
+    result.gpu = "Unknown graphics adapter";
+    result.boot_drive = "Unknown storage";
+    result.application_drive = "Unknown storage";
 #else
     struct utsname system_name{};
     result.operating_system = uname(&system_name) == 0

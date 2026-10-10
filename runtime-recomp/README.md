@@ -59,8 +59,7 @@ build/dkr-runtime-linux/bin/Release/DKR-R
 Every Linux release must also be packaged as an AppImage with `Build-Linux.sh`
 or `scripts/Package-Linux-AppImage.sh`.
 
-macOS output is a native RT64/Metal `DKR-R.app`; `Build-macOS.sh` performs the
-complete compile, test, self-test, bundle, scan and ZIP flow on an Apple host.
+For macOS builds, see [the build guide](../docs/BUILDING.md#macos).
 
 ## ROM policy
 

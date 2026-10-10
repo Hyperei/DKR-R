@@ -122,8 +122,8 @@ narrow `DkrRunRevisionEngine` ABI and runs it synchronously inside the existing
 process. The module creates only a borderless child render surface inside the
 existing client area. Resize, fullscreen, restart and close retain the original
 host window, and revision selection never starts a second game process.
-Linux exposes one AppImage and macOS one application bundle, with the alternate
-engine kept private inside that bundle. An internal-engine guard validates the
+Linux exposes one AppImage and macOS one executable (or one application bundle
+with `--package`), with the alternate engine linked in privately. An internal-engine guard validates the
 ROM again before either engine can register generated code. The revisions
 intentionally share the existing compatible EEPROM/configuration namespace.
 Releases are scanned for ROM extensions and N64 ROM headers. EEPROM and four

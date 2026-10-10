@@ -24,6 +24,7 @@
 #else
 #include <fcntl.h>
 #include <sys/file.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -33,6 +34,7 @@ using Validator = bool (*)(const std::filesystem::path&, Bytes&);
 inline std::atomic<std::uint64_t> serial{0};
 inline std::mutex protection_mutex;
 inline std::filesystem::path protected_root;
+inline std::filesystem::path protected_canonical_root;
 inline bool online_protection = false;
 
 inline std::filesystem::path absolute(const std::filesystem::path& path) {
@@ -49,15 +51,26 @@ inline std::filesystem::path key(const std::filesystem::path& path) {
 }
 inline void protect_offline(const std::filesystem::path& root, bool enabled) {
     std::scoped_lock lock(protection_mutex);
-    protected_root = storage::absolute(root); online_protection = enabled;
+    const auto resolved = std::filesystem::weakly_canonical(storage::absolute(root));
+    protected_root = storage::absolute(root);
+    protected_canonical_root = resolved;
+    online_protection = enabled;
 }
 inline bool writable_path(const std::filesystem::path& path, std::string& error) {
     std::error_code ec;
     const auto target = storage::absolute(path);
+    const auto canonical_target = std::filesystem::weakly_canonical(target, ec);
+    if (ec) {
+        error = "Cannot resolve save storage: " + ec.message(); return false;
+    }
     {
         std::scoped_lock lock(protection_mutex);
         if (online_protection) {
-            const auto relative = key(target).lexically_relative(key(protected_root)).generic_string();
+            // Check both spellings before accepting OS-owned symlinks. In
+            // particular /var and /private/var must protect the same save.
+            for (const auto& relative : {
+                key(target).lexically_relative(key(protected_root)).generic_string(),
+                key(canonical_target).lexically_relative(key(protected_canonical_root)).generic_string()}) {
             if (relative == "saves/dkr.us.v77.bin" ||
                 relative.starts_with("saves/dkr.us.v77.bin.") ||
                 relative.starts_with("controller-pak-") || relative.starts_with("save-backups/") ||
@@ -65,12 +78,24 @@ inline bool writable_path(const std::filesystem::path& path, std::string& error)
                 error = "Offline saves are protected while an online session is active.";
                 return false;
             }
+            }
         }
     }
     for (auto at = target; !at.empty();) {
         const auto state = std::filesystem::symlink_status(at, ec);
         if (!ec && std::filesystem::is_symlink(state)) {
+#if defined(_WIN32)
             error = "Save storage cannot use symbolic links."; return false;
+#else
+            // Root-owned links are OS layout (macOS /var -> /private/var, an
+            // admin's /home -> /data/home); an unprivileged user can't plant
+            // one. Running as root, this is no protection, which is accepted:
+            // root can already rewrite any file.
+            struct stat link{};
+            if (lstat(at.c_str(), &link) != 0 || link.st_uid != 0) {
+                error = "Save storage cannot use symbolic links."; return false;
+            }
+#endif
         }
 #if defined(_WIN32)
         const auto attributes = GetFileAttributesW(at.c_str());
@@ -114,7 +139,8 @@ inline std::shared_ptr<Lease> acquire(const std::filesystem::path& path, std::st
             if (it->second.expired()) it = leases.erase(it); else ++it;
         }
     }
-    const auto identity = key(target);
+    const auto canonical_target = std::filesystem::weakly_canonical(target);
+    const auto identity = key(canonical_target);
     if (auto prior = leases[identity].lock()) return prior;
     std::error_code ec; std::filesystem::create_directories(target.parent_path(), ec);
     if (ec) { error = "Cannot create save storage: " + ec.message(); return {}; }

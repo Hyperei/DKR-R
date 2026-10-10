@@ -1,16 +1,15 @@
 """Restore the v1.1 model-cache failure invariant in the v1.0 loader.
 
 Project Patch Pipeline only: native model loading and successful cache entries
-remain untouched. Verified against the same hash-pinned retail ELFs as portraits.
+remain untouched. Verified against the same reviewed retail ELF images as portraits.
 """
 import copy
-import hashlib
 import struct
-from legacy_character_presentation_policy import ELFS
+from legacy_character_presentation_policy import reviewed_revision
 
 
 def compose_model_cache(policy, elf, revision, sections, symbols):
-    if revision not in ELFS or hashlib.sha256(elf.read_bytes()).hexdigest() != ELFS[revision]:
+    if reviewed_revision(elf) != revision:
         raise ValueError('Model cache requires a reviewed retail ELF')
     result = copy.deepcopy(policy)
     words = {base+i: struct.unpack_from('>I', data, i)[0]

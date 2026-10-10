@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""Package the tested build tree as an ad-hoc-signed macOS app and ZIP."""
+import argparse
+import hashlib
+import os
+from pathlib import Path
+import plistlib
+import re
+import shutil
+import subprocess
+import tempfile
+import scan_for_game_assets as asset_scan
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def run(*args):
+    return subprocess.check_output([str(a) for a in args], text=True).strip()
+
+
+def system_library(name):
+    return name.startswith(("/System/Library/", "/usr/lib/"))
+
+
+def load_commands(path):
+    return run("otool", "-l", path)
+
+
+def rpaths(path):
+    return re.findall(r"cmd LC_RPATH\s+cmdsize \d+\s+path (.*?) \(offset", load_commands(path))
+
+
+def dependencies(path):
+    names = [line.strip().split(" (compatibility", 1)[0]
+             for line in run("otool", "-L", path).splitlines()[1:]]
+    if path.suffix == ".dylib":
+        names = names[1:]  # LC_ID_DYLIB, not a dependency
+    return names
+
+
+def resolve(name, source, executable):
+    def expand(value):
+        return Path(value.replace("@loader_path", str(source.parent))
+                    .replace("@executable_path", str(executable.parent)))
+    candidates = ([expand(p) / name[len("@rpath/"):]
+                   for p in rpaths(source) + rpaths(executable)]
+                  if name.startswith("@rpath/") else [expand(name)])
+    for candidate in candidates:
+        if candidate.is_absolute() and candidate.is_file():
+            return candidate.resolve()
+    raise RuntimeError(f"Cannot resolve {name} required by {source}")
+
+
+def release_number(version):
+    """major.minor.patch for CFBundleShortVersionString, or None."""
+    match = re.match(r"\d+\.\d+\.\d+", version)
+    return match[0] if match else None
+
+
+def package(build, version):
+    executable = build / "bin/Release/DKR-R"
+    helpers = executable.parent / "libexec/dkr-r"
+    required = [executable, helpers / "DKR-R-ModWorker", helpers / "DKR-R-InputHost"]
+    for path in required:
+        if not path.is_file():
+            raise RuntimeError(f"Missing executable: {path}; complete the macOS build first")
+    # Single-architecture only: Homebrew bottles are thin and otool's fat
+    # listing is not parsed.
+    architectures = run("lipo", "-archs", executable).split()
+    if len(architectures) != 1 or architectures[0] not in ("arm64", "x86_64"):
+        raise RuntimeError(f"Unsupported architectures: {architectures}")
+    architecture = architectures[0]
+    name = f"DKR-R-{version}-macOS-{architecture}"
+    dist = ROOT / "dist"
+    dist.mkdir(exist_ok=True)
+    # Assemble in a private temporary directory; leave existing releases intact.
+    with tempfile.TemporaryDirectory(prefix="dkr-package-", dir=dist) as temporary:
+        stage = Path(temporary) / name
+        app = stage / "DKR-R.app"
+        contents = app / "Contents"
+        macos = contents / "MacOS"
+        resources = contents / "Resources"
+        frameworks = contents / "Frameworks"
+        for directory in (macos, resources, frameworks):
+            directory.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(executable.parent / "assets", resources / "assets")
+        (macos / "libexec/dkr-r").mkdir(parents=True)
+        # SDL uses Resources as the base path of a bundle. Keep helper code in
+        # MacOS, with the same trusted libexec lookup used by development builds.
+        (resources / "libexec").symlink_to("../MacOS/libexec")
+        images = {}
+        contexts = {}
+        for source in required:
+            destination = macos / source.relative_to(executable.parent)
+            shutil.copy2(source, destination)
+            images[source.resolve()] = destination
+            contexts[source.resolve()] = source.resolve()
+
+        def library(source, owner):
+            source = source.resolve()
+            if source not in images:
+                # Separate pinned and system SDL3 builds even if names match.
+                tag = hashlib.sha256(source.read_bytes()).hexdigest()[:12]
+                destination = frameworks / f"{tag}-{source.name}"
+                shutil.copy2(source, destination)
+                images[source] = destination
+                contexts[source] = owner
+            return images[source]
+
+        processed = set()
+        minimum = (12, 0)
+        while pending := [p for p in images if p not in processed]:
+            for source in pending:
+                destination, owner = images[source], contexts[source]
+                if run("lipo", "-archs", source).split() != [architecture]:
+                    raise RuntimeError(f"{source} is not a thin {architecture} image")
+                commands = load_commands(source)
+                versions = re.findall(r"\bminos (\d+\.\d+(?:\.\d+)?)", commands)
+                versions += re.findall(r"cmd LC_VERSION_MIN_MACOSX\s+cmdsize \d+\s+version (\d+\.\d+(?:\.\d+)?)", commands)
+                for value in versions:
+                    minimum = max(minimum, tuple(int(n) for n in value.split('.')))
+                for dependency in dependencies(source):
+                    if system_library(dependency):
+                        continue
+                    target = library(resolve(dependency, source, owner), owner)
+                    run("install_name_tool", "-change", dependency,
+                        f"@rpath/{target.name}", destination)
+                # SDL2-compat loads SDL3 with dlopen, so otool cannot discover it.
+                if b"@loader_path/libSDL3.dylib" in source.read_bytes():
+                    sdl3 = Path(run("brew", "--prefix", "sdl3")) / "lib/libSDL3.dylib"
+                    target = library(sdl3, owner)
+                    alias = frameworks / "libSDL3.dylib"
+                    if not alias.exists():
+                        alias.symlink_to(target.name)
+                for old in set(rpaths(source)):
+                    run("install_name_tool", "-delete_rpath", old, destination)
+                relative = os.path.relpath(frameworks, destination.parent)
+                run("install_name_tool", "-add_rpath", f"@loader_path/{relative}", destination)
+                if destination.suffix == ".dylib":
+                    run("install_name_tool", "-id", f"@rpath/{destination.name}", destination)
+                processed.add(source)
+
+        # Icon from the approved artwork (512 px source, so no 512@2x).
+        iconset = Path(temporary) / "DKR-R.iconset"
+        iconset.mkdir()
+        for size in (16, 32, 128, 256, 512):
+            for scale, suffix in ((1, ""), (2, "@2x")):
+                if size * scale > 512:
+                    continue
+                run("sips", "-z", size * scale, size * scale, ROOT / "assets/ui/Icons/DKR-R-Icon.png",
+                    "--out", iconset / f"icon_{size}x{size}{suffix}.png")
+        run("iconutil", "-c", "icns", iconset, "-o", resources / "DKR-R.icns")
+        plist = dict(CFBundleExecutable="DKR-R", CFBundleName="DKR-R",
+                     CFBundleIdentifier="io.github.thatguymcd.dkr-r",
+                     CFBundlePackageType="APPL", CFBundleVersion="1",
+                     CFBundleShortVersionString=release_number(version),
+                     CFBundleIconFile="DKR-R",
+                     LSMinimumSystemVersion=".".join(map(str, minimum)),
+                     NSHighResolutionCapable=True)
+        with (contents / "Info.plist").open("wb") as handle:
+            plistlib.dump(plist, handle)
+        notices = resources / "Licenses"
+        notices.mkdir()
+        for source, label in [(ROOT / "LICENSE.md", "DKR-R-LICENSE.md"),
+                             (ROOT / "THIRD_PARTY.md", "DKR-R-THIRD_PARTY.md"),
+                             (ROOT / "runtime-recomp/COPYING-NOTICE.md", "DKR-R-COPYING-NOTICE.md"),
+                             (ROOT / "extern/rt64/LICENSE", "RT64-LICENSE.txt"),
+                             (ROOT / "extern/rt64/src/contrib/imgui/LICENSE.txt", "Dear-ImGui-LICENSE.txt"),
+                             (ROOT / "extern/n64-modern-runtime/COPYING", "N64ModernRuntime-COPYING.txt"),
+                             (ROOT / "extern/n64-modern-runtime/N64Recomp/LICENSE", "N64Recomp-LICENSE.txt"),
+                             (ROOT / "extern/sdl3/LICENSE.txt", "SDL3-LICENSE.txt")]:
+            shutil.copy2(source, notices / label)
+        shutil.copytree(ROOT / "packaging/licenses", notices / "additional")
+        # Include licences for the Homebrew SDL libraries, where used.
+        for formula in ("sdl2", "sdl3"):
+            prefix = Path(run("brew", "--prefix", formula))
+            for source in prefix.glob("*LICENSE*"):
+                shutil.copy2(source, notices / f"{formula}-{source.name}")
+        asset_scan.ROOT = stage
+        asset_scan.ALLOW_LARGE = {p.relative_to(stage).as_posix() for p in images.values()}
+        if asset_scan.main():
+            raise RuntimeError("Package contains prohibited game data")
+        for destination in images.values():
+            for dependency in dependencies(destination):
+                if system_library(dependency):
+                    continue
+                if not (dependency.startswith("@rpath/") and (frameworks / dependency[len("@rpath/"):]).is_file()):
+                    raise RuntimeError(f"Unbundled dependency: {dependency}")
+            run("codesign", "--force", "--sign", "-", destination)
+        run("codesign", "--force", "--sign", "-", app)
+        run("codesign", "--verify", "--deep", "--strict", app)
+        with tempfile.TemporaryDirectory(prefix="dkr-package-pak-") as profile:
+            run(macos / "DKR-R", "--self-test-pak", profile)
+        archive = Path(temporary) / f"{name}.zip"
+        run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", stage, archive)
+        output = dist / archive.name
+        if output.exists():
+            raise RuntimeError(f"Release already exists: {output}; move it aside or use DKR_RELEASE_VERSION")
+        archive.rename(output)
+        print(f"Created {output}\nAd-hoc signed for testers; not Developer ID signed or notarized.")
+        # Homebrew bottles are built for the host's macOS, so the bundled SDL
+        # libraries set the floor; the app will not open on anything older.
+        print(f"Requires macOS {plist['LSMinimumSystemVersion']} or newer (set by the bundled Homebrew SDL libraries).")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("build", type=Path)
+    parser.add_argument("version")
+    args = parser.parse_args()
+    if release_number(args.version) is None or not re.fullmatch(r"[A-Za-z0-9._-]+", args.version):
+        parser.error("version must start with a numeric major.minor.patch")
+    package(args.build.resolve(), args.version)

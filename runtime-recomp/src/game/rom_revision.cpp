@@ -13,6 +13,7 @@
 #include <optional>
 #include <random>
 #include <sstream>
+#include <utility>
 #include <vector>
 
 namespace dkr::runtime::rom {
@@ -24,14 +25,10 @@ constexpr std::array<std::uint8_t, 4> kLittleEndian32Magic{0x40, 0x12, 0x37, 0x8
 
 struct FileStamp {
     std::uintmax_t size = 0;
-#if defined(__ANDROID__)
-    // Bionic libc++ uses a 128-bit duration rep with no iostream operators.
-    // Android's timestamps fit signed 64-bit nanoseconds; reject outliers
-    // rather than truncate and potentially accept an invalid cache entry.
+    // file_time_type::rep is wider than 64 bits on libc++ (Android, Apple).
+    // Real timestamps fit signed 64-bit nanoseconds; out-of-range values are
+    // rejected rather than truncated into a possibly valid cache entry.
     std::int64_t modified = 0;
-#else
-    std::filesystem::file_time_type::rep modified = 0;
-#endif
     bool valid = false;
 };
 
@@ -64,10 +61,8 @@ FileStamp ReadStamp(const std::filesystem::path& path) {
     const auto modified = std::filesystem::last_write_time(path, error);
     if (error) return stamp;
     const auto ticks = modified.time_since_epoch().count();
-#if defined(__ANDROID__)
-    if (ticks < INT64_MIN || ticks > INT64_MAX) return stamp;
-#endif
-    stamp.modified = ticks;
+    if (!std::in_range<std::int64_t>(ticks)) return stamp;
+    stamp.modified = static_cast<std::int64_t>(ticks);
     stamp.valid = true;
     return stamp;
 }

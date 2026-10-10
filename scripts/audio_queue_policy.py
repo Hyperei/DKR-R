@@ -1,13 +1,12 @@
 """Register retail audio pools through checked Patch Pipeline output only."""
 import copy
-import hashlib
 import struct
-from legacy_character_presentation_policy import ELFS
+from legacy_character_presentation_policy import reviewed_revision
 from compose_legacy_mod_policy import elf_sections, elf_functions
 
 
 def compose_audio_queue(policy, elf, revision):
-    if revision not in ELFS or hashlib.sha256(elf.read_bytes()).hexdigest() != ELFS[revision]:
+    if reviewed_revision(elf) != revision:
         raise ValueError('Audio queue ownership requires a reviewed retail ELF')
     symbols = elf_functions(elf, (1, 2))
     matches = symbols.get('alEvtqNew', set())

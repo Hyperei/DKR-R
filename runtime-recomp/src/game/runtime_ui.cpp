@@ -43,9 +43,10 @@
 #include "netplay/friend_service.hpp"
 #include "netplay/netplay_build_identity.hpp"
 #include "netplay/experimental_runtime_admission.hpp"
+#include "netplay/experimental_runtime_presence.hpp"
+#include "netplay/experimental_latency.hpp"
 #if defined(DKR_EXPERIMENTAL_RACE_TEST)
 #include "netplay/experimental_runtime.hpp"
-#include "netplay/experimental_latency.hpp"
 #include "netplay/experimental_performance.hpp"
 #include "netplay/secure_channel.hpp"
 #endif
@@ -85,6 +86,10 @@
 #include "stb/stb_image.h"
 
 #include <SDL.h>
+#if defined(__APPLE__)
+#include <SDL_syswm.h>
+extern "C" bool dkr_show_metal_layer(void* ns_window_ptr, void* layer_ptr);
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -8142,7 +8147,13 @@ void dkr::runtime::ui::configure(const std::filesystem::path& config_directory) 
         for (const auto& parent : {executable_directory, executable_directory.parent_path()}) {
             const auto candidate = parent / "libexec" / "dkr-r" / worker_name;
             std::error_code error;
-            if (std::filesystem::is_regular_file(candidate, error)) { mod_worker = candidate; break; }
+            if (std::filesystem::is_regular_file(candidate, error)) {
+                // Online mod storage checks reject any link component (the
+                // .app's Resources/libexec, a clone under a symlinked folder).
+                const auto resolved = std::filesystem::weakly_canonical(candidate, error);
+                mod_worker = error ? candidate : resolved;
+                break;
+            }
         }
     }
 #endif
@@ -8290,6 +8301,17 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(
         std::fprintf(stderr, "[boot][launcher] SDL renderer failed: %s\n", SDL_GetError());
         return result;
     }
+#if defined(__APPLE__)
+    // Also restore stacking when returning from the game to an existing
+    // launcher view. Non-Metal fallback renderers do not have a Metal layer.
+    if (void* layer = SDL_RenderGetMetalLayer(renderer)) {
+        SDL_SysWMinfo info{};
+        SDL_VERSION(&info.version);
+        if (SDL_GetWindowWMInfo(window, &info)) {
+            dkr_show_metal_layer(info.info.cocoa.window, layer);
+        }
+    }
+#endif
     SDL_RendererInfo renderer_info{};
     if (SDL_GetRendererInfo(renderer, &renderer_info) == 0) {
         std::fprintf(stderr,
@@ -9065,6 +9087,14 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(
         const auto launcher_present_started = launcher_ui_build_finished;
         SDL_SetRenderDrawColor(renderer, 6, 9, 14, 255);
         SDL_RenderClear(renderer);
+#if defined(__APPLE__)
+        // With a non-1 render scale the ImGui SDL backend stops applying
+        // FramebufferScale itself (clips included), so SDL scales clips and
+        // geometry together. Refresh each frame for Retina and display moves.
+        if (launcher_draw_data != nullptr)
+            SDL_RenderSetScale(renderer, launcher_draw_data->FramebufferScale.x,
+                               launcher_draw_data->FramebufferScale.y);
+#endif
         RenderLauncherDrawData(renderer, launcher_draw_data, launcher_profile,
                                launcher_panel_cache, bounded_software_return);
         // SDL's software backend normally executes its queued drawing inside
@@ -9237,12 +9267,7 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
         online_session_view.launch_countdown_remaining_ms > 0U;
     const bool show_online_waiting = OnlineWaitingActive(online_session_view);
     const bool show_mipmap_loading = RT64::mipLoadingVisible();
-    const bool keep_owned_ui =
-#if defined(DKR_EXPERIMENTAL_RACE_TEST)
-        dkr::runtime::netplay::experimental::runtime_view().active;
-#else
-        false;
-#endif
+    const bool keep_owned_ui = dkr::runtime::netplay::experimental::owned_runtime_active();
     if (
 #if defined(__ANDROID__)
         false && // Touch Menu remains available, even when all other overlays are off.

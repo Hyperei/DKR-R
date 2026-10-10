@@ -6,15 +6,24 @@
 namespace dkr::runtime::netplay {
 namespace {
 
-std::mutex g_adapter_mutex;
-GekkoDirectAdapter* g_active_adapter = nullptr;
-std::vector<RollbackPacket> g_receive_packets;
 struct ReceiveSlot {
     std::uint8_t source = 0U;
     GekkoNetResult result{};
 };
-std::vector<ReceiveSlot> g_receive_slots;
-std::vector<GekkoNetResult*> g_receive_results;
+struct SharedState {
+    std::mutex mutex;
+    GekkoDirectAdapter* active = nullptr;
+    std::vector<RollbackPacket> packets;
+    std::vector<ReceiveSlot> slots;
+    std::vector<GekkoNetResult*> results;
+};
+// Constructed on first use and intentionally never destroyed: adapters owned
+// by other translation units' statics (runtime_netplay.cpp's g_rollback)
+// deactivate during exit, after this file's statics would already be gone.
+SharedState& shared_state() {
+    static auto* instance = new SharedState;
+    return *instance;
+}
 
 // Gekko consumes every receive result synchronously before asking the adapter
 // for another batch. Keep the batch in reusable adapter-owned storage and make
@@ -30,10 +39,11 @@ void adapter_send(GekkoNetAddress* address, const char* data, int length) {
         data == nullptr || length <= 0) {
         return;
     }
-    std::scoped_lock lock(g_adapter_mutex);
-    if (g_active_adapter == nullptr || !g_active_adapter->active()) return;
+    auto& shared = shared_state();
+    std::scoped_lock lock(shared.mutex);
+    if (shared.active == nullptr || !shared.active->active()) return;
     const auto target = *static_cast<const std::uint8_t*>(address->data);
-    g_active_adapter->session()->send_rollback_packet(
+    shared.active->session()->send_rollback_packet(
         target, {reinterpret_cast<const std::uint8_t*>(data),
                  static_cast<std::size_t>(length)});
 }
@@ -41,16 +51,17 @@ void adapter_send(GekkoNetAddress* address, const char* data, int length) {
 GekkoNetResult** adapter_receive(int* length) {
     if (length == nullptr) return nullptr;
     *length = 0;
-    std::scoped_lock lock(g_adapter_mutex);
-    g_receive_results.clear();
-    if (g_active_adapter == nullptr || !g_active_adapter->active()) return nullptr;
+    auto& shared = shared_state();
+    std::scoped_lock lock(shared.mutex);
+    shared.results.clear();
+    if (shared.active == nullptr || !shared.active->active()) return nullptr;
 
-    g_active_adapter->session()->take_rollback_packets(g_receive_packets);
-    g_receive_slots.resize(g_receive_packets.size());
-    g_receive_results.resize(g_receive_packets.size());
-    for (std::size_t index = 0U; index < g_receive_packets.size(); ++index) {
-        RollbackPacket& packet = g_receive_packets[index];
-        ReceiveSlot& slot = g_receive_slots[index];
+    shared.active->session()->take_rollback_packets(shared.packets);
+    shared.slots.resize(shared.packets.size());
+    shared.results.resize(shared.packets.size());
+    for (std::size_t index = 0U; index < shared.packets.size(); ++index) {
+        RollbackPacket& packet = shared.packets[index];
+        ReceiveSlot& slot = shared.slots[index];
         slot.source = packet.source_slot;
         slot.result = {};
         slot.result.addr.data = &slot.source;
@@ -59,10 +70,10 @@ GekkoNetResult** adapter_receive(int* length) {
             ? nullptr : packet.bytes.data();
         slot.result.data_len =
             static_cast<unsigned int>(packet.bytes.size());
-        g_receive_results[index] = &slot.result;
+        shared.results[index] = &slot.result;
     }
-    *length = static_cast<int>(g_receive_results.size());
-    return g_receive_results.empty() ? nullptr : g_receive_results.data();
+    *length = static_cast<int>(shared.results.size());
+    return shared.results.empty() ? nullptr : shared.results.data();
 }
 
 GekkoNetAdapter g_adapter{adapter_send, adapter_receive, adapter_free};
@@ -72,20 +83,24 @@ GekkoNetAdapter g_adapter{adapter_send, adapter_receive, adapter_free};
 GekkoDirectAdapter::~GekkoDirectAdapter() { deactivate(); }
 
 bool GekkoDirectAdapter::activate(DirectSession& session) {
-    std::scoped_lock lock(g_adapter_mutex);
-    if (g_active_adapter != nullptr && g_active_adapter != this) return false;
+    auto& shared = shared_state();
+    std::scoped_lock lock(shared.mutex);
+    if (shared.active != nullptr && shared.active != this) return false;
     session_ = &session;
-    g_active_adapter = this;
+    shared.active = this;
     return true;
 }
 
 void GekkoDirectAdapter::deactivate() {
-    std::scoped_lock lock(g_adapter_mutex);
-    if (g_active_adapter == this) g_active_adapter = nullptr;
+    auto& shared = shared_state();
+    std::scoped_lock lock(shared.mutex);
+    if (shared.active == this) {
+        shared.active = nullptr;
+        shared.packets.clear();
+        shared.slots.clear();
+        shared.results.clear();
+    }
     session_ = nullptr;
-    g_receive_packets.clear();
-    g_receive_slots.clear();
-    g_receive_results.clear();
 }
 
 bool GekkoDirectAdapter::active() const { return session_ != nullptr; }

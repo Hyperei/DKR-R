@@ -1,5 +1,6 @@
 #include "runtime_portable.hpp"
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <system_error>
@@ -12,6 +13,9 @@
 #include <cerrno>
 #include <fcntl.h>
 #include <unistd.h>
+#endif
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
 #endif
 
 namespace dkr::runtime::portable {
@@ -38,6 +42,23 @@ std::filesystem::path ExecutablePath(const char* argument) {
     std::error_code ec;
     const auto path = std::filesystem::read_symlink("/proc/self/exe", ec);
     if (!ec && path.is_absolute()) return path;
+#elif defined(__APPLE__)
+    std::uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string buffer(size, '\0');
+    if (_NSGetExecutablePath(buffer.data(), &size) == 0) {
+        std::error_code ec;
+        const auto path = std::filesystem::weakly_canonical(std::filesystem::path(buffer.c_str()), ec);
+        if (!ec && path.is_absolute()) {
+            // Inside DKR-R.app the portable folder is the one holding the
+            // bundle, never Contents/MacOS: that would write into the signed app.
+            const auto contents = path.parent_path().parent_path();
+            const auto bundle = contents.parent_path();
+            if (path.parent_path().filename() == "MacOS" && contents.filename() == "Contents" &&
+                bundle.extension() == ".app") return bundle;
+            return path;
+        }
+    }
 #endif
     std::error_code error;
     const auto fallback = std::filesystem::absolute(std::filesystem::u8path(argument ? argument : ""), error);

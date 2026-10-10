@@ -4,14 +4,13 @@ No generated source or dependency is patched in place. Native/owned adapters
 share guest-resident ownership; all instruction/delay slots are verified.
 """
 import copy
-import hashlib
 import struct
-from legacy_character_presentation_policy import ELFS
+from legacy_character_presentation_policy import reviewed_revision
 from compose_legacy_mod_policy import elf_sections, elf_functions
 
 
 def compose_memory_safety(policy, elf, revision):
-    if revision not in ELFS or hashlib.sha256(elf.read_bytes()).hexdigest() != ELFS[revision]:
+    if reviewed_revision(elf) != revision:
         raise ValueError('Memory safety requires a reviewed retail ELF')
     symbols = elf_functions(elf, (1, 2))
     words = {base+i: struct.unpack_from('>I', data, i)[0]

@@ -402,6 +402,11 @@ std::vector<dkr::runtime::saves::StoredAdventure> dkr::runtime::saves::stored_ad
     std::vector<std::filesystem::path> roots;
     { std::scoped_lock lock(g_save_manager_mutex); root = g_config_directory; roots = g_recovery_roots; }
     root = storage::absolute(root);
+    // Candidates are compared canonically below, so the active root must be
+    // too or a root behind a symlink is mislabelled as another profile.
+    std::error_code canonical_error;
+    if (auto canonical = std::filesystem::weakly_canonical(root, canonical_error); !canonical_error)
+        root = canonical;
     roots.insert(roots.begin(), root);
     std::vector<StoredAdventure> result;
     std::set<std::filesystem::path> seen, seen_roots;

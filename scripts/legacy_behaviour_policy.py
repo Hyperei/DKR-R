@@ -5,10 +5,9 @@ and only a currently admitted custom course can request the replacement value.
 No retail unlock globals, files, assets or protected generated source edited.
 """
 import copy
-import hashlib
 import struct
 from compose_legacy_mod_policy import elf_functions, elf_sections
-from legacy_character_presentation_policy import ELFS
+from legacy_character_presentation_policy import reviewed_revision
 
 SITES = ((0x8000c928, 0x8d030000, 3),
          (0x8000c92c, 0x9450000c, 16),
@@ -28,7 +27,7 @@ STATS = {
                ('update_AI_racer',0x8005a8b8,0xc5a80000,8,2))}
 
 def compose_behaviour(policy, elf, revision):
-    if revision not in ELFS or hashlib.sha256(elf.read_bytes()).hexdigest()!=ELFS[revision]:
+    if reviewed_revision(elf) != revision:
         raise ValueError('Behaviour bridge requires the pinned retail ELF')
     symbols=elf_functions(elf).get('track_spawn_objects',set())
     if len(symbols)!=1:

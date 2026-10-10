@@ -22,8 +22,13 @@
 #include "runtime_ui.hpp"
 #include "imgui/imgui.h"
 #include <SDL.h>
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
 #include <SDL_syswm.h>
+#endif
+#if defined(__APPLE__)
+#include <SDL_metal.h>
+extern "C" bool dkr_show_metal_layer(void* ns_window_ptr, void* layer_ptr);
+extern "C" bool dkr_handle_fullscreen_event(const SDL_Event* event);
 #endif
 #endif
 
@@ -140,6 +145,10 @@ struct ControllerMappingSession {
 };
 ControllerMappingSession g_mapping_session;
 SDL_Window* g_window = nullptr;
+#if defined(__APPLE__)
+// RT64 presents to the CAMetalLayer backing this view.
+SDL_MetalView g_metal_view = nullptr;
+#endif
 #if defined(_WIN32)
 // Set only at the experimental return-to-launcher boundary. The returned SDL
 // D3D11 renderer/window surface must not share its HWND with a new D3D12 owner.
@@ -1487,6 +1496,12 @@ void dkr::runtime::platform::shutdown() {
     g_sdl3_previous_event_state.clear();
     g_sdl2_controller_subsystems_initialized = false;
     g_mapping_session = {};
+#if defined(__APPLE__)
+    if (g_metal_view != nullptr) {
+        SDL_Metal_DestroyView(g_metal_view);
+        g_metal_view = nullptr;
+    }
+#endif
     if (g_window != nullptr) {
         SDL_DestroyWindow(g_window);
         g_window = nullptr;
@@ -1514,6 +1529,8 @@ ultramodern::renderer::WindowHandle dkr::runtime::platform::create_window() {
 #endif
 #if defined(__linux__) && !defined(__ANDROID__)
         flags |= SDL_WINDOW_VULKAN;
+#elif defined(__APPLE__)
+        flags |= SDL_WINDOW_METAL;
 #endif
         g_window = SDL_CreateWindow("DKR-R - Diddy Kong Racing Recompiled",
                                     SDL_WINDOWPOS_CENTERED,
@@ -1536,6 +1553,23 @@ ultramodern::renderer::WindowHandle dkr::runtime::platform::create_window() {
         return {};
     }
     return {.window = info.info.win.window, .thread_id = GetCurrentThreadId()};
+#elif defined(__APPLE__)
+    if (g_window == nullptr) return {};
+    // Own RT64's view independently of the launcher renderer. SDL2-compat
+    // may create another view for the launcher instead of reusing this one.
+    if (g_metal_view == nullptr) g_metal_view = SDL_Metal_CreateView(g_window);
+    if (g_metal_view == nullptr) {
+        std::fprintf(stderr, "[boot][window] Metal view failed: %s\n", SDL_GetError());
+        return {};
+    }
+    // plume's CocoaWindow messages .window as an NSWindow*, not an SDL_Window*.
+    SDL_SysWMinfo info{};
+    SDL_VERSION(&info.version);
+    if (SDL_GetWindowWMInfo(g_window, &info) != SDL_TRUE) {
+        std::fprintf(stderr, "[boot][window] native handle failed: %s\n", SDL_GetError());
+        return {};
+    }
+    return {.window = info.info.cocoa.window, .view = SDL_Metal_GetLayer(g_metal_view)};
 #else
     return g_window;
 #endif
@@ -1629,7 +1663,14 @@ ultramodern::renderer::WindowHandle dkr::runtime::platform::prepare_window_for_g
         }
     }
 #endif
-    return create_window();
+    auto handle = create_window();
+#if defined(__APPLE__)
+    if (!dkr_show_metal_layer(handle.window, handle.view)) {
+        std::fprintf(stderr, "[boot][window] cannot show the game's Metal view\n");
+        return {};
+    }
+#endif
+    return handle;
 }
 
 void* dkr::runtime::platform::prepare_window_for_launcher(bool retire_game_surface) {
@@ -1703,6 +1744,9 @@ void dkr::runtime::platform::pump_window_events(void*) {
     }
     SDL_Event event{};
     while (SDL_PollEvent(&event) != 0) {
+#if defined(__APPLE__)
+        if (dkr_handle_fullscreen_event(&event)) continue;
+#endif
         update_fullscreen_cursor(&event);
 #if defined(__ANDROID__) && defined(DKR_EXPERIMENTAL_RACE_TEST)
         if (event.type == SDL_APP_WILLENTERBACKGROUND && netplay::experimental::runtime_view().active) {
