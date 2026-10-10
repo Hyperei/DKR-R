@@ -8,6 +8,8 @@ launcher/overlay and online improvements are retained.
 PR #49: macOS source/build support, portable ELF verification, dependency
 preparation and platform lifecycle fixes. A macOS binary is NOT included or
 claimed verified in this delivery.
+Includes PR #49's subsequent macOS dependency/setup recovery fixes and
+ultrawide sky-motion correction in the normal and owned render paths.
 PR #50: optional modern camera controls, the F7 camera tuning panel, and Track
 Lab geometry/texture workflow improvements. Modern camera state is reset at
 runtime handoff and disabled in online simulation. Track Lab texture remapping

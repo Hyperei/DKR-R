@@ -259,6 +259,41 @@ class RepositoryContractTests(unittest.TestCase):
                     self.assertIn("requires", result.stdout + result.stderr)
                     self.assertNotIn("unbound variable", result.stdout + result.stderr)
 
+    @unittest.skipIf(os.name == "nt", "stage-tool checks require Bash")
+    def test_macos_decomp_ready_requires_all_stage_tools(self):
+        script = (ROOT / "scripts" / "Prepare-DKR-Runtime-macOS.sh").read_text()
+        helper = re.search(r"(?ms)^decomp_ready\(\) \{\n.*?^\}", script)
+        self.assertIsNotNone(helper)
+        with tempfile.TemporaryDirectory() as temporary:
+            tree = Path(temporary) / "isolated revision with spaces"
+            python = tree / ".venv/bin/python3"
+            tools = [tree / "tools/dkr_assets_tool", tree / "tools/n64crc",
+                     tree / "tools/ido-recomp/macos/cc"]
+
+            def executable(path, status=0):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(f"#!/bin/sh\nexit {status}\n")
+                path.chmod(0o755)
+
+            def ready():
+                return subprocess.run(
+                    ["bash", "-c", helper.group(0) + '\ndecomp_ready "$1"',
+                     "stage-test", str(tree)], capture_output=True, text=True,
+                    timeout=5).returncode == 0
+
+            self.assertFalse(ready())
+            executable(python)
+            for tool in tools:
+                self.assertFalse(ready())
+                executable(tool)
+            self.assertTrue(ready())
+            for tool in tools:
+                tool.unlink()
+                self.assertFalse(ready())
+                executable(tool)
+            executable(python, status=1)
+            self.assertFalse(ready())
+
     def tracked(self):
         output = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-s"], check=True,
                                 capture_output=True, text=True).stdout

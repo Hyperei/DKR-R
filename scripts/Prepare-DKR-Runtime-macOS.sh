@@ -115,7 +115,7 @@ if [[ "$SKIP_DEPS" -eq 0 ]]; then
   command -v brew >/dev/null || fail "Homebrew is required: https://brew.sh/"
   # Install only; never auto-update or upgrade what's already there.
   HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_UPGRADE=1 \
-    brew install --quiet cmake ninja make python sdl2
+    brew install --quiet cmake ninja make pcre2 python sdl2
 fi
 if command -v brew >/dev/null; then
   GMAKE="$(brew --prefix make)/bin/gmake"
@@ -231,6 +231,14 @@ if ! [[ -x "$DECOMP/tools/binutils/mips64-elf-ld" ]] &&
   fi
 fi
 
+# Setup must recover missing native tools as well as the Python environment.
+# Check and prepare the isolated revision tree, never the live dependency.
+decomp_ready() {
+  local tree="$1"
+  [[ -x "$tree/.venv/bin/python3" ]] && "$tree/.venv/bin/python3" -c 'import splat' 2>/dev/null &&
+    [[ -x "$tree/tools/dkr_assets_tool" && -x "$tree/tools/n64crc" && -x "$tree/tools/ido-recomp/macos/cc" ]]
+}
+
 # stamp_matches <file> <value>: true when the stage's recorded inputs match.
 stamp_matches() { [[ "$FORCE" -eq 0 && -f "$1" && "$(cat "$1")" == "$2" ]]; }
 
@@ -278,8 +286,9 @@ PY
       cp "$BINUTILS_SOURCE"/mips64-elf-* "$tree/tools/binutils/"
       touch "$tree/tools/binutils/.dkr-toolchain"
     fi
-    if ! [[ -x "$tree/.venv/bin/python3" ]] || ! "$tree/.venv/bin/python3" -c 'import splat' 2>/dev/null; then
+    if ! decomp_ready "$tree"; then
       (cd "$tree" && "$GMAKE" setup) || fail "Decomp setup failed."
+      decomp_ready "$tree" || fail "Decomp setup did not produce its tools; see the log above."
     fi
     (cd "$tree" && "$GMAKE" VERSION="v$revision" extract && "$GMAKE" VERSION="v$revision" -j"$JOBS") ||
       fail "The US v$revision decomp build failed."
