@@ -27,6 +27,7 @@
 #endif
 #if defined(__APPLE__)
 #include <SDL_metal.h>
+extern "C" bool dkr_show_metal_layer(void* ns_window_ptr, void* layer_ptr);
 #endif
 #endif
 
@@ -1553,9 +1554,8 @@ ultramodern::renderer::WindowHandle dkr::runtime::platform::create_window() {
     return {.window = info.info.win.window, .thread_id = GetCurrentThreadId()};
 #elif defined(__APPLE__)
     if (g_window == nullptr) return {};
-    // Created before any SDL_Renderer touches the window: SDL's Metal
-    // renderer reuses the first tagged Metal view and never removes its own,
-    // so the launcher and RT64 share this one CAMetalLayer.
+    // Own RT64's view independently of the launcher renderer. SDL2-compat
+    // may create another view for the launcher instead of reusing this one.
     if (g_metal_view == nullptr) g_metal_view = SDL_Metal_CreateView(g_window);
     if (g_metal_view == nullptr) {
         std::fprintf(stderr, "[boot][window] Metal view failed: %s\n", SDL_GetError());
@@ -1662,7 +1662,14 @@ ultramodern::renderer::WindowHandle dkr::runtime::platform::prepare_window_for_g
         }
     }
 #endif
-    return create_window();
+    auto handle = create_window();
+#if defined(__APPLE__)
+    if (!dkr_show_metal_layer(handle.window, handle.view)) {
+        std::fprintf(stderr, "[boot][window] cannot show the game's Metal view\n");
+        return {};
+    }
+#endif
+    return handle;
 }
 
 void* dkr::runtime::platform::prepare_window_for_launcher(bool retire_game_surface) {

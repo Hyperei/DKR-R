@@ -85,6 +85,10 @@
 #include "stb/stb_image.h"
 
 #include <SDL.h>
+#if defined(__APPLE__)
+#include <SDL_syswm.h>
+extern "C" bool dkr_show_metal_layer(void* ns_window_ptr, void* layer_ptr);
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -8242,6 +8246,17 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(
         std::fprintf(stderr, "[boot][launcher] SDL renderer failed: %s\n", SDL_GetError());
         return result;
     }
+#if defined(__APPLE__)
+    // Also restore stacking when returning from the game to an existing
+    // launcher view. Non-Metal fallback renderers do not have a Metal layer.
+    if (void* layer = SDL_RenderGetMetalLayer(renderer)) {
+        SDL_SysWMinfo info{};
+        SDL_VERSION(&info.version);
+        if (SDL_GetWindowWMInfo(window, &info)) {
+            dkr_show_metal_layer(info.info.cocoa.window, layer);
+        }
+    }
+#endif
     SDL_RendererInfo renderer_info{};
     if (SDL_GetRendererInfo(renderer, &renderer_info) == 0) {
         std::fprintf(stderr,

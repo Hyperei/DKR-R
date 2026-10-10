@@ -2325,6 +2325,15 @@ if(BUILD_TESTING)
             target_link_libraries(DKRLauncherSoftwarePixelsTests PRIVATE ${SDL2_LIBRARIES})
         endif()
         add_test(NAME DKRLauncherSoftwarePixels COMMAND DKRLauncherSoftwarePixelsTests)
+        if(APPLE)
+            add_executable(DKRMacOSMetalHandoffTests tests/macos_metal_handoff_tests.mm
+                src/game/runtime_metal_layer.mm)
+            target_compile_options(DKRMacOSMetalHandoffTests PRIVATE -fobjc-arc)
+            target_include_directories(DKRMacOSMetalHandoffTests PRIVATE ${SDL2_INCLUDE_DIRS})
+            target_link_libraries(DKRMacOSMetalHandoffTests PRIVATE ${SDL2_LIBRARIES}
+                "-framework Cocoa" "-framework QuartzCore")
+            add_test(NAME DKRMacOSMetalHandoff COMMAND DKRMacOSMetalHandoffTests)
+        endif()
     endif()
 
     add_executable(DKRUiNotificationPolicyTests
