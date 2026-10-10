@@ -2333,6 +2333,15 @@ if(BUILD_TESTING)
             target_link_libraries(DKRMacOSMetalHandoffTests PRIVATE ${SDL2_LIBRARIES}
                 "-framework Cocoa" "-framework QuartzCore")
             add_test(NAME DKRMacOSMetalHandoff COMMAND DKRMacOSMetalHandoffTests)
+            add_executable(DKRMacOSMetalOverlayTests tests/macos_metal_overlay_tests.mm
+                src/game/runtime_metal_layer.mm)
+            target_compile_options(DKRMacOSMetalOverlayTests PRIVATE -fobjc-arc)
+            target_include_directories(DKRMacOSMetalOverlayTests PRIVATE ${SDL2_INCLUDE_DIRS}
+                "${DKR_RT64_SOURCE}/src/contrib"
+                "${DKR_RT64_SOURCE}/src" "${DKR_RT64_SOURCE}/src/contrib/imgui"
+                "${DKR_RT64_SOURCE}/src/contrib/hlslpp/include")
+            target_link_libraries(DKRMacOSMetalOverlayTests PRIVATE rt64 ${SDL2_LIBRARIES})
+            add_test(NAME DKRMacOSMetalOverlay COMMAND DKRMacOSMetalOverlayTests)
         endif()
     endif()
 

@@ -28,6 +28,7 @@
 #if defined(__APPLE__)
 #include <SDL_metal.h>
 extern "C" bool dkr_show_metal_layer(void* ns_window_ptr, void* layer_ptr);
+extern "C" bool dkr_handle_fullscreen_event(const SDL_Event* event);
 #endif
 #endif
 
@@ -1743,6 +1744,9 @@ void dkr::runtime::platform::pump_window_events(void*) {
     }
     SDL_Event event{};
     while (SDL_PollEvent(&event) != 0) {
+#if defined(__APPLE__)
+        if (dkr_handle_fullscreen_event(&event)) continue;
+#endif
         update_fullscreen_cursor(&event);
         if (event.type == SDL_QUIT ||
             (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE)) {

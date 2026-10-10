@@ -199,6 +199,10 @@
         {
           "path": "patches/rt64/0016-optional-generated-texture-mips.patch",
           "sha256": "c3394574e3e740a1c28ff6ca4be135515565966e3023a8511c1a30b335e7a914"
+        },
+        {
+          "path": "patches/rt64/0017-enable-retina-swapchain.patch",
+          "sha256": "899c2f115332b02fb75b8dfed919d31796c3cd6b9f6ec7d96f91f005d61a29eb"
         }
       ]
     },

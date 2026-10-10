@@ -52,6 +52,9 @@
 #include "ultramodern/ultramodern.hpp"
 
 #include <SDL.h>
+#if defined(__APPLE__)
+extern "C" void dkr_set_window_fullscreen(Uint32 window_id, bool fullscreen);
+#endif
 #if defined(__ANDROID__)
 #include <SDL_syswm.h>
 #include <SDL_system.h>
@@ -558,7 +561,12 @@ dkr::runtime::RT64Renderer::RT64Renderer(
 #endif
     const bool fullscreen =
         config.wm_option == ultramodern::renderer::WindowMode::Fullscreen;
+#if defined(__APPLE__)
+    dkr_set_window_fullscreen(SDL_GetWindowID(
+        static_cast<SDL_Window*>(dkr::runtime::platform::sdl_window())), fullscreen);
+#else
     application_->setFullScreen(fullscreen);
+#endif
     std::fprintf(stderr,
                  "[boot][rt64] initialized api=%u profile=%s refresh-mode=%u "
                  "requested=%d effective=%d display=%d\n",
@@ -594,7 +602,12 @@ bool dkr::runtime::RT64Renderer::update_config(
     if (old_config.wm_option != new_config.wm_option) {
         const bool fullscreen = new_config.wm_option ==
             ultramodern::renderer::WindowMode::Fullscreen;
+#if defined(__APPLE__)
+        dkr_set_window_fullscreen(SDL_GetWindowID(
+            static_cast<SDL_Window*>(dkr::runtime::platform::sdl_window())), fullscreen);
+#else
         application_->setFullScreen(fullscreen);
+#endif
     }
     const bool resolution_or_aspect_changed =
         old_config.res_option != new_config.res_option ||
