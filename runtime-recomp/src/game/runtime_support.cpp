@@ -21,7 +21,6 @@
 #include <winioctl.h>
 #elif defined(__APPLE__)
 #include <sys/sysctl.h>
-#include <sys/utsname.h>
 #include <unistd.h>
 #else
 #include <sys/sysinfo.h>

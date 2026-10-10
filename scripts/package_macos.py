@@ -52,6 +52,12 @@ def resolve(name, source, executable):
     raise RuntimeError(f"Cannot resolve {name} required by {source}")
 
 
+def release_number(version):
+    """major.minor.patch for CFBundleShortVersionString, or None."""
+    match = re.match(r"\d+\.\d+\.\d+", version)
+    return match[0] if match else None
+
+
 def package(build, version):
     executable = build / "bin/Release/DKR-R"
     helpers = executable.parent / "libexec/dkr-r"
@@ -59,10 +65,13 @@ def package(build, version):
     for path in required:
         if not path.is_file():
             raise RuntimeError(f"Missing executable: {path}; complete the macOS build first")
-    architectures = set(run("lipo", "-archs", executable).split())
-    if not architectures or not architectures <= {"arm64", "x86_64"}:
+    # Single-architecture only: Homebrew bottles are thin and otool's fat
+    # listing is not parsed.
+    architectures = run("lipo", "-archs", executable).split()
+    if len(architectures) != 1 or architectures[0] not in ("arm64", "x86_64"):
         raise RuntimeError(f"Unsupported architectures: {architectures}")
-    name = f"DKR-R-{version}-macOS-{'-'.join(sorted(architectures))}"
+    architecture = architectures[0]
+    name = f"DKR-R-{version}-macOS-{architecture}"
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
     # Assemble in a private temporary directory; leave existing releases intact.
@@ -104,8 +113,8 @@ def package(build, version):
         while pending := [p for p in images if p not in processed]:
             for source in pending:
                 destination, owner = images[source], contexts[source]
-                if not architectures <= set(run("lipo", "-archs", source).split()):
-                    raise RuntimeError(f"{source} lacks the required architectures")
+                if run("lipo", "-archs", source).split() != [architecture]:
+                    raise RuntimeError(f"{source} is not a thin {architecture} image")
                 commands = load_commands(source)
                 versions = re.findall(r"\bminos (\d+\.\d+(?:\.\d+)?)", commands)
                 versions += re.findall(r"cmd LC_VERSION_MIN_MACOSX\s+cmdsize \d+\s+version (\d+\.\d+(?:\.\d+)?)", commands)
@@ -132,10 +141,21 @@ def package(build, version):
                     run("install_name_tool", "-id", f"@rpath/{destination.name}", destination)
                 processed.add(source)
 
+        # Icon from the approved artwork (512 px source, so no 512@2x).
+        iconset = Path(temporary) / "DKR-R.iconset"
+        iconset.mkdir()
+        for size in (16, 32, 128, 256, 512):
+            for scale, suffix in ((1, ""), (2, "@2x")):
+                if size * scale > 512:
+                    continue
+                run("sips", "-z", size * scale, size * scale, ROOT / "assets/ui/Icons/DKR-R-Icon.png",
+                    "--out", iconset / f"icon_{size}x{size}{suffix}.png")
+        run("iconutil", "-c", "icns", iconset, "-o", resources / "DKR-R.icns")
         plist = dict(CFBundleExecutable="DKR-R", CFBundleName="DKR-R",
                      CFBundleIdentifier="io.github.thatguymcd.dkr-r",
                      CFBundlePackageType="APPL", CFBundleVersion="1",
-                     CFBundleShortVersionString=re.match(r"\d+\.\d+\.\d+", version)[0],
+                     CFBundleShortVersionString=release_number(version),
+                     CFBundleIconFile="DKR-R",
                      LSMinimumSystemVersion=".".join(map(str, minimum)),
                      NSHighResolutionCapable=True)
         with (contents / "Info.plist").open("wb") as handle:
@@ -146,7 +166,9 @@ def package(build, version):
                              (ROOT / "THIRD_PARTY.md", "DKR-R-THIRD_PARTY.md"),
                              (ROOT / "runtime-recomp/COPYING-NOTICE.md", "DKR-R-COPYING-NOTICE.md"),
                              (ROOT / "extern/rt64/LICENSE", "RT64-LICENSE.txt"),
+                             (ROOT / "extern/rt64/src/contrib/imgui/LICENSE.txt", "Dear-ImGui-LICENSE.txt"),
                              (ROOT / "extern/n64-modern-runtime/COPYING", "N64ModernRuntime-COPYING.txt"),
+                             (ROOT / "extern/n64-modern-runtime/N64Recomp/LICENSE", "N64Recomp-LICENSE.txt"),
                              (ROOT / "extern/sdl3/LICENSE.txt", "SDL3-LICENSE.txt")]:
             shutil.copy2(source, notices / label)
         shutil.copytree(ROOT / "packaging/licenses", notices / "additional")
@@ -161,7 +183,9 @@ def package(build, version):
             raise RuntimeError("Package contains prohibited game data")
         for destination in images.values():
             for dependency in dependencies(destination):
-                if not system_library(dependency) and not (frameworks / dependency.removeprefix("@rpath/")).is_file():
+                if system_library(dependency):
+                    continue
+                if not (dependency.startswith("@rpath/") and (frameworks / dependency[len("@rpath/"):]).is_file()):
                     raise RuntimeError(f"Unbundled dependency: {dependency}")
             run("codesign", "--force", "--sign", "-", destination)
         run("codesign", "--force", "--sign", "-", app)
@@ -185,6 +209,6 @@ if __name__ == "__main__":
     parser.add_argument("build", type=Path)
     parser.add_argument("version")
     args = parser.parse_args()
-    if not re.fullmatch(r"\d+\.\d+\.\d+[A-Za-z0-9._-]*", args.version):
+    if release_number(args.version) is None or not re.fullmatch(r"[A-Za-z0-9._-]+", args.version):
         parser.error("version must start with a numeric major.minor.patch")
     package(args.build.resolve(), args.version)

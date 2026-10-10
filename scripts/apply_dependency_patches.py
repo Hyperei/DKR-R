@@ -40,7 +40,10 @@ def sync_dependency(repo: Path, patches: list[Path]) -> str:
 
         git(repo, "read-tree", "HEAD", index=expected_index)
         for patch in patches:
-            git(repo, "apply", "--cached", "--whitespace=nowarn", str(patch), index=expected_index)
+            try:
+                git(repo, "apply", "--cached", "--whitespace=nowarn", str(patch), index=expected_index)
+            except subprocess.CalledProcessError:
+                raise SystemExit(f"{repo.name}: {patch.name} does not apply to the pinned commit") from None
         expected = git(repo, "write-tree", index=expected_index)
 
         # Files the patches create are untracked in the checkout; stage the ones
@@ -100,10 +103,7 @@ def apply_manifest(root: Path, manifest_path: Path) -> int:
                 raise SystemExit(f"Patch checksum mismatch: {entry['path']}")
             patches.append(patch)
 
-        try:
-            state = sync_dependency(repo, patches) if patches else "unchanged"
-        except subprocess.CalledProcessError as failure:
-            raise SystemExit(f"{name}: patches do not apply to {commit} ({' '.join(failure.cmd[3:5])})") from None
+        state = sync_dependency(repo, patches) if patches else "unchanged"
         print(f"[OK] {name}: {len(patches)} patch(es) {'already applied' if state == 'unchanged' else 'applied'}")
     return 0
 
@@ -114,7 +114,8 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=root)
     parser.add_argument("--manifest", type=Path)
     args = parser.parse_args()
-    return apply_manifest(args.root, args.manifest or args.root / "patches" / "manifest.json")
+    root = args.root.resolve()  # patch paths are passed to `git -C <repo>`
+    return apply_manifest(root, args.manifest or root / "patches" / "manifest.json")
 
 
 if __name__ == "__main__":

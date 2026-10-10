@@ -34,6 +34,7 @@ def main() -> int:
         "n64modernruntime": "n64-modern-runtime",
         "n64recomp": "n64recomp",
         "rt64": "rt64",
+        "hlslpp": "hlslpp",
         "gekkonet": "gekkonet",
         "monocypher": "monocypher",
         "libdatachannel": "libdatachannel",

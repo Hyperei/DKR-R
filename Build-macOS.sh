@@ -109,11 +109,21 @@ architectures="${DKR_MAC_ARCHITECTURES:-${host_arch}}"
   echo 'Architectures must be arm64, x86_64, or a semicolon-separated list.' >&2
   exit 1
 }
+if [[ "$package" -eq 1 ]]; then
+  [[ "$architectures" != *';'* ]] || {
+    echo '--package supports a single architecture.' >&2
+    exit 1
+  }
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]] || {
+    echo '--package needs a release version starting with major.minor.patch (e.g. 1.0.5).' >&2
+    exit 1
+  }
+fi
 build_dir="${DKR_MAC_BUILD_DIR:-${project_root}/build/dkr-runtime-macos}"
 revision_80_generated="${DKR_MAC_V80_GENERATED_SOURCE}"
 [[ "$revision_80_generated" == /* ]] || revision_80_generated="$PWD/$revision_80_generated"
 
-[[ -n "${revision_80_generated}" && -d "${revision_80_generated}" ]] || {
+[[ -d "${revision_80_generated}" ]] || {
   echo 'Set DKR_MAC_V80_GENERATED_SOURCE to Patch Pipeline output generated from the matching US Rev A/v1.1 ELF.' >&2
   exit 1
 }
@@ -129,7 +139,7 @@ cmake -S "${project_root}/runtime-recomp" -B "${build_dir}" -G Ninja \
   -DDKR_GENERATED_SOURCE_V77="${generated_source}" \
   -DDKR_GENERATED_SOURCE_V80="${revision_80_generated}"
 cmake --build "${build_dir}" --parallel "${jobs}"
-ctest --test-dir "${build_dir}" --output-on-failure -R '^DKR'
+ctest --test-dir "${build_dir}" --output-on-failure --no-tests=error -R '^DKR'
 
 executable="${build_dir}/bin/Release/DKR-R"
 [[ -x "${executable}" ]] || {

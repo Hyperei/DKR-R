@@ -248,6 +248,7 @@ class RepositoryContractTests(unittest.TestCase):
             self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
             self.assertIn("prepare called", result.stdout)
 
+    @unittest.skipIf(os.name == "nt", "macOS shell scripts; Windows has no guaranteed bash")
     def test_macos_option_errors_are_actionable(self):
         for script in ("Build-macOS.sh", "scripts/Prepare-DKR-Runtime-macOS.sh"):
             for option in ("--rom-v77", "--rom-v80", "--jobs"):

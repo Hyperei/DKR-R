@@ -8098,7 +8098,13 @@ void dkr::runtime::ui::configure(const std::filesystem::path& config_directory) 
         for (const auto& parent : {executable_directory, executable_directory.parent_path()}) {
             const auto candidate = parent / "libexec" / "dkr-r" / worker_name;
             std::error_code error;
-            if (std::filesystem::is_regular_file(candidate, error)) { mod_worker = candidate; break; }
+            if (std::filesystem::is_regular_file(candidate, error)) {
+                // Online mod storage checks reject any link component (the
+                // .app's Resources/libexec, a clone under a symlinked folder).
+                const auto resolved = std::filesystem::weakly_canonical(candidate, error);
+                mod_worker = error ? candidate : resolved;
+                break;
+            }
         }
     }
 #endif
@@ -9033,8 +9039,9 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(
         SDL_SetRenderDrawColor(renderer, 6, 9, 14, 255);
         SDL_RenderClear(renderer);
 #if defined(__APPLE__)
-        // The SDL ImGui backend scales clips, but SDL must scale geometry.
-        // Refresh each frame for Retina displays and window/display changes.
+        // With a non-1 render scale the ImGui SDL backend stops applying
+        // FramebufferScale itself (clips included), so SDL scales clips and
+        // geometry together. Refresh each frame for Retina and display moves.
         if (launcher_draw_data != nullptr)
             SDL_RenderSetScale(renderer, launcher_draw_data->FramebufferScale.x,
                                launcher_draw_data->FramebufferScale.y);

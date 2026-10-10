@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Prepare everything Build-macOS.sh compiles: pinned dependencies with their
 # patches, N64Recomp, and the recompiled CPU payloads for both supported ROM
-# revisions (US v1.0 = v77, US Rev A/v1.1 = v80). Re-running is cheap: each
-# stage is skipped while its inputs are unchanged.
+# revisions (US v1.0 = v77, US Rev A/v1.1 = v80). Re-running is cheap: the
+# decomp ELF and payload stages are skipped while their inputs are unchanged.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,7 +24,7 @@ Usage: $(basename "$0") --rom-v77 <US 1.0 ROM> --rom-v80 <US Rev A ROM> [options
   --rom-v80 PATH   Diddy Kong Racing US Rev A/v1.1, or \$DKR_ROM_V80
   --output DIR     Generated payload root (default: build/generated)
   --skip-deps      Don't install Homebrew packages
-  --force          Regenerate every stage even if its inputs are unchanged
+  --force          Rebuild the decomp ELFs and payloads even if their inputs are unchanged
   --jobs N         Parallel jobs (default: host CPU count)
 Writes <output>/v77/RecompiledFuncs and <output>/v80/RecompiledFuncs.
 EOF
@@ -115,11 +115,9 @@ if [[ "$SKIP_DEPS" -eq 0 ]]; then
   command -v brew >/dev/null || fail "Homebrew is required: https://brew.sh/"
   # Install only; never auto-update or upgrade what's already there.
   HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_UPGRADE=1 \
-    brew install --quiet cmake ninja make llvm binutils python sdl2
+    brew install --quiet cmake ninja make python sdl2
 fi
 if command -v brew >/dev/null; then
-  PATH="$(brew --prefix llvm)/bin:$(brew --prefix binutils)/bin:$PATH"
-  export PATH
   GMAKE="$(brew --prefix make)/bin/gmake"
 else
   GMAKE="$(command -v gmake || true)"
@@ -178,7 +176,10 @@ RECOMPILER="$TOOL_BUILD/N64Recomp"
 
 step "Decomp toolchain"
 DECOMP="$PROJECT_ROOT/extern/dkr-decomp"
-if ! [[ -x "$DECOMP/tools/binutils/mips64-elf-as" ]] && ! command -v mips64-elf-as >/dev/null; then
+# The Makefile uses a PATH toolchain only when both ld and gcc exist, else
+# tools/binutils. ld is copied last, so its presence means a complete set.
+if ! [[ -x "$DECOMP/tools/binutils/mips64-elf-ld" ]] &&
+  ! { command -v mips64-elf-ld >/dev/null && command -v mips64-elf-gcc >/dev/null; }; then
   # The decomp's get-binutils.sh uses Linux-only nproc; build them here.
   version="binutils-2.46.0"
   scratch="$(mktemp -d "${TMPDIR:-/tmp}/dkr-binutils.XXXXXX")"
@@ -191,10 +192,10 @@ if ! [[ -x "$DECOMP/tools/binutils/mips64-elf-as" ]] && ! command -v mips64-elf-
   (
     cd "$scratch/$version"
     ./configure --target=mips64-elf --prefix=/usr --with-sysroot=/usr/mips64-elf \
-      --enable-64-bit-bfd --disable-gold --disable-nls --disable-shared --disable-werror \
-      AR="$(command -v llvm-ar)" RANLIB="$(command -v llvm-ranlib)" >/dev/null
+      --enable-64-bit-bfd --disable-gold --disable-nls --disable-shared --disable-werror >/dev/null
     make -j"$JOBS" >/dev/null
   ) || fail "Building MIPS binutils failed."
+  rm -rf "$DECOMP/tools/binutils"
   mkdir -p "$DECOMP/tools/binutils"
   for pair in binutils/ar:ar binutils/objcopy:objcopy binutils/objdump:objdump \
     binutils/strip-new:strip gas/as-new:as ld/ld-new:ld; do

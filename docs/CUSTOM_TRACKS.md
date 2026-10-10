@@ -784,7 +784,7 @@ python scripts/generate_legacy_menu_qualification.py --characters --character-me
 ```
 
 Point `DKR_GENERATED_SOURCE_V77` / `_V80` at `generated-v77` / `generated-v80`
-in that folder. The presentation step accepts only the reviewed ELF hashes.
+in that folder. The presentation step accepts only the reviewed ELF images.
 
 **`mods/` belongs to librecomp.** N64ModernRuntime ships its own mod system,
 it is live in DKR-R, and it scans `mods/` for its `.nrm` format. A `.dkrmap`
