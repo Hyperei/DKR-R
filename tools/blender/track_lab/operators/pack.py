@@ -306,7 +306,9 @@ def _encode_textures(operator, context, package):
         raise dkrmap.DkrMapError(
             "the resampled image for %s is gone from %s and could not be "
             "rebuilt (%s). The .blend records where it was, not the picture "
-            "itself: put the folder back beside the .blend, or add it again"
+            "itself: put the folder back beside the .blend, or add it again. "
+            "If nothing draws it, Remove Unused Textures in the Textures panel "
+            "takes it off the list"
             % (", ".join(missing), custom_textures.folder(context),
                "; ".join(reasons.get(name, "no reason given")
                          for name in missing[:4]))
