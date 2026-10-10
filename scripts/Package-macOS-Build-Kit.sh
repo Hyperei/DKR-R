@@ -23,6 +23,7 @@ install -m 0644 "${project_root}/dependencies.lock.json" "${stage}/dependencies.
 mkdir -p "${stage}/docs"
 install -m 0644 "${project_root}/docs/BUILDING.md" "${stage}/docs/BUILDING.md"
 install -m 0755 "${project_root}/Build-macOS.sh" "${stage}/Build-macOS.sh"
+install -m 0755 "${project_root}/Setup-macOS.sh" "${stage}/Setup-macOS.sh"
 install -m 0755 "${project_root}/Run-macOS.sh" "${stage}/Run-macOS.sh"
 install -m 0644 "${project_root}/LICENSE.md" "${stage}/LICENSE.md"
 install -m 0644 "${project_root}/THIRD_PARTY.md" "${stage}/THIRD_PARTY.md"

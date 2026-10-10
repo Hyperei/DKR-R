@@ -32,6 +32,10 @@ else()
     set(DKR_RELEASE_BUILD_NUMBER "1")
 endif()
 
+# Package the configured version, not a label supplied for an unrelated binary.
+file(WRITE "${CMAKE_BINARY_DIR}/dkr-release.json"
+    "{\"version\":\"${DKR_RELEASE_VERSION}\",\"build_number\":${DKR_RELEASE_BUILD_NUMBER}}\n")
+
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
@@ -805,11 +809,6 @@ if(DKR_RUNTIME_BUILD_GENERATED)
         set_property(SOURCE src/game/runtime_netplay.cpp src/game/custom_tracks_hooks.cpp
             APPEND PROPERTY COMPILE_DEFINITIONS DKR_REPLAY_QUALIFICATION=1)
     endif()
-    if(NOT DKR_EXPERIMENTAL_RACE_TEST)
-        # save_manager.cpp reads the online MemPak image in every build; the
-        # experimental build gets this source from ExperimentalOwnedGame.cmake.
-        list(APPEND DKR_GAME_SOURCES src/game/netplay/experimental_pak.cpp)
-    endif()
     if(DKR_EXPERIMENTAL_RACE_TEST)
         list(APPEND DKR_GAME_SOURCES src/game/netplay/experimental_runtime.cpp)
     else()
@@ -951,6 +950,9 @@ if(DKR_RUNTIME_BUILD_GENERATED)
             )
         endif()
         add_custom_command(TARGET DKRPortGame POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${CMAKE_BINARY_DIR}/dkr-release.json"
+                "$<TARGET_FILE_DIR:DKRPortGame>/dkr-release.json"
             COMMAND "${CMAKE_COMMAND}" -E make_directory
                 "$<TARGET_FILE_DIR:DKRPortGame>/assets/ui/Icons"
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different

@@ -7,6 +7,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Inherit the same lock when Build invokes preparation; release on process exit.
+if [[ "${DKR_MACOS_LOCK_ENTRY:-}" != "${BASH_SOURCE[0]}" ]]; then
+  exec python3 "${PROJECT_ROOT}/scripts/macos_build_lock.py" "${PROJECT_ROOT}" "${BASH_SOURCE[0]}" "$@"
+fi
+unset DKR_MACOS_LOCK_ENTRY
 LOG_DIR="$PROJECT_ROOT/build-logs"
 LOG_PATH="$LOG_DIR/prepare-dkr-runtime-$(date '+%Y%m%d-%H%M%S').log"
 
@@ -97,8 +102,6 @@ step() {
   echo "==> $*"
 }
 [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || fail "--jobs must be a positive integer."
-xcodebuild -version >/dev/null 2>&1 || fail "Install Xcode, then select it: sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer"
-xcodebuild -checkFirstLaunchStatus >/dev/null 2>&1 || fail "Complete Xcode setup: sudo xcodebuild -runFirstLaunch"
 # Keep paths valid when N64Recomp changes its working directory.
 [[ "$OUTPUT" == /* ]] || OUTPUT="$PWD/$OUTPUT"
 [[ -n "$ROM_V77" && -f "$ROM_V77" ]] || {
@@ -111,24 +114,11 @@ xcodebuild -checkFirstLaunchStatus >/dev/null 2>&1 || fail "Complete Xcode setup
 }
 
 step "Host tools"
-if [[ "$SKIP_DEPS" -eq 0 ]]; then
-  command -v brew >/dev/null || fail "Homebrew is required: https://brew.sh/"
-  # Install only; never auto-update or upgrade what's already there.
-  HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_UPGRADE=1 \
-    brew install --quiet cmake ninja make pcre2 python sdl2
-fi
-if command -v brew >/dev/null; then
-  GMAKE="$(brew --prefix make)/bin/gmake"
-else
-  GMAKE="$(command -v gmake || true)"
-fi
-# macOS ships GNU Make 3.81; the decomp Makefile needs 4.x.
-[[ -x "$GMAKE" ]] || fail "GNU Make 4 (gmake) is required: brew install make"
-for tool in git python3 cmake ninja; do
-  command -v "$tool" >/dev/null || fail "Required tool missing: $tool"
-done
+source "$SCRIPT_DIR/macos-host-tools.sh"
+dkr_macos_host_tools "$SKIP_DEPS" || fail "Host prerequisite check failed."
 # Never retire generated output through an unresolved/aliased source path.
-OUTPUT="$(python3 - "$OUTPUT" "$PROJECT_ROOT" <<'PY'
+OUTPUT="$(
+  python3 - "$OUTPUT" "$PROJECT_ROOT" <<'PY'
 import pathlib, sys
 target, root = (pathlib.Path(p).resolve() for p in sys.argv[1:])
 blocked = [pathlib.Path.home().resolve(), root, root / "extern",
@@ -151,13 +141,11 @@ for revision in (77, 80):
 print(target)
 PY
 )" || fail "Unsafe generated output directory."
-if ! xcrun metal -v >/dev/null 2>&1; then
-  xcodebuild -downloadComponent MetalToolchain || fail "Install the Metal toolchain: xcodebuild -downloadComponent MetalToolchain"
-fi
 
 step "Pinned dependencies"
 # Read the lock first: a failure inside a process substitution would be lost.
-pinned="$(python3 - "$PROJECT_ROOT/dependencies.lock.json" <<'PY'
+pinned="$(
+  python3 - "$PROJECT_ROOT/dependencies.lock.json" <<'PY'
 import json, sys
 for d in json.load(open(sys.argv[1]))["dependencies"]:
     print(d["name"], d["destination"], d["commit"], str(d.get("recursive", False)).lower(), sep="\t")
@@ -208,26 +196,26 @@ if ! [[ -x "$DECOMP/tools/binutils/mips64-elf-ld" ]] &&
   ! { command -v mips64-elf-ld >/dev/null && command -v mips64-elf-gcc >/dev/null; }; then
   BINUTILS_SOURCE="$BINUTILS_CACHE"
   if ! [[ -x "$BINUTILS_CACHE/mips64-elf-ld" ]]; then
-  # The decomp's get-binutils.sh uses Linux-only nproc; build them here.
-  version="binutils-2.46.0"
-  scratch="$(mktemp -d "${TMPDIR:-/tmp}/dkr-binutils.XXXXXX")"
-  trap 'rm -rf "$scratch"' EXIT
-  tarball="$scratch/$version.tar.xz"
-  curl -fsSL -o "$tarball" "https://ftp.gnu.org/gnu/binutils/$version.tar.xz" || fail "Downloading $version failed."
-  echo "d75a94f4d73e7a4086f7513e67e439e8fcdcbb726ffe63f4661744e6256b2cf2  $tarball" | shasum -a 256 -c - >/dev/null ||
-    fail "$version checksum mismatch."
-  tar -xJf "$tarball" -C "$scratch"
-  (
-    cd "$scratch/$version"
-    ./configure --target=mips64-elf --prefix=/usr --with-sysroot=/usr/mips64-elf \
-      --enable-64-bit-bfd --disable-gold --disable-nls --disable-shared --disable-werror >/dev/null
-    make -j"$JOBS" >/dev/null
-  ) || fail "Building MIPS binutils failed."
-  mkdir -p "$BINUTILS_CACHE"
-  for pair in binutils/ar:ar binutils/objcopy:objcopy binutils/objdump:objdump \
-    binutils/strip-new:strip gas/as-new:as ld/ld-new:ld; do
-    cp "$scratch/$version/${pair%%:*}" "$BINUTILS_CACHE/mips64-elf-${pair##*:}"
-  done
+    # The decomp's get-binutils.sh uses Linux-only nproc; build them here.
+    version="binutils-2.46.0"
+    scratch="$(mktemp -d "${TMPDIR:-/tmp}/dkr-binutils.XXXXXX")"
+    trap 'rm -rf "$scratch"' EXIT
+    tarball="$scratch/$version.tar.xz"
+    curl -fsSL -o "$tarball" "https://ftp.gnu.org/gnu/binutils/$version.tar.xz" || fail "Downloading $version failed."
+    echo "d75a94f4d73e7a4086f7513e67e439e8fcdcbb726ffe63f4661744e6256b2cf2  $tarball" | shasum -a 256 -c - >/dev/null ||
+      fail "$version checksum mismatch."
+    tar -xJf "$tarball" -C "$scratch"
+    (
+      cd "$scratch/$version"
+      ./configure --target=mips64-elf --prefix=/usr --with-sysroot=/usr/mips64-elf \
+        --enable-64-bit-bfd --disable-gold --disable-nls --disable-shared --disable-werror >/dev/null
+      make -j"$JOBS" >/dev/null
+    ) || fail "Building MIPS binutils failed."
+    mkdir -p "$BINUTILS_CACHE"
+    for pair in binutils/ar:ar binutils/objcopy:objcopy binutils/objdump:objdump \
+      binutils/strip-new:strip gas/as-new:as ld/ld-new:ld; do
+      cp "$scratch/$version/${pair%%:*}" "$BINUTILS_CACHE/mips64-elf-${pair##*:}"
+    done
   fi
 fi
 

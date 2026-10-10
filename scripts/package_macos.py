@@ -2,6 +2,8 @@
 """Package the tested build tree as an ad-hoc-signed macOS app and ZIP."""
 import argparse
 import hashlib
+import json
+import time
 import os
 from pathlib import Path
 import plistlib
@@ -58,7 +60,37 @@ def release_number(version):
     return match[0] if match else None
 
 
-def package(build, version):
+def bundle_version(build, configured_build, override=None):
+    """Reserve a monotonically increasing bundle version, even within a minute.
+
+    Encode minutes since Unix epoch as Apple's four/two/two digit components.
+    The counter is locked independently because packaging can run standalone.
+    Explicit release/CI versions bypass allocation.
+    """
+    if override is not None:
+        if not re.fullmatch(r"[1-9][0-9]{0,3}(?:\.[0-9]{1,2}){0,2}", override):
+            raise ValueError("bundle version must be positive N[.N[.N]] (4/2/2 digits)")
+        return override
+    import fcntl  # macOS-only; keep pure metadata helpers importable on Windows.
+    with (build / ".macos-package-sequence").open("a+") as counter:
+        fcntl.flock(counter, fcntl.LOCK_EX)
+        counter.seek(0)
+        previous = int(counter.read() or "0")
+        sequence = max(int(time.time() // 60), previous + 1, configured_build)
+        if sequence >= 100000000:
+            raise ValueError("automatic bundle version exhausted; specify --build-number")
+        counter.seek(0)
+        counter.truncate()
+        counter.write(str(sequence))
+        counter.flush()
+    return f"{sequence // 10000}.{sequence // 100 % 100}.{sequence % 100}"
+
+
+def package(build, version, build_number=None):
+    metadata = json.loads((build / "bin/Release/dkr-release.json").read_text())
+    if metadata["version"] != version:
+        raise RuntimeError("Package version differs from configured build; rebuild with DKR_RELEASE_VERSION first")
+    bundle_build = bundle_version(build, metadata["build_number"], build_number)
     executable = build / "bin/Release/DKR-R"
     helpers = executable.parent / "libexec/dkr-r"
     required = [executable, helpers / "DKR-R-ModWorker", helpers / "DKR-R-InputHost"]
@@ -141,19 +173,17 @@ def package(build, version):
                     run("install_name_tool", "-id", f"@rpath/{destination.name}", destination)
                 processed.add(source)
 
-        # Icon from the approved artwork (512 px source, so no 512@2x).
+        # Include the full 1024 px Retina representation from the icon artwork.
         iconset = Path(temporary) / "DKR-R.iconset"
         iconset.mkdir()
         for size in (16, 32, 128, 256, 512):
             for scale, suffix in ((1, ""), (2, "@2x")):
-                if size * scale > 512:
-                    continue
                 run("sips", "-z", size * scale, size * scale, ROOT / "assets/ui/Icons/DKR-R-Icon.png",
                     "--out", iconset / f"icon_{size}x{size}{suffix}.png")
         run("iconutil", "-c", "icns", iconset, "-o", resources / "DKR-R.icns")
         plist = dict(CFBundleExecutable="DKR-R", CFBundleName="DKR-R",
                      CFBundleIdentifier="io.github.thatguymcd.dkr-r",
-                     CFBundlePackageType="APPL", CFBundleVersion="1",
+                     CFBundlePackageType="APPL", CFBundleVersion=bundle_build,
                      CFBundleShortVersionString=release_number(version),
                      CFBundleIconFile="DKR-R",
                      LSMinimumSystemVersion=".".join(map(str, minimum)),
@@ -208,7 +238,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("build", type=Path)
     parser.add_argument("version")
+    parser.add_argument("--build-number", default=os.environ.get("DKR_MAC_BUNDLE_VERSION"),
+                        help="Explicit CFBundleVersion; otherwise reserve a distinct increasing build")
     args = parser.parse_args()
     if release_number(args.version) is None or not re.fullmatch(r"[A-Za-z0-9._-]+", args.version):
         parser.error("version must start with a numeric major.minor.patch")
-    package(args.build.resolve(), args.version)
+    package(args.build.resolve(), args.version, args.build_number)

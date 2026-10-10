@@ -3,6 +3,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Inherit the same lock when Build invokes preparation; release on process exit.
+if [[ "${DKR_MACOS_LOCK_ENTRY:-}" != "${BASH_SOURCE[0]}" ]]; then
+  exec python3 "${PROJECT_ROOT}/scripts/macos_build_lock.py" "${PROJECT_ROOT}" "${BASH_SOURCE[0]}" "$@"
+fi
+unset DKR_MACOS_LOCK_ENTRY
 LOG_DIR="$PROJECT_ROOT/build-logs"
 TIMESTAMP="$(date '+%Y%m%d-%H%M%S')"
 LOG_PATH="$LOG_DIR/prepare-game-source-$TIMESTAMP.log"
@@ -12,14 +17,24 @@ exec > >(tee -a "$LOG_PATH") 2>&1
 FORCE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --force) FORCE=1 ;;
-    -h|--help) echo "Usage: $(basename "$0") [--force]"; exit 0 ;;
-    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  --force) FORCE=1 ;;
+  -h | --help)
+    echo "Usage: $(basename "$0") [--force]"
+    exit 0
+    ;;
+  *)
+    echo "Unknown option: $1" >&2
+    exit 1
+    ;;
   esac
   shift
 done
 
-fail() { echo "[ERROR] $*" >&2; echo "Full log: $LOG_PATH" >&2; exit 1; }
+fail() {
+  echo "[ERROR] $*" >&2
+  echo "Full log: $LOG_PATH" >&2
+  exit 1
+}
 command -v git >/dev/null || fail "Git was not found."
 command -v python3 >/dev/null || fail "python3 was not found."
 
@@ -29,7 +44,8 @@ LOCK="$PROJECT_ROOT/dependencies.lock.json"
 INFO=()
 while IFS= read -r line; do
   INFO+=("$line")
-done < <(python3 - "$LOCK" <<'PY'
+done < <(
+  python3 - "$LOCK" <<'PY'
 import json, sys
 data=json.load(open(sys.argv[1], encoding="utf-8"))
 for entry in data.get("dependencies",[]):

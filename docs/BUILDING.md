@@ -127,6 +127,26 @@ that basic build as reproduction of the full experimental Public Build.
 
 ## macOS
 
+Run `./Setup-macOS.sh` to install and check prerequisites, or
+`./Setup-macOS.sh --skip-deps` to check without installing. Setup and Build's
+preparation share the same checks: full Xcode with Metal, GNU Make 4+ (`gmake`),
+CMake, Ninja, Python, SDL2, PCRE2, and a `sha1sum` supporting `-c --quiet`
+(Homebrew `coreutils`). The verifier is checked before ROM extraction.
+
+Build and either preparation script hold a checkout lock for their entire run.
+A second invocation in the same checkout fails immediately; nested preparation
+inherits the lock. Locks release automatically when processes exit, including
+failed builds. Separate checkouts must also use separate `extern/`, generated
+payloads, runtime tools, and build output directories; do not point overrides at
+another active checkout's resources.
+
+macOS packages get increasing `CFBundleVersion` values, including repeated
+packages within one minute. `CFBundleShortVersionString` remains major.minor.patch.
+Set `DKR_MAC_BUNDLE_VERSION=N[.N[.N]]` for an explicit release/CI build number
+(up to 4/2/2 digits); keep explicit values increasing for the same bundle ID.
+Packaging checks the version metadata copied beside the executable after linking,
+so a new package label cannot silently rename a build of a different version.
+
 With Xcode setup and Homebrew installed:
 
 ```bash
