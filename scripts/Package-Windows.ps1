@@ -13,6 +13,22 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
+function Remove-PackagingScratch([string]$Path) {
+    $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\', '/')
+    $target = [IO.Path]::GetFullPath($Path)
+    if (-not [String]::Equals([IO.Path]::GetDirectoryName($target), $tempRoot, [StringComparison]::OrdinalIgnoreCase) -or
+        [IO.Path]::GetFileName($target) -notmatch '^dkr-r-packaged-(pak|input-switch)-[0-9a-f]{32}$') {
+        throw "Refusing unsafe packaging scratch cleanup: $target"
+    }
+    if (Test-Path -LiteralPath $target) {
+        $entry = Get-Item -LiteralPath $target -Force
+        if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "Refusing aliased packaging scratch cleanup: $target"
+        }
+        Remove-Item -LiteralPath $target -Recurse -Force
+    }
+}
+
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = (Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw).Trim()
@@ -316,7 +332,7 @@ try {
         $selfTestProcess.Dispose()
     }
     if (Test-Path -LiteralPath $pakTest) {
-        Remove-Item -LiteralPath $pakTest -Recurse -Force
+        Remove-PackagingScratch $pakTest
     }
 }
 
@@ -345,7 +361,7 @@ try {
         $inputSwitchProcess.Dispose()
     }
     if (Test-Path -LiteralPath $inputSwitchTest) {
-        Remove-Item -LiteralPath $inputSwitchTest -Recurse -Force
+        Remove-PackagingScratch $inputSwitchTest
     }
 }
 

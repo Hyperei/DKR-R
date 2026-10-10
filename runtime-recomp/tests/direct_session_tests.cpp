@@ -55,7 +55,12 @@ struct DirectSessionTestAccess {
         DirectSession receiver;
         // This fixture injects state without a real transport. Keep the normal
         // worker from observing that deliberately incomplete session.
-        receiver.worker_stop_.store(true, std::memory_order_release);
+        {
+            // Match production shutdown: change the wait predicate under its
+            // mutex so a notification cannot slip between predicate and wait.
+            std::scoped_lock lock(receiver.mutex_);
+            receiver.worker_stop_.store(true, std::memory_order_release);
+        }
         receiver.state_changed_.notify_all();
         receiver.network_worker_.join();
         assert(receiver.enable_owned_backend(true));
