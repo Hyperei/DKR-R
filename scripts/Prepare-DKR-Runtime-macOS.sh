@@ -115,7 +115,7 @@ if [[ "$SKIP_DEPS" -eq 0 ]]; then
   command -v brew >/dev/null || fail "Homebrew is required: https://brew.sh/"
   # Install only; never auto-update or upgrade what's already there.
   HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_UPGRADE=1 \
-    brew install --quiet cmake ninja make python sdl2
+    brew install --quiet cmake ninja make pcre2 python sdl2
 fi
 if command -v brew >/dev/null; then
   GMAKE="$(brew --prefix make)/bin/gmake"
@@ -202,8 +202,15 @@ if ! [[ -x "$DECOMP/tools/binutils/mips64-elf-ld" ]] &&
     cp "$scratch/$version/${pair%%:*}" "$DECOMP/tools/binutils/mips64-elf-${pair##*:}"
   done
 fi
-if ! [[ -x "$DECOMP/.venv/bin/python3" ]] || ! "$DECOMP/.venv/bin/python3" -c 'import splat' 2>/dev/null; then
+# `gmake setup` builds the Python env and the decomp's native tools; rerun it
+# until all exist, so a run that failed partway (e.g. missing pcre2) recovers.
+decomp_ready() {
+  [[ -x "$DECOMP/.venv/bin/python3" ]] && "$DECOMP/.venv/bin/python3" -c 'import splat' 2>/dev/null &&
+    [[ -x "$DECOMP/tools/dkr_assets_tool" && -x "$DECOMP/tools/n64crc" && -x "$DECOMP/tools/ido-recomp/macos/cc" ]]
+}
+if ! decomp_ready; then
   (cd "$DECOMP" && "$GMAKE" setup) || fail "Decomp setup failed."
+  decomp_ready || fail "Decomp setup did not produce its tools; see the log above."
 fi
 
 # stamp_matches <file> <value>: true when the stage's recorded inputs match.
