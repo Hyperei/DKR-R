@@ -241,6 +241,17 @@
       ]
     },
     {
+      "name": "usrsctp",
+      "repositoryPath": "extern/libdatachannel/deps/usrsctp",
+      "expectedCommit": "fec583d54493f879d2ae44a743423bf8a04371ab",
+      "patches": [
+        {
+          "path": "patches/usrsctp/0001-hold-read-lock-while-completing-unordered-messages.patch",
+          "sha256": "4100b93b2babeb443f61a95e75dffb7b03532c815a7f06345aeabd91f4bc5d56"
+        }
+      ]
+    },
+    {
       "name": "MbedTLS",
       "repositoryPath": "extern/mbedtls",
       "expectedCommit": "c765c831e5c2a0971410692f92f7a81d6ec65ec2",

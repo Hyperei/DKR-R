@@ -38,6 +38,7 @@ def main() -> int:
         "n64recomp": "n64recomp",
         "rt64": "rt64",
         "hlslpp": "hlslpp",
+        "usrsctp": "usrsctp",
         "gekkonet": "gekkonet",
         "monocypher": "monocypher",
         "libdatachannel": "libdatachannel",

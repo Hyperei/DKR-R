@@ -37,6 +37,20 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Older Apple libc++ (Xcode 16) ships std::jthread and std::stop_token only
+# behind -fexperimental-library; newer toolchains provide them by default.
+if(APPLE)
+    include(CheckCXXSourceCompiles)
+    set(CMAKE_REQUIRED_FLAGS "-std=c++20")
+    check_cxx_source_compiles("#include <thread>
+int main() { std::jthread t([](std::stop_token) {}); }" DKR_HAS_JTHREAD)
+    if(NOT DKR_HAS_JTHREAD)
+        add_compile_options($<$<COMPILE_LANGUAGE:CXX,OBJCXX>:-fexperimental-library>)
+        add_link_options(-fexperimental-library)
+    endif()
+    unset(CMAKE_REQUIRED_FLAGS)
+endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(CTest)
