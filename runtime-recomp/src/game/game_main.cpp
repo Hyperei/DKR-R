@@ -26,6 +26,10 @@
 #include "graphics_health.hpp"
 #include "../android/android_platform.hpp"
 #endif
+#if defined(DKR_IOS)
+#include "../ios/ios_platform.hpp"
+#include <cstdlib>
+#endif
 #if DKR_LEGACY_QUALIFICATION
 #include "legacy_runtime_qualification.hpp"
 #endif
@@ -112,7 +116,7 @@ bool ConfigurePersistentRuntimeLog(
     }
 #endif
     std::setvbuf(stderr, nullptr, _IONBF, 0);
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(DKR_IOS)
     // RT64 writes GPU/driver identification to stdout. Keep it in the same
     // private log as startup errors so phone users can export both together.
     dup2(STDERR_FILENO, STDOUT_FILENO);
@@ -128,6 +132,10 @@ std::filesystem::path DefaultConfigDirectory(const char* executable_argument) {
     if (dkr::runtime::portable::enabled_at_startup()) {
         return executable_directory / "dkr-runtime-data";
     }
+#if defined(DKR_IOS)
+    // Files-visible sandbox, not the signed bundle.
+    return dkr::runtime::ios::documents_directory() / "DKR-R";
+#endif
 #if defined(_WIN32)
     if (const char* app_data = std::getenv("APPDATA"); app_data != nullptr && *app_data != '\0') {
         return std::filesystem::path(app_data) / "DKRPort";
@@ -490,7 +498,13 @@ bool PrepareCanonicalRomPath(std::filesystem::path& rom_path,
 } // namespace
 
 bool RelaunchApplication(int argc, char** argv) {
-#ifdef _WIN32
+#if defined(DKR_IOS)
+    (void)argc;
+    (void)argv;
+    // The sandbox rejects execv. main() exits and the icon starts a new process.
+    std::fprintf(stderr, "[boot][restart] quitting so the icon can start a new process\n");
+    return true;
+#elif defined(_WIN32)
     (void)argc;
     (void)argv;
     STARTUPINFOW startup{};
@@ -526,6 +540,10 @@ bool RelaunchApplication(int argc, char** argv) {
 int DkrMain(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::setvbuf(stderr, nullptr, _IONBF, 0);
+#if defined(DKR_IOS)
+    dkr::runtime::ios::configure_session();
+    dkr::runtime::ios::prepare_storage();
+#endif
     dkr::runtime::portable::configure(argv[0]);
 #if defined(__ANDROID__)
     std::set_terminate([] {
@@ -1498,6 +1516,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 }
 #else
 int main(int argc, char** argv) {
-    return DkrMain(argc, argv);
+    const int status = DkrMain(argc, argv);
+#if defined(DKR_IOS)
+    // UIKit's postFinishLaunch ignores this status and does not exit.
+    std::exit(status);
+#endif
+    return status;
 }
 #endif

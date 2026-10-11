@@ -45,6 +45,32 @@ class ReleaseMetadataTests(unittest.TestCase):
     def test_current_release_metadata(self):
         self.assertEqual(release_metadata.main(), 0)
 
+    def test_patched_dependencies_require_matching_lock_entries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "packaging/linux").mkdir(parents=True)
+            (root / "patches").mkdir()
+            (root / "VERSION").write_text("1.0.5")
+            (root / "packaging/linux/dkr-port.appdata.xml").write_text(
+                '<release version="1.0.5"/>')
+            for name in ("README.md", "THIRD_PARTY.md"):
+                (root / name).write_text("")
+            manifest = {"dependencies": [{"name": "NewDependency",
+                "expectedCommit": "abc123", "patches": []}]}
+            (root / "patches/manifest.json").write_text(json.dumps(manifest))
+            lock_path = root / "dependencies.lock.json"
+            with patch.object(release_metadata, "ROOT", root):
+                lock_path.write_text(json.dumps({"dependencies": []}))
+                with self.assertRaisesRegex(RuntimeError, "missing from lockfile"):
+                    release_metadata.main()
+                lock = {"dependencies": [{"name": "newdependency", "commit": "ABC123"}]}
+                lock_path.write_text(json.dumps(lock))
+                self.assertEqual(release_metadata.main(), 0)
+                lock["dependencies"][0]["commit"] = "def456"
+                lock_path.write_text(json.dumps(lock))
+                with self.assertRaisesRegex(RuntimeError, "Pinned commit mismatch"):
+                    release_metadata.main()
+
     def test_invalid_version_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

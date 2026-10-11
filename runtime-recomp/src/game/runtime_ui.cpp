@@ -5,7 +5,13 @@
 #include "mobile_graphics_preset.hpp"
 #if defined(__ANDROID__)
 #include "../android/android_platform.hpp"
+#endif
+#if defined(__ANDROID__) || defined(DKR_IOS)
 #include "../android/mobile_ui.hpp"
+#endif
+#if defined(DKR_IOS)
+#include "../ios/ios_platform.hpp"
+#include "../ios/ios_event_queue.hpp"
 #endif
 #include "runtime_mipmap_modal.hpp"
 
@@ -439,6 +445,9 @@ std::atomic<dkr::runtime::ui::LifecycleRequest> g_lifecycle_request{
     dkr::runtime::ui::LifecycleRequest::None};
 std::mutex g_inspector_guard;
 RT64::Inspector* g_inspector = nullptr;
+#if defined(DKR_IOS)
+dkr::runtime::ios::UiEventQueue g_ios_ui_events;
+#endif
 std::atomic<int> g_overlay_page{0};
 std::atomic<int> g_overlay_last_rendered_page{-1};
 // Shoulder buttons exclusively own this ten-entry rail. Entries 0-7 switch
@@ -465,7 +474,9 @@ double UiAnimationSeconds() {
 }
 bool g_online_guide_do_not_show_again = true;
 bool g_online_guide_reopen_requested = false;
-#if defined(__ANDROID__)
+#if defined(DKR_IOS)
+RefreshRate g_modern_refresh_mode = RefreshRate::Display;
+#elif defined(__ANDROID__)
 // Conservative first-use defaults only. The settings loader restores all
 // existing choices, and explicit presets below disclose the quality tradeoff.
 RefreshRate g_modern_refresh_mode = RefreshRate::Manual;
@@ -473,14 +484,18 @@ RefreshRate g_modern_refresh_mode = RefreshRate::Manual;
 RefreshRate g_modern_refresh_mode = RefreshRate::Display;
 #endif
 int g_modern_refresh_target = 60;
-#if defined(__ANDROID__)
+#if defined(DKR_IOS)
+Resolution g_modern_resolution = Resolution::Original2x;
+#elif defined(__ANDROID__)
 Resolution g_modern_resolution = Resolution::Original2x;
 #else
 Resolution g_modern_resolution = Resolution::Auto;
 #endif
 AspectRatio g_modern_aspect = AspectRatio::Expand;
 Antialiasing g_modern_antialiasing = Antialiasing::None;
-#if defined(__ANDROID__)
+#if defined(DKR_IOS)
+HighPrecisionFramebuffer g_modern_high_precision_fb = HighPrecisionFramebuffer::On;
+#elif defined(__ANDROID__)
 HighPrecisionFramebuffer g_modern_high_precision_fb = HighPrecisionFramebuffer::Off;
 #else
 HighPrecisionFramebuffer g_modern_high_precision_fb = HighPrecisionFramebuffer::On;
@@ -1318,7 +1333,7 @@ void LoadLauncherFonts() {
         g_font_fps = g_font_controls != nullptr ? g_font_controls : body_font;
     }
     LoadBrandLogoIntoAtlas();
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(DKR_IOS)
     dkr::runtime::mobile::install_context();
 #endif
 }
@@ -1436,7 +1451,7 @@ void DrawPageHeading(const char* text, bool title = false,
     const float available_width =
         std::max(ImGui::GetContentRegionAvail().x, 1.0F);
     float size = size_override > 0.0F ? size_override : font->FontSize;
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(DKR_IOS)
     size = std::min(size, 36.0F);
 #endif
     float tracking = size * (title ? 0.03F : 0.04F);
@@ -2749,6 +2764,30 @@ bool IsRomFile(const std::filesystem::path& path) {
     return extension == ".z64" || extension == ".v64" || extension == ".n64";
 }
 
+#if defined(DKR_IOS)
+// Files and Open In put ROMs in Documents. The container path changes when the
+// app is reinstalled, so the remembered absolute paths can't be the only record.
+void AddDocumentsRomsToCatalog(std::vector<RomCatalogEntry>& catalog) {
+    std::error_code error;
+    const std::filesystem::path documents = dkr::runtime::ios::documents_directory();
+    if (documents.empty()) {
+        return;
+    }
+    std::filesystem::directory_iterator it(documents, error);
+    for (; !error && it != std::filesystem::directory_iterator(); it.increment(error)) {
+        std::error_code entry_error;
+        if (!it->is_regular_file(entry_error) || entry_error || !IsRomFile(it->path())) {
+            continue;
+        }
+        std::string validation_error;
+        dkr::runtime::rom::Identity identity{};
+        if (dkr::runtime::ValidateRomForLauncher(it->path(), identity, validation_error)) {
+            RememberRomInCatalog(it->path(), identity, catalog);
+        }
+    }
+}
+#endif
+
 std::filesystem::path DefaultBrowserDirectory(const std::filesystem::path& selected) {
     std::error_code error;
     if (!selected.empty()) {
@@ -2757,6 +2796,12 @@ std::filesystem::path DefaultBrowserDirectory(const std::filesystem::path& selec
             return parent;
         }
     }
+#if defined(DKR_IOS)
+    const auto documents = dkr::runtime::ios::documents_directory();
+    if (!documents.empty() && std::filesystem::is_directory(documents, error)) {
+        return documents;
+    }
+#endif
 #if defined(_WIN32)
     if (const char* profile = std::getenv("USERPROFILE"); profile != nullptr) {
         const auto downloads = std::filesystem::path(profile) / "Downloads";
@@ -3374,7 +3419,7 @@ void DrawColoredWrapped(const ImVec4& color, std::string_view text) {
 
 bool BeginPaddedModal(const char* name, ImGuiWindowFlags flags = 0,
                       const ImVec2& padding = {26.0F, 24.0F}) {
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(DKR_IOS)
     dkr::runtime::mobile::constrain_modal();
     flags &= ~(ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     if (g_paddock_modal_windows > 0) return BeginPaddockModalWindow(name, flags);
@@ -3390,7 +3435,7 @@ bool BeginPaddedModal(const char* name, ImGuiWindowFlags flags = 0,
     // Modal actions must remain fully visible. Long pages may scroll behind a
     // modal, and specialised children such as the ROM file list may scroll,
     // but the modal window itself must never grow its own scrollbar.
-#if !defined(__ANDROID__)
+#if !defined(__ANDROID__) && !defined(DKR_IOS)
     flags |= ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 #endif
     const bool visible = ImGui::BeginPopupModal(name, nullptr, flags);
@@ -8135,7 +8180,7 @@ void DrawOverlayContent(float content_width) {
 
 void dkr::runtime::ui::configure(const std::filesystem::path& config_directory) {
     g_config_directory = config_directory;
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(DKR_IOS)
     dkr::runtime::mobile::configure(config_directory);
 #endif
     // Resolve only beside this executable, never from a mod or the CWD.
@@ -8324,7 +8369,11 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(
         SDL_SysWMinfo info{};
         SDL_VERSION(&info.version);
         if (SDL_GetWindowWMInfo(window, &info)) {
+#if defined(DKR_IOS)
+            dkr_show_metal_layer(info.info.uikit.window, layer);
+#else
             dkr_show_metal_layer(info.info.cocoa.window, layer);
+#endif
         }
     }
 #endif
@@ -8415,6 +8464,9 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(
     const auto rom_catalog_started_at =
         dkr::runtime::startup_performance::Clock::now();
     std::vector<RomCatalogEntry> rom_catalog = LoadRomCatalog();
+#if defined(DKR_IOS)
+    AddDocumentsRomsToCatalog(rom_catalog);
+#endif
     dkr::runtime::startup_performance::report(
         "rom-catalog-load", rom_catalog_started_at);
     const std::optional<std::filesystem::path> initial_rom =
@@ -8681,7 +8733,7 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(
         dkr::runtime::platform::pump_input_backend_events();
         SDL_Event event{};
         const auto process_launcher_event = [&](SDL_Event& event) {
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(DKR_IOS)
             if (dkr::runtime::mobile::event(event, false)) {
                 launcher_last_activity = std::chrono::steady_clock::now();
                 return;
@@ -8869,7 +8921,7 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(
         DrawLauncherBackdrop(launcher_background, renderer, launcher_background_scroll,
                              bounded_software_return);
         if (launcher_profile.enabled()) ImGui::GetWindowDrawList()->AddCallback(LauncherDrawProfileRange::end, &background_profile);
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(DKR_IOS)
         dkr::runtime::mobile::menu(page, false, request_restart_popup, request_quit_popup);
         dkr::runtime::mobile::begin_content();
         const float right_inner_width = ImGui::GetContentRegionAvail().x;
@@ -9010,7 +9062,7 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(
         }
         ImGui::Dummy({0.0F, 54.0F});
         g_launcher_rom = nullptr;
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(DKR_IOS)
         dkr::runtime::mobile::end_content();
 #else
         ImGui::EndGroup();
@@ -9076,7 +9128,7 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(
         }
 
         ApplyPaddockModalDim();
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(DKR_IOS)
         if (dkr::runtime::mobile::editing()) {
             dkr::runtime::mobile::draw_controls(false);
             dkr::runtime::mobile::editor();
@@ -9231,6 +9283,9 @@ void dkr::runtime::ui::attach(RT64::Application& application) {
         static_cast<SDL_Window*>(dkr::runtime::platform::sdl_window()));
     application.presentQueue->inspector->setIniPath(g_config_directory / "dkr-port-ui.ini");
     g_inspector = application.presentQueue->inspector.get();
+#if defined(DKR_IOS)
+    g_ios_ui_events.clear();
+#endif
     ImGui::GetIO().ConfigFlags |=
         ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
     LoadLauncherFonts();
@@ -9240,6 +9295,9 @@ void dkr::runtime::ui::attach(RT64::Application& application) {
 void dkr::runtime::ui::detach(RT64::Application& application) {
     std::scoped_lock guard(g_inspector_guard);
     g_inspector = nullptr;
+#if defined(DKR_IOS)
+    g_ios_ui_events.clear();
+#endif
     if (application.presentQueue != nullptr) {
         std::scoped_lock present_lock(application.presentQueue->inspectorMutex);
         dkr::runtime::crt::release();
@@ -9286,7 +9344,7 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
     const bool show_camera_tuning = CameraTuningVisible();
     const bool keep_owned_ui = dkr::runtime::netplay::experimental::owned_runtime_active();
     if (
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(DKR_IOS)
         false && // Touch Menu remains available, even when all other overlays are off.
 #endif
         !show_overlay && !show_fps && !show_crt && !show_online_error &&
@@ -9313,6 +9371,14 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
     }
     RT64::Inspector* inspector = application.presentQueue->inspector.get();
     dkr::runtime::performance_trace::Scope ui_measure(dkr::runtime::performance_trace::Region::UiBuild);
+#if defined(DKR_IOS)
+    {
+        auto pending = g_ios_ui_events.take();
+        std::scoped_lock frame_lock(inspector->frameMutex);
+        if (pending.reset_inputs) ImGui::GetIO().ClearInputKeys();
+        for (auto& event : pending.events) inspector->handleSdlEvent(&event);
+    }
+#endif
     inspector->newFrame(application.framebufferGraphicsWorker.get());
     if (auto* hud_window = static_cast<SDL_Window*>(dkr::runtime::platform::sdl_window())) {
         int hud_viewport_width = 0;
@@ -9355,7 +9421,7 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
         }
         const bool focus_selected_page =
             g_overlay_focus_requested.exchange(false, std::memory_order_acq_rel);
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(DKR_IOS)
         int mobile_page = g_overlay_page.load(std::memory_order_relaxed);
         dkr::runtime::mobile::menu(mobile_page, true, request_restart_popup, request_quit_popup);
         g_overlay_page.store(mobile_page, std::memory_order_relaxed);
@@ -9551,7 +9617,7 @@ void dkr::runtime::ui::draw(RT64::Application& application) {
     if (show_online_notification) DrawOnlineNotification();
     if (show_overlay) DrawOlToast();
     ApplyPaddockModalDim();
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(DKR_IOS)
     dkr::runtime::mobile::draw_controls(show_overlay);
     dkr::runtime::mobile::editor();
 #endif
@@ -9566,7 +9632,7 @@ bool dkr::runtime::ui::handle_runtime_event(SDL_Event* event) {
     if (event == nullptr) {
         return false;
     }
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(DKR_IOS)
     if (dkr::runtime::mobile::event(*event, !overlay_visible())) return true;
 #endif
     if (HandleInputCaptureEvent(event)) {
@@ -9652,6 +9718,11 @@ bool dkr::runtime::ui::handle_runtime_event(SDL_Event* event) {
             // carry NoNav and therefore cannot steal this focus.
         }
     }
+#if defined(DKR_IOS)
+    // UIKit presentation may wait for the main thread while the renderer holds
+    // frameMutex. Keep the main event pump free to service that presentation.
+    return g_ios_ui_events.push(*event);
+#else
     std::scoped_lock guard(g_inspector_guard);
     if (g_inspector == nullptr) {
         return false;
@@ -9662,11 +9733,12 @@ bool dkr::runtime::ui::handle_runtime_event(SDL_Event* event) {
     // be allowed to retain the item selected by the previous event so the
     // player can move from the sidebar into sliders, combos and buttons.
     return g_inspector->handleSdlEvent(event);
+#endif
 }
 
 bool dkr::runtime::ui::input_capture_active() {
     return
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(DKR_IOS)
            dkr::runtime::mobile::editing() ||
 #endif
            dkr::runtime::hud::editor::active() || (g_capture_action != -1 && !g_capture_finished) ||
@@ -9675,7 +9747,7 @@ bool dkr::runtime::ui::input_capture_active() {
 }
 
 void dkr::runtime::ui::toggle_overlay() {
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) || defined(DKR_IOS)
     dkr::runtime::mobile::clear();
 #endif
     if (dkr::runtime::hud::editor::active()) { dkr::runtime::hud::editor::request_back(); return; }
