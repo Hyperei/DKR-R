@@ -64,7 +64,7 @@ include(CTest)
 include(cmake/ProjectTests.cmake)
 
 
-set(DKRPORT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." CACHE PATH "Root of the DKR Port repository")
+include(cmake/SourceRoots.cmake)
 option(DKR_RUNTIME_BUILD_GENERATED "Compile N64Recomp-generated DKR CPU functions" ON)
 option(DKR_RUNTIME_BUILD_RT64 "Also configure and compile the pinned RT64 renderer" OFF)
 option(DKR_LEGACY_QUALIFICATION "Build private real-runtime legacy scene qualification hooks (not for packaging)" OFF)
@@ -91,10 +91,9 @@ set(DKR_PATCH_POLICY_SHA256
 set(DKR_TEST_ROM_V77 "" CACHE FILEPATH "Optional local US v1.0 ROM for revision tests")
 set(DKR_TEST_ROM_V80_Z64 "" CACHE FILEPATH "Optional local US Rev A z64 ROM for revision tests")
 set(DKR_TEST_ROM_V80_SWAPPED "" CACHE FILEPATH "Optional local US Rev A byte-swapped ROM for revision tests")
-get_filename_component(DKRPORT_ROOT "${DKRPORT_ROOT}" ABSOLUTE)
-set(DKR_MODERN_RUNTIME_SOURCE "${DKRPORT_ROOT}/extern/n64-modern-runtime")
+set(DKR_MODERN_RUNTIME_SOURCE "${DKR_DEPENDENCIES_DIR}/n64-modern-runtime")
 set(DKR_RECOMP_SOURCE "${DKR_MODERN_RUNTIME_SOURCE}/N64Recomp")
-set(DKR_RT64_SOURCE "${DKRPORT_ROOT}/extern/rt64")
+set(DKR_RT64_SOURCE "${DKR_DEPENDENCIES_DIR}/rt64")
 
 if(BUILD_TESTING AND NOT ANDROID)
     add_executable(DKREnhancedWaterPolicyTests tests/enhanced_water_policy_tests.cpp)
@@ -102,11 +101,11 @@ if(BUILD_TESTING AND NOT ANDROID)
     add_test(NAME DKREnhancedWaterPolicy COMMAND DKREnhancedWaterPolicyTests)
 endif()
 
-set(DKR_GEKKONET_SOURCE "${DKRPORT_ROOT}/extern/gekkonet")
-set(DKR_MONOCYPHER_SOURCE "${DKRPORT_ROOT}/extern/monocypher")
-set(DKR_LIBDATACHANNEL_SOURCE "${DKRPORT_ROOT}/extern/libdatachannel")
-set(DKR_MBEDTLS_SOURCE "${DKRPORT_ROOT}/extern/mbedtls")
-set(DKR_SDL3_SOURCE "${DKRPORT_ROOT}/extern/sdl3")
+set(DKR_GEKKONET_SOURCE "${DKR_DEPENDENCIES_DIR}/gekkonet")
+set(DKR_MONOCYPHER_SOURCE "${DKR_DEPENDENCIES_DIR}/monocypher")
+set(DKR_LIBDATACHANNEL_SOURCE "${DKR_DEPENDENCIES_DIR}/libdatachannel")
+set(DKR_MBEDTLS_SOURCE "${DKR_DEPENDENCIES_DIR}/mbedtls")
+set(DKR_SDL3_SOURCE "${DKR_DEPENDENCIES_DIR}/sdl3")
 if(ANDROID)
     include("${CMAKE_CURRENT_LIST_DIR}/cmake/AndroidPlatform.cmake")
 endif()
@@ -122,6 +121,9 @@ set(DKR_GENERATED_SOURCE_V80 "" CACHE PATH
 set(DKR_GENERATED_RSP_SOURCE "${CMAKE_CURRENT_LIST_DIR}/RecompiledRSP" CACHE PATH
     "RSPRecomp-generated source for the selected DKR revision")
 set(DKR_GENERATED_FILE_COUNT 0)
+
+option(DKR_NETPLAY_WEBRTC "Build the optional five-character Quick Join transport" ON)
+include(cmake/DependencyPreflight.cmake)
 
 if(DKR_RUNTIME_BUILD_GENERATED)
     if(DKR_GENERATED_SOURCE_V80 STREQUAL "")
@@ -196,7 +198,6 @@ add_library(DKRNetplayCrypto STATIC
     "${DKR_MONOCYPHER_SOURCE}/src/monocypher.c"
 )
 
-option(DKR_NETPLAY_WEBRTC "Build the optional five-character Quick Join transport" ON)
 if(DKR_NETPLAY_WEBRTC)
     if(NOT EXISTS "${DKR_LIBDATACHANNEL_SOURCE}/CMakeLists.txt")
         message(FATAL_ERROR
@@ -627,19 +628,8 @@ if(DKR_RUNTIME_BUILD_GENERATED)
     endforeach()
     set(DKR_V80_SYMBOL_MAP
         "${CMAKE_BINARY_DIR}/generated/dkr_v80_symbol_map.hpp")
-    execute_process(
-        COMMAND "${Python3_EXECUTABLE}"
-                "${CMAKE_CURRENT_LIST_DIR}/cmake/generate_revision_symbol_map.py"
-                "${DKR_GENERATED_SOURCE_V80}"
-                "dkr_v80_"
-                "${DKR_V80_SYMBOL_MAP}"
-        RESULT_VARIABLE DKR_SYMBOL_MAP_RESULT
-        ERROR_VARIABLE DKR_SYMBOL_MAP_ERROR
-    )
-    if(NOT DKR_SYMBOL_MAP_RESULT EQUAL 0)
-        message(FATAL_ERROR
-            "Could not namespace the Rev A CPU payload: ${DKR_SYMBOL_MAP_ERROR}")
-    endif()
+    include("${CMAKE_CURRENT_LIST_DIR}/cmake/RevisionSymbolMap.cmake")
+    dkr_generate_revision_symbol_map("${DKR_GENERATED_SOURCE_V80}" "dkr_v80_" "${DKR_V80_SYMBOL_MAP}")
 
     # Each ROM revision contributes only its generated CPU payload. The
     # frontend, renderer, audio, input, netplay and settings runtime are linked
@@ -1339,15 +1329,26 @@ if(BUILD_TESTING)
     # Build tooling: dependency patch pipeline, reviewed-ELF digest and the
     # shell entry-point contracts. Needs only git and Python, so it runs in
     # every configuration including the policy-only CI builds.
-    find_package(Python3 COMPONENTS Interpreter)
-    find_package(Git)
-    if(Python3_Interpreter_FOUND AND GIT_FOUND)
-        add_test(NAME DKRBuildTooling
-            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/tests/build_tooling_tests.py")
-        if(UNIX)
-            add_test(NAME DKRIosPackaging
-                COMMAND "${Python3_EXECUTABLE}" "${DKRPORT_ROOT}/scripts/tests/test_package_ios.py")
-        endif()
+    foreach(tooling_test IN ITEMS
+            "DKRBuildTooling|build_tooling_tests.py"
+            "DKRHostTaskPolicy|host_task_policy_tests.py"
+            "DKRLegacyModPipeline|legacy_mod_pipeline_tests.py"
+            "DKRToolingUtilities|tooling_utilities_tests.py"
+            "DKRSourcePackaging|source_packaging_tests.py"
+            "DKRBuildIteration|build_iteration_tests.py"
+            "DKRDeveloperEntrypoints|developer_entrypoint_tests.py"
+            "DKRAssetScan|asset_scan_tests.py")
+        string(REPLACE "|" ";" tooling_test "${tooling_test}")
+        list(GET tooling_test 0 test_name)
+        list(GET tooling_test 1 test_script)
+        add_test(NAME ${test_name}
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/tests/${test_script}")
+        set_tests_properties(${test_name} PROPERTIES LABELS "host;tooling" TIMEOUT 180)
+    endforeach()
+    if(UNIX)
+        add_test(NAME DKRIosPackaging
+            COMMAND "${Python3_EXECUTABLE}" "${DKRPORT_ROOT}/scripts/tests/test_package_ios.py")
+        set_tests_properties(DKRIosPackaging PROPERTIES LABELS "host;tooling" TIMEOUT 180)
     endif()
     if(APPLE)
         # Compiled directly so the policy-only CI configuration, which has no
@@ -1444,8 +1445,11 @@ if(BUILD_TESTING)
         # helper on desktop Vulkan, not a separate simplified implementation.
         add_executable(DKRAndroidTransferGpuTests EXCLUDE_FROM_ALL tests/android_transfer_gpu_tests.cpp)
         target_compile_features(DKRAndroidTransferGpuTests PRIVATE cxx_std_20)
-        target_include_directories(DKRAndroidTransferGpuTests PRIVATE "${DKR_RT64_SOURCE}/src" "${CMAKE_CURRENT_LIST_DIR}/src/game"
-            "$<TARGET_PROPERTY:DKRPortGame,INCLUDE_DIRECTORIES>")
+        # This buffer-only renderer probe also configures without generated ROM
+        # payloads. Consume renderer headers directly; no game target is needed.
+        target_include_directories(DKRAndroidTransferGpuTests PRIVATE
+            "${DKR_RT64_SOURCE}/src" "${CMAKE_CURRENT_LIST_DIR}/src/game"
+            "$<TARGET_PROPERTY:rt64,INCLUDE_DIRECTORIES>")
         target_compile_definitions(DKRAndroidTransferGpuTests PRIVATE DKR_GRAPHICS_FAULT_TEST=1 NOMINMAX)
         target_link_libraries(DKRAndroidTransferGpuTests PRIVATE rt64)
         if(WIN32)
@@ -1768,7 +1772,7 @@ if(BUILD_TESTING)
             target_compile_definitions(DKRLegacyMemoryGuest${revision}Tests PRIVATE DKR_MEMORY_TEST_REVISION=${revision})
             target_include_directories(DKRLegacyMemoryGuest${revision}Tests PRIVATE
                 "${DKR_MEMORY_FIXTURE_ROOT}/fixtures-v${revision}"
-                "${DKRPORT_ROOT}/extern/n64-modern-runtime/N64Recomp/include")
+                "${DKR_DEPENDENCIES_DIR}/n64-modern-runtime/N64Recomp/include")
             if(NOT MSVC)
                 target_compile_options(DKRLegacyMemoryGuest${revision}Tests PRIVATE -Wno-implicit-function-declaration)
                 target_link_libraries(DKRLegacyMemoryGuest${revision}Tests PRIVATE m)
@@ -2122,7 +2126,7 @@ if(BUILD_TESTING)
     )
     target_include_directories(DKRMagicCodeRuntimeTests PRIVATE
         "${CMAKE_CURRENT_LIST_DIR}/src/game"
-        "${DKRPORT_ROOT}/extern/n64-modern-runtime/N64Recomp/include"
+        "${DKR_DEPENDENCIES_DIR}/n64-modern-runtime/N64Recomp/include"
     )
     find_package(Threads REQUIRED)
     target_link_libraries(DKRMagicCodeRuntimeTests PRIVATE Threads::Threads)
@@ -2303,7 +2307,7 @@ if(BUILD_TESTING)
         target_include_directories(DKRCustomTracksRuntimeTests PRIVATE
             "${CMAKE_CURRENT_LIST_DIR}/src/game"
             "${DKR_RT64_SOURCE}/src/contrib"
-            "${DKRPORT_ROOT}/extern/n64-modern-runtime/N64Recomp/include"
+            "${DKR_DEPENDENCIES_DIR}/n64-modern-runtime/N64Recomp/include"
         )
         add_test(NAME DKRCustomTracksRuntime COMMAND DKRCustomTracksRuntimeTests)
         add_executable(DKRCustomTracksGuestTests

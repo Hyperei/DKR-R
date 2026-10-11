@@ -9,7 +9,9 @@ from pathlib import Path
 
 
 def toml_string(value: str) -> str:
-    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    # JSON and TOML basic strings share these escapes, except TOML also
+    # forbids an unescaped DEL character. Keep Unicode readable.
+    return json.dumps(value, ensure_ascii=False).replace(chr(127), "\\u007f")
 
 
 def string_list(entries: list[dict[str, object]]) -> str:

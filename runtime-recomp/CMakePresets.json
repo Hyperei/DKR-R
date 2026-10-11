@@ -1,6 +1,10 @@
 {
   "version": 5,
-  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
   "configurePresets": [
     {
       "name": "policy-base",
@@ -17,7 +21,10 @@
       "name": "policy",
       "displayName": "ROM-free policy tests (Ninja)",
       "inherits": "policy-base",
-      "generator": "Ninja"
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
     },
     {
       "name": "policy-windows",
@@ -25,29 +32,115 @@
       "inherits": "policy-base",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
-      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "policy-debug",
+      "displayName": "Debug policy tests",
+      "inherits": "policy",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "policy-windows-debug",
+      "displayName": "Debug policy-windows tests",
+      "inherits": "policy-windows",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "policy", "configurePreset": "policy", "configuration": "Release" },
-    { "name": "policy-windows", "configurePreset": "policy-windows", "configuration": "Release" }
+    {
+      "name": "policy",
+      "configurePreset": "policy",
+      "configuration": "Release"
+    },
+    {
+      "name": "policy-windows",
+      "configurePreset": "policy-windows",
+      "configuration": "Release"
+    },
+    {
+      "name": "policy-debug",
+      "configurePreset": "policy-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "policy-windows-debug",
+      "configurePreset": "policy-windows-debug",
+      "configuration": "Debug"
+    }
   ],
   "testPresets": [
     {
       "name": "policy",
       "configurePreset": "policy",
       "configuration": "Release",
-      "filter": { "include": { "name": "^DKR" } },
-      "output": { "outputOnFailure": true },
-      "execution": { "noTestsAction": "error" }
+      "filter": {
+        "include": {
+          "name": "^DKR"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
     },
     {
       "name": "policy-windows",
       "configurePreset": "policy-windows",
       "configuration": "Release",
-      "filter": { "include": { "name": "^DKR" } },
-      "output": { "outputOnFailure": true },
-      "execution": { "noTestsAction": "error" }
+      "filter": {
+        "include": {
+          "name": "^DKR"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "policy-debug",
+      "configurePreset": "policy-debug",
+      "configuration": "Debug",
+      "filter": {
+        "include": {
+          "name": "^DKR"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "policy-windows-debug",
+      "configurePreset": "policy-windows-debug",
+      "configuration": "Debug",
+      "filter": {
+        "include": {
+          "name": "^DKR"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
     }
   ]
 }

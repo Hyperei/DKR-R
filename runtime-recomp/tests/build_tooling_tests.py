@@ -53,8 +53,11 @@ class ReleaseMetadataTests(unittest.TestCase):
             (root / "VERSION").write_text("1.0.5")
             (root / "packaging/linux/dkr-port.appdata.xml").write_text(
                 '<release version="1.0.5"/>')
-            for name in ("README.md", "THIRD_PARTY.md"):
-                (root / name).write_text("")
+            for name in ("README.md", "THIRD_PARTY.md", "docs/README.md", "docs/BUILDING.md",
+                         "docs/PLATFORMS.md", "packaging/RELEASE-README.md", "packaging/MACOS-BUILD-README.md"):
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("")
             manifest = {"dependencies": [{"name": "NewDependency",
                 "expectedCommit": "abc123", "patches": []}]}
             (root / "patches/manifest.json").write_text(json.dumps(manifest))
@@ -81,6 +84,29 @@ class ReleaseMetadataTests(unittest.TestCase):
                     with patch.object(release_metadata, "ROOT", root):
                         with self.assertRaisesRegex(RuntimeError, "semantic version"):
                             release_metadata.main()
+
+    def test_unknown_dependency_names_and_historical_notes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("README.md", "THIRD_PARTY.md", "docs/README.md", "docs/BUILDING.md",
+                         "docs/PLATFORMS.md", "packaging/RELEASE-README.md", "packaging/MACOS-BUILD-README.md"):
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("Current documentation\n")
+            (root / "VERSION").write_text("1.0.5")
+            (root / "packaging/linux").mkdir()
+            (root / "packaging/linux/dkr-port.appdata.xml").write_text('<release version="1.0.5"/>')
+            (root / "patches").mkdir()
+            (root / "patches/manifest.json").write_text(json.dumps({"dependencies": [
+                {"name": "new-library", "expectedCommit": "abc", "patches": []}]}))
+            (root / "dependencies.lock.json").write_text(json.dumps({"dependencies": [
+                {"name": "new-library", "commit": "abc"}]}))
+            (root / "docs/historical-notes.md").write_text("Earlier milestone and release candidate\n")
+            with patch.object(release_metadata, "ROOT", root):
+                self.assertEqual(release_metadata.main(), 0)
+                (root / "dependencies.lock.json").write_text('{"dependencies": []}')
+                with self.assertRaisesRegex(RuntimeError, "missing from lockfile: new-library"):
+                    release_metadata.main()
 
 
 class PatchFixture:
@@ -163,21 +189,93 @@ class PatchPipelineTests(PatchFixture, unittest.TestCase):
             self.assertEqual((self.repo / name).stat().st_mtime_ns, stamp, name)
         self.assert_patched()
 
-    def test_half_applied_checkout_is_repaired(self):
+    def test_interrupted_checkout_requires_explicit_repair(self):
         # First patch applied, plus the second patch's new file left behind
         # by an interrupted run (`git checkout -- .` doesn't remove it).
         git(self.repo, "apply", str(self.patches[0]))
         (self.repo / "new.txt").write_text("stale\n")
-        self.apply()
+        with self.assertRaisesRegex(SystemExit, "unrecognized local edits"):
+            self.apply()
+        patches.apply_manifest(self.root, self.manifest, repair=True)
         self.assert_patched()
 
-    def test_local_edit_is_reverted_and_unrelated_untracked_kept(self):
+    def test_local_edit_is_preserved_and_explicit_repair_keeps_unrelated_untracked(self):
         self.apply()
         (self.repo / "a.txt").write_text("local edit\n")
         (self.repo / "helper-symlink-target").write_text("keep me\n")
-        self.apply()
+        with self.assertRaisesRegex(SystemExit, "unrecognized local edits"):
+            self.apply()
+        self.assertEqual((self.repo / "a.txt").read_text(), "local edit\n")
+        patches.apply_manifest(self.root, self.manifest, repair=True)
         self.assert_patched()
         self.assertEqual((self.repo / "helper-symlink-target").read_text(), "keep me\n")
+
+    def test_exact_intermediate_patch_state_resumes(self):
+        git(self.repo, "apply", str(self.patches[0]))
+        self.apply()
+        self.assert_patched()
+
+    def test_check_validates_stacked_patches_without_checkout_mutation(self):
+        before = {p.name: (p.read_bytes(), p.stat().st_mtime_ns)
+                  for p in self.repo.iterdir() if p.is_file()}
+        index_path = Path(git(self.repo, "rev-parse", "--git-path", "index"))
+        index = index_path.read_bytes()
+        self.assertEqual(patches.apply_manifest(self.root, self.manifest, check=True), 0)
+        self.assertEqual(index_path.read_bytes(), index)
+        self.assertEqual(before, {p.name: (p.read_bytes(), p.stat().st_mtime_ns)
+                                 for p in self.repo.iterdir() if p.is_file()})
+
+    def test_required_missing_checkout_and_empty_check_are_rejected(self):
+        data = json.loads(self.manifest.read_text())
+        data["dependencies"].append({**data["dependencies"][0], "name": "missing", "repositoryPath": "absent"})
+        self.manifest.write_text(json.dumps(data))
+        with self.assertRaisesRegex(SystemExit, "dependency checkout is missing"):
+            patches.apply_manifest(self.root, self.manifest, require_all=True)
+        self.assertEqual((self.repo / "a.txt").read_text(), "one\ntwo\nthree\n")
+        data["dependencies"] = data["dependencies"][1:]
+        self.manifest.write_text(json.dumps(data))
+        with self.assertRaisesRegex(SystemExit, "No dependency checkouts found"):
+            patches.apply_manifest(self.root, self.manifest, check=True)
+
+    def test_cli_check_and_failure_exit_codes(self):
+        command = [sys.executable, str(ROOT / "scripts/apply_dependency_patches.py"),
+                   "--root", str(self.root), "--manifest", str(self.manifest), "--check"]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("validated", result.stdout)
+        self.assertEqual((self.repo / "a.txt").read_text(), "one\ntwo\nthree\n")
+        write(self.repo / "a.txt", "developer work\n")
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unrecognized local edits", result.stderr)
+        self.assertEqual((self.repo / "a.txt").read_text(), "developer work\n")
+
+    def test_all_dependencies_preflight_before_first_write(self):
+        data = json.loads(self.manifest.read_text())
+        other = self.root / "other"
+        git(self.root / "upstream", "worktree", "add", "-q", "--detach", str(other), self.commit)
+        second = {**data["dependencies"][0], "name": "other", "repositoryPath": "other"}
+        data["dependencies"].append(second)
+        self.manifest.write_text(json.dumps(data))
+        write(other / "a.txt", "developer work\n")
+        with self.assertRaisesRegex(SystemExit, "unrecognized local edits"):
+            self.apply()
+        self.assertEqual((self.repo / "a.txt").read_text(), "one\ntwo\nthree\n")
+        write(other / "a.txt", "one\ntwo\nthree\n")
+        second["patches"] = [{**second["patches"][0], "sha256": "bad"}]
+        self.manifest.write_text(json.dumps(data))
+        with self.assertRaisesRegex(SystemExit, "checksum mismatch"):
+            self.apply()
+        self.assertEqual((self.repo / "a.txt").read_text(), "one\ntwo\nthree\n")
+
+    def test_staged_managed_local_edit_is_preserved(self):
+        write(self.repo / "a.txt", "staged developer work\n")
+        git(self.repo, "add", "a.txt")
+        write(self.repo / "a.txt", "one\ntwo\nthree\n")
+        index = git(self.repo, "write-tree")
+        with self.assertRaisesRegex(SystemExit, "unrecognized local edits"):
+            self.apply()
+        self.assertEqual(git(self.repo, "write-tree"), index)
 
     def test_checksum_is_enforced(self):
         write(self.patches[0], self.patches[0].read_text() + "\n")
@@ -324,6 +422,51 @@ class BootstrapPatchTests(PatchFixture, unittest.TestCase):
                     target.write_text("reviewed\n")
                 else:
                     target.unlink()
+
+        # Even explicit repair must preflight a later nested manifest entry
+        # before it discards any managed edits in the parent checkout.
+        write(self.repo / "a.txt", "parent developer work\n")
+        write(patch_path, patch_path.read_text() + "\n")
+        with self.assertRaisesRegex(SystemExit, "checksum mismatch"):
+            patches.apply_manifest(self.root, self.manifest, repair=True)
+        self.assertEqual((self.repo / "a.txt").read_text(), "parent developer work\n")
+        self.assertEqual((child / "child.txt").read_text(), "reviewed\n")
+
+    def test_nested_selection_initializes_parent_and_preserves_resolution_records(self):
+        child_origin = self.root / "child-origin"
+        child_origin.mkdir()
+        git(child_origin, "init", "-q")
+        write(child_origin / "child.txt", "original\n")
+        git(child_origin, "add", ".")
+        git(child_origin, "commit", "-qm", "child base")
+        upstream = self.root / "upstream"
+        git(upstream, "-c", "protocol.file.allow=always", "submodule", "add",
+            str(child_origin), "nested child")
+        git(upstream, "commit", "-qm", "add child")
+        parent = {**self.entry, "destination": "fresh", "commit": git(upstream, "rev-parse", "HEAD")}
+        child = {"name": "child", "destination": "fresh/nested child",
+                 "repository": str(child_origin), "commit": git(child_origin, "rev-parse", "HEAD"),
+                 "managedBy": "dep git submodule"}
+        self.assertEqual([e["name"] for e in bootstrap.select_entries([child, parent], {"child"})],
+                         ["dep", "child"])
+        lock = self.root / "lock.json"
+        lock.write_text(json.dumps({"dependencies": [child, parent]}))
+        resolved = self.root / "resolved.json"
+        resolved.write_text(json.dumps({"dependencies": [{"name": "unrelated", "commit": "keep"}]}))
+        with patch.object(bootstrap, "ROOT", self.root), patch.object(bootstrap, "LOCK_FILE", lock), \
+             patch.object(bootstrap, "RESOLVED_FILE", resolved), \
+             patch.object(sys, "argv", ["bootstrap", "--only", "child"]), \
+             patch.dict(os.environ, {"GIT_ALLOW_PROTOCOL": "file"}):
+            self.assertEqual(bootstrap.main(), 0)
+        checkout = self.root / child["destination"]
+        self.assertTrue((checkout / ".git").is_file(), "nested dependency must be a submodule, never a clone")
+        self.assertEqual((checkout / "child.txt").read_text(), "original\n")
+        self.assertIn("unrelated", [e["name"] for e in json.loads(resolved.read_text())["dependencies"]])
+        write(checkout / "child.txt", "developer work\n")
+        with patch.object(bootstrap, "ROOT", self.root):
+            with self.assertRaisesRegex(RuntimeError, "dirty submodule"):
+                bootstrap.prepare_dependency(parent, True)
+        self.assertEqual((checkout / "child.txt").read_text(), "developer work\n")
 
 
 def elf32be(sections):

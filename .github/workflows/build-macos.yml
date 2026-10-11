@@ -1,19 +1,49 @@
 name: macOS policy tests
 on: [push, pull_request]
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   macos:
     strategy:
+      fail-fast: false
       matrix:
         runner: [macos-15, macos-15-intel]
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Prepare pinned runtime dependencies
-        run: |
-          python3 scripts/bootstrap_dependencies.py --only n64-modern-runtime --only rt64 --only gekkonet --only monocypher --only libdatachannel --only mbedtls
-          bash scripts/apply-dependency-patches.sh
-      - name: Configure, build and test
-        run: |
-          cmake -S runtime-recomp -B build/policy-macos -G Ninja -DCMAKE_BUILD_TYPE=Release -DDKRPORT_ROOT="$PWD" -DDKR_RUNTIME_BUILD_GENERATED=OFF -DDKR_RUNTIME_BUILD_RT64=OFF
-          cmake --build build/policy-macos --parallel
-          ctest --test-dir build/policy-macos --output-on-failure -R '^DKR'
+        run: python3 scripts/bootstrap_dependencies.py --only n64-modern-runtime --only rt64 --only gekkonet --only monocypher --only libdatachannel --only mbedtls --only sdl3
+      - name: Apply reviewed patches
+        run: python3 scripts/apply_dependency_patches.py
+      - name: Configure
+        working-directory: runtime-recomp
+        run: cmake --preset policy
+      - name: Build
+        working-directory: runtime-recomp
+        run: cmake --build --preset policy --parallel
+      - name: Test
+        working-directory: runtime-recomp
+        run: ctest --preset policy --output-junit ../build/policy/junit.xml
+      - name: Preserve failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: policy-${{ matrix.runner }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            build/policy/CMakeFiles/CMakeConfigureLog.yaml
+            build/policy/CMakeFiles/CMakeError.log
+            build/policy/CMakeFiles/CMakeOutput.log
+            build/policy/Testing/Temporary/LastTest.log
+            build/policy/Testing/Temporary/LastTestsFailed.log
+            build/policy/junit.xml

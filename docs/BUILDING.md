@@ -1,5 +1,9 @@
 # Building DKR-R 1.0.5
 
+For contributor checks that need no ROM or game build, start with
+`python3 scripts/check.py` and the [policy presets](DEVELOPMENT.md#first-contribution-tests-without-a-rom).
+The instructions below cover runtime and package builds.
+
 Build from the pinned sources and authored Patch Pipeline. Don't patch RT64,
 N64Recomp, N64ModernRuntime or generated functions by hand to make a build pass.
 
@@ -122,6 +126,8 @@ The simpler `Build-Windows.cmd`/`Build-Linux.sh` wrappers consume prepared
 normal sources. Supply `-GeneratedSource`/`-Revision80GeneratedSource`
 on the Windows script, or `DKR_LINUX_GENERATED_SOURCE`/
 `DKR_LINUX_V80_GENERATED_SOURCE` on Linux.
+`./Build-Linux.sh` builds and tests; add `--package` only when you want an
+AppImage. `./Build-Linux.sh --help` lists the input and output overrides.
 They do not configure the extra owned outputs automatically; don't describe
 that basic build as reproduction of the full experimental Public Build.
 
@@ -138,7 +144,9 @@ A second invocation in the same checkout fails immediately; nested preparation
 inherits the lock. Locks release automatically when processes exit, including
 failed builds. Separate checkouts must also use separate `extern/`, generated
 payloads, runtime tools, and build output directories; do not point overrides at
-another active checkout's resources.
+another active checkout's resources for preparation. CMake-only builds can use
+already-prepared dependencies read-only via `DKR_DEPENDENCIES_DIR`, as described
+in the [worktree guide](DEVELOPMENT.md#worktrees-and-incremental-builds).
 
 macOS packages get increasing `CFBundleVersion` values, including repeated
 packages within one minute. `CFBundleShortVersionString` remains major.minor.patch.

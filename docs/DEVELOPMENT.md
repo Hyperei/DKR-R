@@ -7,10 +7,30 @@ Keep the changes focused and reproducible. Project-owned runtime code lives in
 
 ## First contribution: tests without a ROM
 
-Policy tests exercise project-owned rules, state ownership and build tooling
-without generated game functions or a GPU renderer. You need Git, Python 3,
-CMake 3.24+, a C++20 compiler and Ninja (or Visual Studio 2022 on Windows).
-From the repository root, prepare the pinned source dependencies once:
+Start with Git and Python 3.10 or newer. From the repository root:
+
+```sh
+python3 scripts/check.py
+python3 scripts/check.py --list
+python3 scripts/check.py --suite tooling
+```
+
+The default command runs synthetic tooling tests, release metadata checks and
+the source asset scan. It stops at the first failure and never downloads
+anything or changes dependency checkouts. `--list` shows the selected commands.
+On Windows, use `python` in place of `python3`; POSIX-only tests report skips.
+To run the Track Lab Python suites, use `--suite track-lab`. Missing private
+fixtures are reported as SKIP, not as successful retail-content tests.
+
+For a single regression, invoke its test file directly, for example:
+
+```sh
+python3 runtime-recomp/tests/build_tooling_tests.py PatchPipelineTests
+python3 runtime-recomp/tests/host_task_policy_tests.py
+```
+
+C++ policy tests also need CMake 3.24+, a C++20 compiler and Ninja (or Visual
+Studio 2022 on Windows). Prepare the pinned source dependencies once:
 
 ```sh
 python3 scripts/bootstrap_dependencies.py --only n64-modern-runtime --only rt64 --only gekkonet --only monocypher --only libdatachannel --only mbedtls --only sdl3
@@ -21,13 +41,38 @@ cmake --build --preset policy
 ctest --preset policy
 ```
 
-On Windows, use `python` and the `policy-windows` preset for all three CMake/CTest
-commands. Run the Ninja preset from a shell with a configured compiler. The
-presets write to separate `build/policy` and `build/policy-windows` directories.
-They use Release mode with test assertions retained. For a focused change,
-append `-R <test-name>` to `ctest --preset policy`; use `ctest --preset policy -N`
-to list available tests. These checks do not compile the complete game or
-validate gameplay; follow [Building](BUILDING.md) for that path.
+CI uses these same presets. Windows uses `policy-windows` for all three
+commands. `policy-debug` and `policy-windows-debug` provide separate Debug
+build directories; Release also retains assertions in project test programs.
+The Ninja presets write `compile_commands.json` in their build directory for
+clangd and other editors (for example `build/policy/compile_commands.json`).
+
+Use `ctest --preset policy -R <test-name>` for a focused test, `-L tooling` for
+Python/CMake tooling tests, and `-N` to list tests without running them.
+`--output-junit ../build/policy/junit.xml` writes a machine-readable report.
+Failure details are in `build/policy/Testing/Temporary/LastTest.log`.
+These checks do not compile the complete game or validate gameplay; follow
+[Building](BUILDING.md) for that path.
+
+## Worktrees and incremental builds
+
+First-party sources, policies and tests always come from the configured
+worktree. CMake defaults dependencies to that worktree's `extern/`; an explicit
+`-DDKR_DEPENDENCIES_DIR=/absolute/path/to/extern` can reuse already-prepared
+checkouts read-only. Never prepare or patch a shared dependency tree while
+another build is using it. Each worktree needs its own build directory and
+any generated game payloads it will regenerate.
+
+Older caches that override `DKRPORT_ROOT` to another checkout must migrate:
+
+```sh
+cmake --preset policy -U DKRPORT_ROOT -DDKR_DEPENDENCIES_DIR=/absolute/path/to/extern
+```
+
+Unchanged staged patches and revision symbol maps retain their timestamps, so
+reconfiguring does not force recompilation of identical generated sources.
+Changes to either the patch inputs or revision definitions still regenerate
+those outputs. Never edit these generated files to repair a build.
 
 ## Where a change belongs
 
