@@ -7,7 +7,7 @@
   },
   "configurePresets": [
     {
-      "name": "policy-base",
+      "name": "host-base",
       "hidden": true,
       "binaryDir": "${sourceDir}/../build/${presetName}",
       "cacheVariables": {
@@ -18,18 +18,18 @@
       }
     },
     {
-      "name": "policy",
-      "displayName": "ROM-free policy tests (Ninja)",
-      "inherits": "policy-base",
+      "name": "host",
+      "displayName": "ROM-free host tests (Ninja)",
+      "inherits": "host-base",
       "generator": "Ninja",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
     {
-      "name": "policy-windows",
-      "displayName": "ROM-free policy tests (Visual Studio 2022)",
-      "inherits": "policy-base",
+      "name": "host-windows",
+      "displayName": "ROM-free host tests (Visual Studio 2022)",
+      "inherits": "host-base",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
       "condition": {
@@ -39,17 +39,17 @@
       }
     },
     {
-      "name": "policy-debug",
-      "displayName": "Debug policy tests",
-      "inherits": "policy",
+      "name": "host-debug",
+      "displayName": "Debug host tests",
+      "inherits": "host",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
     },
     {
-      "name": "policy-windows-debug",
-      "displayName": "Debug policy-windows tests",
-      "inherits": "policy-windows",
+      "name": "host-windows-debug",
+      "displayName": "Debug host-windows tests",
+      "inherits": "host-windows",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
@@ -57,30 +57,30 @@
   ],
   "buildPresets": [
     {
-      "name": "policy",
-      "configurePreset": "policy",
+      "name": "host",
+      "configurePreset": "host",
       "configuration": "Release"
     },
     {
-      "name": "policy-windows",
-      "configurePreset": "policy-windows",
+      "name": "host-windows",
+      "configurePreset": "host-windows",
       "configuration": "Release"
     },
     {
-      "name": "policy-debug",
-      "configurePreset": "policy-debug",
+      "name": "host-debug",
+      "configurePreset": "host-debug",
       "configuration": "Debug"
     },
     {
-      "name": "policy-windows-debug",
-      "configurePreset": "policy-windows-debug",
+      "name": "host-windows-debug",
+      "configurePreset": "host-windows-debug",
       "configuration": "Debug"
     }
   ],
   "testPresets": [
     {
-      "name": "policy",
-      "configurePreset": "policy",
+      "name": "host",
+      "configurePreset": "host",
       "configuration": "Release",
       "filter": {
         "include": {
@@ -95,8 +95,8 @@
       }
     },
     {
-      "name": "policy-windows",
-      "configurePreset": "policy-windows",
+      "name": "host-windows",
+      "configurePreset": "host-windows",
       "configuration": "Release",
       "filter": {
         "include": {
@@ -111,8 +111,8 @@
       }
     },
     {
-      "name": "policy-debug",
-      "configurePreset": "policy-debug",
+      "name": "host-debug",
+      "configurePreset": "host-debug",
       "configuration": "Debug",
       "filter": {
         "include": {
@@ -127,8 +127,8 @@
       }
     },
     {
-      "name": "policy-windows-debug",
-      "configurePreset": "policy-windows-debug",
+      "name": "host-windows-debug",
+      "configurePreset": "host-windows-debug",
       "configuration": "Debug",
       "filter": {
         "include": {

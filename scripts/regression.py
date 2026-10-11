@@ -480,8 +480,8 @@ def check_inputs(items, variables, ctest_tests):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--suite', type=Path, default=ROOT / 'regression/policy.json')
-    parser.add_argument('--build-dir', type=Path, default=ROOT / 'build/policy')
+    parser.add_argument('--suite', type=Path, default=ROOT / 'regression/host.json')
+    parser.add_argument('--build-dir', type=Path, default=ROOT / 'build/host')
     parser.add_argument('--config', default='Release')
     parser.add_argument('--output', type=Path, help='new directory for reports and logs')
     parser.add_argument('--baseline', type=Path, help='passing report.json from the same machine/configuration')

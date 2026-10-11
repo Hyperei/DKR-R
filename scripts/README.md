@@ -13,8 +13,8 @@ Windows). Commands with options describe them with `--help`.
 | Validate release metadata | `python3 scripts/validate_release_metadata.py` | Repository files |
 | Scan source assets | `python3 scripts/scan_for_game_assets.py` | Prunes ignored build/dependency directories |
 | Track Lab Python suites | `python3 scripts/check.py --suite track-lab` | Private fixtures optional; absence is SKIP |
-| Native policy build/tests | [CMake presets](../docs/DEVELOPMENT.md) | C++20, CMake and pinned dependencies |
-| Regression and performance reports | `python3 scripts/regression.py --output build/regression/baseline` | Built policy tests; see [harness guide](../docs/REGRESSION.md) for private replay and comparisons |
+| Native host build/tests | [CMake presets](../docs/DEVELOPMENT.md) | C++20, CMake and pinned dependencies |
+| Regression and performance reports | `python3 scripts/regression.py --output build/regression/baseline` | Built host tests; see [harness guide](../docs/REGRESSION.md) for private replay and comparisons |
 | Capture an actual-ROM replay fixture | `python3 scripts/capture_replay_fixture.py --help` | Qualification runtime and canonical US ROM; [capture workflow](../docs/REGRESSION.md#prepare-actual-rom-fixtures) |
 | Runtime build | `Build-Windows.cmd`, `./Build-Linux.sh`, `./Build-macOS.sh` | [Platform prerequisites and prepared payloads](../docs/BUILDING.md) |
 

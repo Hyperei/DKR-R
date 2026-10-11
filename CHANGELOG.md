@@ -10,7 +10,7 @@ and limitations of the build they describe.
   ROM-free checkpoint benchmarks, same-machine baselines, deterministic
   fingerprints and HTML/JSON/JUnit reports with retained attempt logs.
 
-- Fast ROM-free contributor checks, Debug policy presets, editor compilation
+- Fast ROM-free contributor checks, Debug host presets, editor compilation
   databases and the same preset commands in CI.
 - Worktree-safe source/dependency paths and incremental generation that keeps
   unchanged output timestamps.

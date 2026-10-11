@@ -1,7 +1,7 @@
 # Building DKR-R 1.0.5
 
 For contributor checks that need no ROM or game build, start with
-`python3 scripts/check.py` and the [policy presets](DEVELOPMENT.md#first-contribution-tests-without-a-rom).
+`python3 scripts/check.py` and the [host presets](DEVELOPMENT.md#first-contribution-tests-without-a-rom).
 The instructions below cover runtime and package builds.
 
 Build from the pinned sources and authored Patch Pipeline. Don't patch RT64,

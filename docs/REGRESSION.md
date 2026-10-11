@@ -2,18 +2,18 @@
 
 Run repeatable checks, retain their logs, and compare a candidate against a
 baseline with `scripts/regression.py`. The default suite exercises the available
-policy build. The private replay suite exercises actual retail CPU code using
+host build. The private replay suite exercises actual retail CPU code using
 locally prepared fixtures. Reports distinguish test duration from instrumented
 runtime stages; a headless result is not a rendered gameplay benchmark.
 
 ## First run
 
-Build the policy preset as described in [DEVELOPMENT.md](DEVELOPMENT.md), then
+Build the host preset as described in [DEVELOPMENT.md](DEVELOPMENT.md), then
 run from the repository root:
 
 ```sh
-python3 scripts/regression.py --build-dir build/policy --output build/regression/baseline
-python3 scripts/regression.py --build-dir build/policy \
+python3 scripts/regression.py --build-dir build/host --output build/regression/baseline
+python3 scripts/regression.py --build-dir build/host \
   --baseline build/regression/baseline/report.json --output build/regression/candidate
 ```
 
@@ -24,10 +24,10 @@ The report and retained process logs are the evidence for the comparison.
 Inspect or narrow the work before running it:
 
 ```sh
-python3 scripts/regression.py --build-dir build/policy --list
-python3 scripts/regression.py --build-dir build/policy \
+python3 scripts/regression.py --build-dir build/host --list
+python3 scripts/regression.py --build-dir build/host \
   --scenario rollback --scenario checkpoint-benchmark --repeat 3 --warmup 1 \
-  --output build/regression/replay-policy
+  --output build/regression/replay-host
 ```
 
 Warmups are separate from measured repetitions. Repetition helps expose flaky
@@ -76,7 +76,7 @@ production registry's interleaved two-revision state/PCM proof. Every scenario
 requires a successful process exit and specific existing success markers.
 
 These checks require separately generated and built private qualification
-executables; the policy build alone cannot run them. `DKRGuestReplayProbe` is
+executables; the host build alone cannot run them. `DKRGuestReplayProbe` is
 built from `runtime-recomp/tests/replay_probe/CMakeLists.txt` with
 `DKR_PROBE_GENERATED` pointing at the corresponding Patch Pipeline output.
 Generate the audited audio, input, authored CPU, full-scene and symbol-isolation
@@ -200,7 +200,7 @@ use `--allow-missing` only when deliberately accepting incomplete coverage, then
 check the skipped scenarios in the report.
 
 Set `--build-dir` to the qualification build used for the registry so reports
-record its CMake settings rather than the default policy build. The standalone
+record its CMake settings rather than the default host build. The standalone
 probes have separate build directories: keep their configuration consistent
 between baseline and candidate. Each executed binary is hashed independently;
 the report's CMake settings describe only the selected build directory.

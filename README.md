@@ -128,7 +128,7 @@ Windows/Linux delivery. See [platform support](docs/PLATFORMS.md).
 
 Contributing without a ROM? Start with the [developer guide](docs/DEVELOPMENT.md).
 `python3 scripts/check.py` runs the fast source/tooling checks without a C++
-build or dependency downloads; policy presets cover the C++ tests.
+build or dependency downloads; host presets cover the C++ tests.
 
 For a source build, follow [Building DKR-R](docs/BUILDING.md). Both ROM
 revisions and the appropriate Patch Pipeline outputs are required for a

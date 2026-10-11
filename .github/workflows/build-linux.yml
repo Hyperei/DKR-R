@@ -1,5 +1,9 @@
-name: linux policy tests
-on: [push, pull_request]
+name: Linux host tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -19,20 +23,18 @@ jobs:
       - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
       - name: Prepare pinned runtime dependencies
-        run: python3 scripts/bootstrap_dependencies.py --only n64-modern-runtime --only rt64 --only gekkonet --only monocypher --only libdatachannel --only mbedtls --only sdl3
-      - name: Apply reviewed patches
-        run: python3 scripts/apply_dependency_patches.py
+        uses: ./.github/actions/prepare-dependencies # zizmor: ignore[self-repository] -- actionlint 1.7.12 compatibility; checkout uses this workflow revision.
       - name: Configure
         working-directory: runtime-recomp
-        run: cmake --preset policy
+        run: cmake --preset host
       - name: Build
         working-directory: runtime-recomp
-        run: cmake --build --preset policy --parallel
+        run: cmake --build --preset host --parallel
       - name: Test
         working-directory: runtime-recomp
-        run: ctest --preset policy --output-junit ../build/policy/junit.xml
+        run: ctest --preset host --parallel 2 --output-junit ../build/host/junit.xml
       - name: Capture regression and benchmark report
-        run: python3 scripts/regression.py --build-dir build/policy --repeat 1 --warmup 0 --output build/regression/ci
+        run: python3 scripts/regression.py --build-dir build/host --repeat 1 --warmup 0 --output build/regression/ci
       - name: Preserve regression report
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -41,17 +43,24 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
           path: build/regression/ci/
+      - name: Preserve test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-results-linux
+          retention-days: 7
+          if-no-files-found: ignore
+          path: build/host/junit.xml
       - name: Preserve failure diagnostics
         if: ${{ failure() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: policy-linux
+          name: host-linux
           retention-days: 7
           if-no-files-found: ignore
           path: |
-            build/policy/CMakeFiles/CMakeConfigureLog.yaml
-            build/policy/CMakeFiles/CMakeError.log
-            build/policy/CMakeFiles/CMakeOutput.log
-            build/policy/Testing/Temporary/LastTest.log
-            build/policy/Testing/Temporary/LastTestsFailed.log
-            build/policy/junit.xml
+            build/host/CMakeFiles/CMakeConfigureLog.yaml
+            build/host/CMakeFiles/CMakeError.log
+            build/host/CMakeFiles/CMakeOutput.log
+            build/host/Testing/Temporary/LastTest.log
+            build/host/Testing/Temporary/LastTestsFailed.log

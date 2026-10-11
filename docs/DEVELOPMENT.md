@@ -29,37 +29,52 @@ python3 runtime-recomp/tests/build_tooling_tests.py PatchPipelineTests
 python3 runtime-recomp/tests/host_task_policy_tests.py
 ```
 
-C++ policy tests also need CMake 3.24+, a C++20 compiler and Ninja (or Visual
+C++ host tests also need CMake 3.24+, a C++20 compiler and Ninja (or Visual
 Studio 2022 on Windows). Prepare the pinned source dependencies once:
 
 ```sh
 python3 scripts/bootstrap_dependencies.py --only n64-modern-runtime --only rt64 --only gekkonet --only monocypher --only libdatachannel --only mbedtls --only sdl3
 python3 scripts/apply_dependency_patches.py
 cd runtime-recomp
-cmake --preset policy
-cmake --build --preset policy
-ctest --preset policy
+cmake --preset host
+cmake --build --preset host
+ctest --preset host
 ```
 
-CI uses these same presets. Windows uses `policy-windows` for all three
-commands. `policy-debug` and `policy-windows-debug` provide separate Debug
+CI uses these same presets. Windows uses `host-windows` for all three
+commands. CI runs two host tests at a time, then collects performance reports
+in a separate step so concurrent tests do not distort those measurements.
+JUnit results are retained on successful and failed runs. Workflows run for
+pull requests and pushes to `main`, avoiding duplicate branch/PR builds. Use
+**Run workflow** for a branch without a pull request.
+
+Pinned dependency sources are cached by operating system, dependency profile,
+lockfile, reviewed patches, and preparation scripts. Every cache hit still
+passes checkout and patch validation. The cache is saved before configuration
+and excludes build outputs, ROMs, and generated retail payloads.
+
+`host-debug` and `host-windows-debug` provide separate Debug
 build directories; Release also retains assertions in project test programs.
 The Ninja presets write `compile_commands.json` in their build directory for
-clangd and other editors (for example `build/policy/compile_commands.json`).
+clangd and other editors (for example `build/host/compile_commands.json`).
 
-Use `ctest --preset policy -R <test-name>` for a focused test, `-L tooling` for
+Use `ctest --preset host -R <test-name>` for a focused test, `-L tooling` for
 Python/CMake tooling tests, and `-N` to list tests without running them.
-`--output-junit ../build/policy/junit.xml` writes a machine-readable report.
-Failure details are in `build/policy/Testing/Temporary/LastTest.log`.
+`--output-junit ../build/host/junit.xml` writes a machine-readable report.
+Failure details are in `build/host/Testing/Temporary/LastTest.log`.
 These checks do not compile the complete game or validate gameplay; follow
-[Building](BUILDING.md) for that path.
+[Building](BUILDING.md) for that path. The separate [iOS compilation check](IOS-CI.md)
+compiles production platform adapters and patched SDL2 against the arm64
+iPhoneOS SDK without ROMs; it does not link or run the complete app. The
+[Android compilation check](ANDROID-CI.md) compiles production platform sources
+with the Android NDK; it does not package or run the complete app.
 
 For repeated regression runs and performance comparisons, use the
 [regression harness](REGRESSION.md). From the repository root,
 `python3 scripts/regression.py --output build/regression/baseline` produces
 HTML, JSON and JUnit reports with logs, deterministic fingerprints and native
 checkpoint timing. A separate private suite covers actual retail CPU replay.
-Policy CI retains a one-pass harness report without enforcing cross-host timing
+Host CI retains a one-pass harness report without enforcing cross-host timing
 baselines; performance gates belong on a consistent machine and configuration.
 
 For actual-ROM checks, follow the [capture and replay workflow](REGRESSION.md#prepare-actual-rom-fixtures)
@@ -93,7 +108,7 @@ any generated game payloads it will regenerate.
 Older caches that override `DKRPORT_ROOT` to another checkout must migrate:
 
 ```sh
-cmake --preset policy -U DKRPORT_ROOT -DDKR_DEPENDENCIES_DIR=/absolute/path/to/extern
+cmake --preset host -U DKRPORT_ROOT -DDKR_DEPENDENCIES_DIR=/absolute/path/to/extern
 ```
 
 Unchanged staged patches and revision symbol maps retain their timestamps, so
@@ -105,7 +120,7 @@ those outputs. Never edit these generated files to repair a build.
 
 | Change | Owner | Verification |
 |---|---|---|
-| Game-independent rules and state transitions | `runtime-recomp/src/game/*_policy.hpp` and focused tests | ROM-free policy preset |
+| Game-independent rules and state transitions | `runtime-recomp/src/game/*_policy.hpp` and focused tests | ROM-free host preset |
 | Runtime, UI and renderer integration | `runtime-recomp/src/game` and platform adapters | Focused tests, full target build, relevant runtime checks |
 | Dependency behaviour | `patches/<dependency>` and `patches/manifest.json` | Patch tooling tests and affected target build |
 | Guest game code | Revision policies and composed fragments | Regenerate both revisions and run guest/runtime tests |

@@ -1,5 +1,9 @@
-name: windows policy tests
-on: [push, pull_request]
+name: Windows host tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -17,20 +21,18 @@ jobs:
         with:
           persist-credentials: false
       - name: Prepare pinned runtime dependencies
-        run: python scripts/bootstrap_dependencies.py --only n64-modern-runtime --only rt64 --only gekkonet --only monocypher --only libdatachannel --only mbedtls --only sdl3
-      - name: Apply reviewed patches
-        run: python scripts/apply_dependency_patches.py
+        uses: ./.github/actions/prepare-dependencies # zizmor: ignore[self-repository] -- actionlint 1.7.12 compatibility; checkout uses this workflow revision.
       - name: Configure
         working-directory: runtime-recomp
-        run: cmake --preset policy-windows
+        run: cmake --preset host-windows
       - name: Build
         working-directory: runtime-recomp
-        run: cmake --build --preset policy-windows --parallel
+        run: cmake --build --preset host-windows --parallel
       - name: Test
         working-directory: runtime-recomp
-        run: ctest --preset policy-windows --output-junit ../build/policy-windows/junit.xml
+        run: ctest --preset host-windows --parallel 2 --output-junit ../build/host-windows/junit.xml
       - name: Capture regression and benchmark report
-        run: python scripts/regression.py --build-dir build/policy-windows --repeat 1 --warmup 0 --output build/regression/ci
+        run: python scripts/regression.py --build-dir build/host-windows --repeat 1 --warmup 0 --output build/regression/ci
       - name: Preserve regression report
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -39,17 +41,24 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
           path: build/regression/ci/
+      - name: Preserve test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-results-windows
+          retention-days: 7
+          if-no-files-found: ignore
+          path: build/host-windows/junit.xml
       - name: Preserve failure diagnostics
         if: ${{ failure() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: policy-windows
+          name: host-windows
           retention-days: 7
           if-no-files-found: ignore
           path: |
-            build/policy-windows/CMakeFiles/CMakeConfigureLog.yaml
-            build/policy-windows/CMakeFiles/CMakeError.log
-            build/policy-windows/CMakeFiles/CMakeOutput.log
-            build/policy-windows/Testing/Temporary/LastTest.log
-            build/policy-windows/Testing/Temporary/LastTestsFailed.log
-            build/policy-windows/junit.xml
+            build/host-windows/CMakeFiles/CMakeConfigureLog.yaml
+            build/host-windows/CMakeFiles/CMakeError.log
+            build/host-windows/CMakeFiles/CMakeOutput.log
+            build/host-windows/Testing/Temporary/LastTest.log
+            build/host-windows/Testing/Temporary/LastTestsFailed.log
