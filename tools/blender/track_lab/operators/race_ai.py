@@ -17,7 +17,8 @@ import traceback
 import bpy
 from bpy.props import EnumProperty
 
-from .. import catalog as catalog_module, level_types, prefs, race_ai, scene
+from .. import (catalog as catalog_module, flythrough, level_types, prefs,
+               race_ai, scene)
 
 #: Lane 1 to 4, warm to cold, so the outside lanes read as the two ends of the
 #: road rather than four unrelated colours.
@@ -523,6 +524,66 @@ class DKR_OT_renumber_checkpoints(bpy.types.Operator):
 
 
 # ---------------------------------------------------------------------------
+# The track select flight
+# ---------------------------------------------------------------------------
+
+#: Marks the nodes Generate Preview Flight made, so running it again replaces
+#: them and never a flight the author placed by hand.
+PROP_GENERATED_FLIGHT = "dkr_generated_flight"
+
+
+def flight_nodes(context):
+    """``(generated, placed)``: the scene's channel-1 Animation empties."""
+    generated, placed = [], []
+    for obj in scene.iter_dkr_objects(context):
+        if str(obj.get(scene.PROP_ID)) != flythrough.ANIMATION:
+            continue
+        if int(obj.get("channel", 0)) != flythrough.PREVIEW_CHANNEL:
+            continue
+        (generated if obj.get(PROP_GENERATED_FLIGHT) else placed).append(obj)
+    return generated, placed
+
+
+class DKR_OT_generate_flight(bpy.types.Operator):
+    """Put the camera flight the track select screen plays into the scene, as
+    Animation nodes along the racers' line. Export writes the same one by
+    itself when the track has none; this is for moving its nodes by hand"""
+
+    bl_idname = "dkr.generate_flight"
+    bl_label = "Generate Preview Flight"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        generated, placed = flight_nodes(context)
+        if placed:
+            self.report({"ERROR"}, "%d channel-1 Animation node(s) are already "
+                        "in the scene; that is the track select flight, so "
+                        "nothing was generated" % len(placed))
+            return {"CANCELLED"}
+        for obj in generated:
+            bpy.data.objects.remove(obj, do_unlink=True)
+
+        catalog = catalog_module.load()
+        whole = scene.export_object_map(context, catalog, resolve_scroll=False)
+        try:
+            nodes = flythrough.build(whole.objects, vehicle_set(context))
+        except flythrough.FlythroughError as error:
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
+
+        root = scene.ensure_root(context)
+        created = [scene.create_empty(context, node, catalog, root,
+                                      slot=scene.SLOT_STRUCTURE)
+                   for node in nodes]
+        scene.stamp_order(created, scene.next_order(context))
+        for obj in created:
+            obj[PROP_GENERATED_FLIGHT] = True
+        self.report({"INFO"}, "%d camera nodes along the racers' line; the "
+                    "camera flies them in order and loops" % len(created))
+        return {"FINISHED"}
+
+
+# ---------------------------------------------------------------------------
 # Checkpoint numbers in the viewport
 # ---------------------------------------------------------------------------
 
@@ -618,4 +679,5 @@ def _redraw(context):
 CLASSES = (
     DKR_OT_ai_copy_difficulty,
     DKR_OT_renumber_checkpoints,
+    DKR_OT_generate_flight,
 )

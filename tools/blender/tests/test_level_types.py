@@ -200,6 +200,33 @@ def test_vehicles():
           "a cutscene's header keeps its own vehicles and laps")
 
 
+def _grid(forced=None):
+    points = [gltf_io.MapObject(validate.SETUPPOINT, "setuppoint", [0.0, 0.0, 0.0],
+                                {"entranceID": 0, "racerIndex": index,
+                                 "vehicle": "VEHICLE_NO_OVERRIDE"})
+              for index in range(8)]
+    if forced:
+        points[0].fields["vehicle"] = forced
+    return ObjectMap(objects=points)
+
+
+def test_forced_start_vehicle(catalog):
+    print("a start position that forces a vehicle")
+
+    def warned(object_map, key):
+        return [i for i in validate.validate(object_map, catalog, level_key=key).warnings
+                if "Track Select" in i.message]
+
+    found = warned(_grid("VEHICLE_HOVERCRAFT"), lt.RACE)
+    check(len(found) == 1 and "VEHICLE_HOVERCRAFT" in found[0].message
+          and found[0].objects == [0],
+          "a race warns that the start position overrides the player's pick")
+    check(not warned(_grid(), lt.RACE),
+          "VEHICLE_NO_OVERRIDE everywhere is not warned about")
+    check(not warned(_grid("VEHICLE_CAR"), lt.HUB),
+          "a hub may force a vehicle per entrance, as retail does")
+
+
 def test_templates():
     print("start grid templates")
     for key in lt.KEYS:
@@ -290,6 +317,7 @@ def main():
     test_keys()
     test_visibility_rules(catalog)
     test_vehicles()
+    test_forced_start_vehicle(catalog)
     test_templates()
     test_header_bytes(catalog)
 

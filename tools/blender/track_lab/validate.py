@@ -195,6 +195,23 @@ def _check_start_grid(object_map: ObjectMap, key: str) -> List[Issue]:
                 SETUPPOINT, objects=unused,
             ))
 
+    # A start position's vehicle replaces the one track_setup_racers was handed
+    # (objects.c:1139), which in one player is the vehicle picked in Track
+    # Select. Retail only forces it in hubs and cutscenes, never in a race.
+    if key in (level_types.RACE, level_types.TEST_RACE):
+        forced = [(point.fields.get("vehicle"), positions.get(id(point)))
+                  for point in points
+                  if point.fields.get("vehicle") not in (None, -1, "VEHICLE_NO_OVERRIDE")]
+        if forced:
+            issues.append(Issue(
+                WARNING,
+                "%d start position(s) force %s: the player starts in it whatever "
+                "vehicle they pick in Track Select. Set vehicle to "
+                "VEHICLE_NO_OVERRIDE to honour the choice."
+                % (len(forced), ", ".join(sorted({str(v) for v, _ in forced}))),
+                SETUPPOINT, objects=[p for _, p in forced if p is not None],
+            ))
+
     issues.append(Issue(
         INFO,
         "%d start position(s) across %d entrance(s)"

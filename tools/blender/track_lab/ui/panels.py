@@ -1542,6 +1542,21 @@ class DKR_PT_race_ai(LevelPanel, bpy.types.Panel):
                      "checkpoint has, so no racer ever takes them. Retail "
                      "ships ten of these." % len(route.unpaired))
 
+        box = layout.box()
+        generated, placed = race_ai_ops.flight_nodes(context)
+        if placed:
+            _dim_label(box, "Track select flight: %d nodes of your own"
+                       % len(placed), icon="CHECKMARK")
+        else:
+            if generated:
+                _dim_label(box, "Track select flight: %d generated nodes"
+                           % len(generated), icon="CHECKMARK")
+            else:
+                lines(box, context, "Track select flight: none in the scene, "
+                      "so export flies the camera along the racers' line.",
+                      dim=True, tight=True)
+            box.operator("dkr.generate_flight", icon="CAMERA_DATA")
+
         if settings.show_ai_lines:
             _dim_label(layout, "Lanes 1-4: %s" % ", ".join(race_ai_ops.LANE_NAMES))
         lines(layout, context,

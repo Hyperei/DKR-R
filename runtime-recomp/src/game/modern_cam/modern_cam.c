@@ -262,12 +262,15 @@ void ModernCam_DefaultParams(MCParams* p) {
     p->driftAlign = 0.6f;
     p->driftLead = 0.0f;
     p->spinFollowSpeed = 8.0f;
+    p->alignSharpness = 4.0f;
 
     p->yawFreq = 1.1f;
     p->yawFreqSpeedBoost = 0.4f;
     p->yawDamping = 0.85f;
+    p->yawKeepUp = 1.0f;
 
     p->posSharpness = 18.0f;
+    p->posKeepUp = 1.0f;
     p->heightSharpness = 7.0f;
     p->airHeightSharpness = 2.5f;
     p->maxVerticalLag = 2.0f;
@@ -352,6 +355,10 @@ void ModernCam_Reset(MCState* s, const MCParams* p, const MCInput* in) {
     s->prevLookAheadTarget = mc_v3(0.0f, 0.0f, 0.0f);
     s->prevSpeed01Raw = speed01;
     s->prevTargetYaw = s->yaw;
+    s->slipSm = 0.0f;
+    s->turnRate = 0.0f;
+    s->prevVelYaw = s->yaw;
+    s->prevVel = mc_v3(in->vel.x, 0.0f, in->vel.z);
     s->anchorVel = mc_v3(in->vel.x, 0.0f, in->vel.z);
     s->steerSm = 0.0f;
     s->dipY = 0.0f;
@@ -372,6 +379,7 @@ void ModernCam_Update(MCState* s, const MCParams* p, const MCInput* in, float dt
     MCVec3 flatVel, pivot, eyeDesired, eye, target, boomDir;
     MCVec3 forward, right, camUp;
     float flatSpeed, speed01, heading, targetYaw, minSpeed;
+    float headingRate, offset, spinW, velYaw, omega;
     float dist, height, boomLen, elev, camYaw, viewDist;
     float shake, roll, impact;
     int landed, boostEdge;
@@ -397,38 +405,69 @@ void ModernCam_Update(MCState* s, const MCParams* p, const MCInput* in, float dt
 
     /* 2. Yaw alvo: mistura nariz e direção da velocidade ----------------- */
     heading = mc_wrap(in->yaw);
-    targetYaw = heading;
+    headingRate = dt > 0.0f ? mc_wrap(heading - s->prevVehicleYaw) / dt : 0.0f;
     minSpeed = p->minAlignSpeed * sc;
     s->steerSm += (mc_clamp(in->steer, -1.0f, 1.0f) - s->steerSm) * mc_follow(8.0f, dt);
+    /* offset: a parcela suave do alvo em relação ao nariz (alinhamento com a
+       velocidade e antecipações); spinW: quanto o alvo é a própria direção da
+       velocidade, numa rodada */
+    offset = 0.0f;
+    spinW = 0.0f;
+    velYaw = heading;
     if (flatSpeed > minSpeed) {
-        float velYaw = MC_ATAN2(flatVel.x, flatVel.z);
-        float slip = mc_wrap(velYaw - heading);
-        float absSlip = mc_abs(slip);
-        float align = in->drifting ? p->driftAlign : p->velocityAlign;
+        float slip, absSlip, align, fast;
+        velYaw = MC_ATAN2(flatVel.x, flatVel.z);
+        slip = mc_wrap(velYaw - heading);
+        absSlip = mc_abs(slip);
+        align = in->drifting ? p->driftAlign : p->velocityAlign;
         /* em rodada rápida, segue a velocidade; em ré lenta, segue o nariz */
-        float fast = mc_smoothstep(p->spinFollowSpeed * sc * 0.5f, p->spinFollowSpeed * sc, flatSpeed);
-        float spinW = mc_smoothstep(0.785f, MC_HALF_PI, absSlip) * fast;
-        float w;
+        fast = mc_smoothstep(p->spinFollowSpeed * sc * 0.5f, p->spinFollowSpeed * sc, flatSpeed);
+        spinW = mc_smoothstep(0.785f, MC_HALF_PI, absSlip) * fast;
 
         align *= mc_smoothstep(minSpeed, minSpeed * 3.0f, flatSpeed);
         align *= 1.0f - mc_smoothstep(1.05f, 1.75f, absSlip);
-        w = mc_lerp(align, 1.0f, spinW);
-        targetYaw = heading + slip * w;
+        /* o escorregamento entra filtrado: começar ou terminar um drift gira a
+           câmera ao longo de alignSharpness, não de uma vez */
+        s->slipSm = mc_wrap(s->slipSm + mc_wrap(slip - s->slipSm) * mc_follow(p->alignSharpness, dt));
+        offset = s->slipSm * align;
 
         if (in->drifting && p->driftLead != 0.0f && absSlip < MC_HALF_PI) {
             float lead = p->driftLead * mc_smoothstep(0.02f, 0.15f, absSlip);
-            targetYaw -= (slip > 0.0f ? lead : -lead);
+            offset -= (slip > 0.0f ? lead : -lead);
         }
         /* antecipação: o volante empurra a câmera antes do carro girar */
         if (p->enableSteerLead && absSlip < MC_HALF_PI) {
-            targetYaw += s->steerSm * p->steerLead * mc_smoothstep(minSpeed, minSpeed * 3.0f, flatSpeed);
+            offset += s->steerSm * p->steerLead * mc_smoothstep(minSpeed, minSpeed * 3.0f, flatSpeed);
         }
-        targetYaw = mc_wrap(targetYaw);
+    } else {
+        s->slipSm -= s->slipSm * mc_follow(p->alignSharpness, dt);
     }
 
     /* 3. Mola angular do yaw (sub-passos -> estável e igual em qualquer FPS) */
+    omega = MC_TWO_PI * (p->yawFreq + p->yawFreqSpeedBoost * s->speed01);
     {
-        float omega = MC_TWO_PI * (p->yawFreq + p->yawFreqSpeedBoost * s->speed01);
+        /* Uma mola amortecida atrasa 2*zeta*taxa/omega atrás de um alvo que
+           gira a taxa constante. Esse atraso entra no alvo, filtrado, para a
+           câmera acompanhar uma curva constante sem ficar para trás; o que
+           sobra é a resposta da mola às mudanças de giro. Numa rodada o alvo
+           é a direção da velocidade, que não gira, então a compensação some
+           com spinW; e ela é limitada para um nariz batido não dar um tranco. */
+        /* só o giro do nariz: o alinhamento com a velocidade chega pelo seu
+           filtro e pela mola, no seu tempo */
+        float rate = headingRate * (1.0f - spinW);
+        float velYawRate = dt > 0.0f ? mc_wrap(velYaw - s->prevVelYaw) / dt : 0.0f;
+        float comp;
+        /* numa curva o nariz e a velocidade giram juntos; numa rodada (ou num
+           nariz batido) só o nariz gira. Acima de ~2 rad/s de diferença não é
+           curva, e a compensação some no mesmo tick, antes de spinW */
+        rate *= 1.0f - mc_smoothstep(2.0f, 4.0f, mc_abs(headingRate - velYawRate));
+        s->prevVelYaw = velYaw;
+        s->turnRate += (rate - s->turnRate) * mc_follow(12.0f, dt);
+        comp = 2.0f * p->yawDamping / omega * s->turnRate * mc_clamp(p->yawKeepUp, 0.0f, 1.0f);
+        comp = mc_clamp(comp, -0.35f, 0.35f);
+        targetYaw = mc_wrap(heading + mc_lerp(offset, mc_wrap(velYaw - heading), spinW) + comp);
+    }
+    {
         float zeta = p->yawDamping;
         int steps = (int)(dt * 240.0f) + 1;
         float h = dt / (float)steps;
@@ -468,8 +507,15 @@ void ModernCam_Update(MCState* s, const MCParams* p, const MCInput* in, float dt
     {
         float kV = in->grounded ? p->heightSharpness : p->airHeightSharpness;
         float maxLag = p->maxVerticalLag * sc;
+        /* velocidade medida pela posição: é ela que o atraso acompanha */
+        float keep = mc_clamp(p->posKeepUp, 0.0f, 1.0f);
+        MCVec3 vel = dt > 0.0f ? mc_scale(mc_sub(in->pos, s->prevPos), 1.0f / dt) : s->prevVel;
+        vel.y = 0.0f;
         if (p->enablePosSpring) {
-            /* mola de 2ª ordem; o alvo anda ao longo do dt (mesmo resultado em qualquer FPS) */
+            /* mola de 2ª ordem; o alvo anda ao longo do dt (mesmo resultado em qualquer FPS).
+               O amortecimento age sobre a velocidade RELATIVA ao carro (posKeepUp):
+               em velocidade constante a âncora fica em cima dele, e só acelerar,
+               frear ou bater a desloca. */
             float om = MC_TWO_PI * p->posFreq, z = p->posDamping;
             int steps = (int)(dt * 240.0f) + 1, i;
             float h = dt / (float)steps;
@@ -477,18 +523,23 @@ void ModernCam_Update(MCState* s, const MCParams* p, const MCInput* in, float dt
                 float t = (float)(i + 1) / (float)steps;
                 float tx = s->prevPos.x + (in->pos.x - s->prevPos.x) * t;
                 float tz = s->prevPos.z + (in->pos.z - s->prevPos.z) * t;
-                s->anchorVel.x += (om * om * (tx - s->anchor.x) - 2.0f * z * om * s->anchorVel.x) * h;
-                s->anchorVel.z += (om * om * (tz - s->anchor.z) - 2.0f * z * om * s->anchorVel.z) * h;
+                s->anchorVel.x += (om * om * (tx - s->anchor.x) - 2.0f * z * om * (s->anchorVel.x - keep * vel.x)) * h;
+                s->anchorVel.z += (om * om * (tz - s->anchor.z) - 2.0f * z * om * (s->anchorVel.z - keep * vel.z)) * h;
                 s->anchor.x += s->anchorVel.x * h;
                 s->anchor.z += s->anchorVel.z * h;
             }
         } else {
-            s->anchor.x = mc_follow_moving(s->anchor.x, s->prevPos.x, in->pos.x, p->posSharpness, dt);
-            s->anchor.z = mc_follow_moving(s->anchor.z, s->prevPos.z, in->pos.z, p->posSharpness, dt);
+            /* o alvo vai um atraso à frente do carro, então a âncora fica nele */
+            float lead = keep / p->posSharpness;
+            s->anchor.x = mc_follow_moving(s->anchor.x, s->prevPos.x + s->prevVel.x * lead, in->pos.x + vel.x * lead,
+                                           p->posSharpness, dt);
+            s->anchor.z = mc_follow_moving(s->anchor.z, s->prevPos.z + s->prevVel.z * lead, in->pos.z + vel.z * lead,
+                                           p->posSharpness, dt);
             /* mantém a mola pronta caso seja ligada no meio do jogo */
             s->anchorVel.x = in->vel.x;
             s->anchorVel.z = in->vel.z;
         }
+        s->prevVel = vel;
         s->anchor.y = mc_follow_moving(s->anchor.y, s->prevPos.y, in->pos.y, kV, dt);
         s->anchor.y = mc_clamp(s->anchor.y, in->pos.y - maxLag, in->pos.y + maxLag);
     }
@@ -594,8 +645,7 @@ void ModernCam_Update(MCState* s, const MCParams* p, const MCInput* in, float dt
 
     /* 12. Roll leve conforme a taxa de giro ------------------------------- */
     {
-        float yawRate = dt > 0.0f ? mc_wrap(heading - s->prevVehicleYaw) / dt : 0.0f;
-        float rollTarget = mc_clamp(-yawRate * p->rollFromYawRate, -p->rollMax, p->rollMax);
+        float rollTarget = mc_clamp(-headingRate * p->rollFromYawRate, -p->rollMax, p->rollMax);
         s->roll += (rollTarget - s->roll) * mc_follow(p->rollSharpness, dt);
     }
 

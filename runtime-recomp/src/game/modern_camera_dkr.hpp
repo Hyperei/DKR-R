@@ -95,15 +95,68 @@ struct Tuning {
     // has been left alone for recenterDelay. 0 starts it at full speed.
     float recenterEase = 0.8F;
     // How much of a wall or kart hit reaches the camera, in percent. Below
-    // 100 the camera keeps the motion and distance it had, lets the racer's
-    // knocked nose turn on screen instead of turning the world, and eases
-    // back; the lower, the longer and softer (hit_timing). 100 is raw
+    // 100 the camera keeps following the motion it had, so its aim, zoom
+    // and FOV do not react to the stop or the bounce, until the racer has
+    // its speed back; meanwhile a knocked nose turns on screen instead of
+    // turning the world. The lower, the longer it waits for a racer that
+    // stays slow and the softer the nose follows (hit_timing). 100 is raw
     // modern_cam.
     float hitReaction = 25.0F;
 };
 
-// The Bancada ModernCam export: what DKR-R ships.
+// modern-camera.ini format. 1 (no version line) is the first release, whose
+// yaw spring lagged in every corner and whose position spring trailed the
+// racer by metres at speed; parse_tuning migrates such a file.
+inline constexpr int kTuningVersion = 2;
+
+// What DKR-R ships. Started as the Bancada ModernCam export (framing,
+// stiffness, the impulses); the direction values are the comfort pass of
+// 2026-10: the camera keeps up in corners instead of lagging and leading,
+// stays level, and breathes less with speed.
 inline Tuning default_tuning() {
+    Tuning tuning;
+    MCParams& p = tuning.params;
+    ModernCam_DefaultParams(&p);
+    p.distMin = 5.9F;
+    // The retail camera sits 252 units back at speed. The first release had
+    // 4.8 m plus ~3 m of position-spring lag; the lag is compensated now.
+    p.distMax = 8.2F;
+    p.heightMin = 1.35F;
+    // A drift shows less of the kart's side and the alignment moves at the
+    // pace of a camera operator, so a drift ending does not swing the view.
+    p.driftAlign = 0.45F;
+    p.alignSharpness = 3.0F;
+    p.yawFreq = 2.3F;
+    p.yawDamping = 1.0F;
+    p.lookAhead = 0.12F;
+    p.lookAheadSharpness = 3.0F;
+    p.fovSpeed = 5.0F;
+    p.fovBoost = 5.0F;
+    p.rollFromYawRate = 0.0F;
+    p.rollMax = 0.0F;
+    p.boostTrauma = 0.35F;
+    p.landingTrauma = 0.81F;
+    p.steerLead = 0.2007F;
+    p.enablePosSpring = 1;
+    p.posFreq = 2.3F;
+    p.posDamping = 0.98F;
+    p.enableLandingDip = 1;
+    p.landingDip = 1.65F;
+    p.dipFreq = 5.6F;
+    p.dipDamping = 0.67F;
+    p.enableBoostKick = 1;
+    p.boostKick = 1.8F;
+    p.kickFreq = 2.3F;
+    p.kickDamping = 0.5F;
+    p.rotationalShake = 1;
+    p.unitScale = kUnitsPerMetre;
+    return tuning;
+}
+
+// What a version 1 modern-camera.ini was written against: the Bancada
+// ModernCam export on top of modern_cam's old defaults. A value equal to
+// this in such a file was never touched by the player.
+inline Tuning legacy_default_tuning() {
     Tuning tuning;
     MCParams& p = tuning.params;
     ModernCam_DefaultParams(&p);
@@ -126,6 +179,10 @@ inline Tuning default_tuning() {
     p.kickFreq = 2.3F;
     p.kickDamping = 0.5F;
     p.rotationalShake = 1;
+    // Version 1 had no keep-up and no alignment filter.
+    p.yawKeepUp = 0.0F;
+    p.posKeepUp = 0.0F;
+    p.alignSharpness = 100.0F;
     p.unitScale = kUnitsPerMetre;
     return tuning;
 }
@@ -172,7 +229,7 @@ struct TuningField {
 // The Bancada's ranges. fovBase is left out: DKR keeps each level's FOV and
 // only adds modern_cam's change, so the base is not a setting. So is
 // collisionRadius: the clearance probe uses the level's authored radius.
-inline constexpr std::array<TuningField, 57> kTuningFields{{
+inline constexpr std::array<TuningField, 60> kTuningFields{{
     {"distMin", &MCParams::distMin, TuningGroup::Framing, "Distance at rest", 1.0F, 10.0F, "m", 2},
     {"distMax", &MCParams::distMax, TuningGroup::Framing, "Distance at top speed", 1.0F, 12.0F, "m", 2},
     {"heightMin", &MCParams::heightMin, TuningGroup::Framing, "Height at rest", 0.2F, 4.0F, "m", 2},
@@ -185,9 +242,11 @@ inline constexpr std::array<TuningField, 57> kTuningFields{{
     {"driftLead", &MCParams::driftLead, TuningGroup::Direction, "Turns into the drift", -25.0F, 25.0F, "\xC2\xB0", 1, true},
     {"spinFollowSpeed", &MCParams::spinFollowSpeed, TuningGroup::Direction, "In a spin, follows the motion above", 0.0F, 20.0F, "m/s", 1},
     {"minAlignSpeed", &MCParams::minAlignSpeed, TuningGroup::Direction, "Minimum speed to align", 0.0F, 5.0F, "m/s", 1},
+    {"alignSharpness", &MCParams::alignSharpness, TuningGroup::Direction, "Speed of the alignment", 0.5F, 15.0F, "/s", 1},
     {"yawFreq", &MCParams::yawFreq, TuningGroup::YawSpring, "Stiffness", 0.2F, 6.0F, "Hz", 2},
     {"yawFreqSpeedBoost", &MCParams::yawFreqSpeedBoost, TuningGroup::YawSpring, "Extra stiffness at top speed", 0.0F, 3.0F, "Hz", 2},
     {"yawDamping", &MCParams::yawDamping, TuningGroup::YawSpring, "Damping (below 1 sways)", 0.2F, 1.5F, "", 2},
+    {"yawKeepUp", &MCParams::yawKeepUp, TuningGroup::YawSpring, "Keeps up in a steady corner (0 lags)", 0.0F, 1.0F, "", 2},
     {"posSharpness", &MCParams::posSharpness, TuningGroup::Follow, "Horizontal", 1.0F, 40.0F, "/s", 1},
     {"heightSharpness", &MCParams::heightSharpness, TuningGroup::Follow, "Vertical on the ground", 0.5F, 30.0F, "/s", 1},
     {"airHeightSharpness", &MCParams::airHeightSharpness, TuningGroup::Follow, "Vertical in the air", 0.2F, 20.0F, "/s", 1},
@@ -228,6 +287,7 @@ inline constexpr std::array<TuningField, 57> kTuningFields{{
     {"steerLead", &MCParams::steerLead, TuningGroup::SteerLead, "Lead angle", 0.0F, 30.0F, "\xC2\xB0", 1, true},
     {"posFreq", &MCParams::posFreq, TuningGroup::PosSpring, "Stiffness", 0.5F, 8.0F, "Hz", 2},
     {"posDamping", &MCParams::posDamping, TuningGroup::PosSpring, "Damping", 0.2F, 1.5F, "", 2},
+    {"posKeepUp", &MCParams::posKeepUp, TuningGroup::PosSpring, "Keeps up at speed (0 trails behind)", 0.0F, 1.0F, "", 2},
     {"landingDip", &MCParams::landingDip, TuningGroup::LandingDip, "Depth", 0.0F, 2.0F, "m", 2},
     {"dipFreq", &MCParams::dipFreq, TuningGroup::LandingDip, "Stiffness", 0.5F, 8.0F, "Hz", 1},
     {"dipDamping", &MCParams::dipDamping, TuningGroup::LandingDip, "Damping", 0.1F, 1.2F, "", 2},
@@ -291,6 +351,7 @@ inline std::string format_float(float value) {
 // modern-camera.ini: every value, one key=value per line.
 inline std::string serialize_tuning(const Tuning& tuning) {
     std::string text = "# DKR-R Modern camera tuning. Edit it in game with F7.\n";
+    text += "version=" + std::to_string(kTuningVersion) + '\n';
     for (const TuningField& field : kTuningFields) {
         text += field.key;
         text += '=';
@@ -304,10 +365,64 @@ inline std::string serialize_tuning(const Tuning& tuning) {
     return text;
 }
 
+// The lag a version 1 position spring (or plain follow) had at speedForMax,
+// in metres: with the lag compensated, that much of the eye's distance at
+// speed has to come from distMax instead.
+inline float legacy_position_lag(const MCParams& p) {
+    const float lag_per_speed = p.enablePosSpring != 0
+        ? 2.0F * p.posDamping / (2.0F * static_cast<float>(kPi) * std::max(p.posFreq, 0.1F))
+        : 1.0F / std::max(p.posSharpness, 0.1F);
+    return lag_per_speed * p.speedForMax;
+}
+
+// A version 1 tuning brought up to date. A value the player never changed
+// follows the new default (version 1's steering lead, roll, damping, FOV
+// breathing and look-ahead were the module's defaults, not choices); a
+// changed value is kept, except that a changed distMax grows by the lag the
+// old position spring added at speed, so the framing at speed stays as it
+// was tuned.
+inline Tuning migrate_legacy_tuning(const Tuning& legacy) {
+    const Tuning old_defaults = legacy_default_tuning();
+    const Tuning new_defaults = default_tuning();
+    Tuning tuning = legacy;
+    const bool custom_distance = legacy.params.distMax != old_defaults.params.distMax;
+    const float lag = legacy_position_lag(legacy.params);
+    for (const TuningField& field : kTuningFields) {
+        if (field_value(legacy, field) == field_value(old_defaults, field)) {
+            field_value(tuning, field) = field_value(new_defaults, field);
+        }
+    }
+    for (const TuningFeature& feature : kTuningFeatures) {
+        if (legacy.params.*feature.member == old_defaults.params.*feature.member) {
+            tuning.params.*feature.member = new_defaults.params.*feature.member;
+        }
+    }
+    if (custom_distance) {
+        for (const TuningField& field : kTuningFields) {
+            if (std::string_view(field.key) == "distMax") {
+                field_value(tuning, field) = std::clamp(legacy.params.distMax + lag, field.minimum, field.maximum);
+            }
+        }
+    }
+    return tuning;
+}
+
 // The default tuning with every recognised line of text applied. Unknown
 // keys and unreadable values are skipped; values are clamped to their range.
-inline Tuning parse_tuning(std::string_view text) {
-    Tuning tuning = default_tuning();
+// A file without a version line is a version 1 file and is migrated;
+// `migrated`, when given, says whether that happened.
+inline Tuning parse_tuning(std::string_view text, bool* migrated = nullptr) {
+    int version = 1;
+    for (std::string_view rest = text; !rest.empty();) {
+        const std::size_t end = rest.find('\n');
+        std::string_view line = rest.substr(0, end);
+        rest = end == std::string_view::npos ? std::string_view{} : rest.substr(end + 1);
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.remove_suffix(1);
+        if (line.substr(0, 8) == "version=") version = std::atoi(std::string(line.substr(8)).c_str());
+    }
+    const bool legacy = version < kTuningVersion;
+    if (migrated != nullptr) *migrated = legacy;
+    Tuning tuning = legacy ? legacy_default_tuning() : default_tuning();
     while (!text.empty()) {
         const std::size_t end = text.find('\n');
         std::string_view line = text.substr(0, end);
@@ -329,7 +444,7 @@ inline Tuning parse_tuning(std::string_view text) {
             if (key == feature.key) tuning.params.*feature.member = number != 0.0F ? 1 : 0;
         }
     }
-    return tuning;
+    return legacy ? migrate_legacy_tuning(tuning) : tuning;
 }
 
 // A C++ block for default_tuning(): the values that differ from
@@ -448,6 +563,7 @@ inline Tuning cinematic_tuning() {
     p.yawFreq = 0.6F;
     p.yawFreqSpeedBoost = 0.2F;
     p.yawDamping = 0.65F;
+    p.yawKeepUp = 0.4F;
     p.distMax = 6.5F;
     p.heightMax = 1.8F;
     p.lookAhead = 0.3F;
@@ -456,6 +572,7 @@ inline Tuning cinematic_tuning() {
     p.rollMax = 0.09F;
     p.posFreq = 1.6F;
     p.posDamping = 0.6F;
+    p.posKeepUp = 0.0F;
     return tuning;
 }
 
@@ -508,11 +625,13 @@ inline constexpr float kStopFraction = 0.35F;
 inline constexpr float kStopWindow = 0.1F;
 
 // How a hit is softened. Tuning::hitReaction 0 is the calmest: the velocity
-// and distance are kept for a second and eased back over three, and the nose
-// is followed through a 0.4 s lag. 100 is none of it.
+// is kept for a second and eased back over three if the racer stays slow,
+// and the nose is followed through a 0.4 s lag. 100 is none of it. Whatever
+// the timing, the hold ends by itself as the racer regains the speed it had
+// (BumpGuard::recovered), so driving off after a hit shows no transition.
 struct HitTiming {
-    float hold = 0.0F;        // seconds the velocity and distance are kept
-    float release = 0.0F;     // seconds to ease them back afterwards
+    float hold = 0.0F;        // seconds the velocity is kept
+    float release = 0.0F;     // seconds to ease it back afterwards
     float heading_lag = 0.0F; // seconds of lag on the nose while held
 };
 
@@ -541,10 +660,12 @@ struct BumpGuard {
     float held_forward = 0.0F;
     float held_side = 0.0F;
     float hold = 0.0F;
-    float blend = 0.0F;    // 1 = the held velocity, easing to 0
-    bool hit = false;      // this step was a hit
-    bool started = false;  // heading is valid
-    float heading = 0.0F;  // the nose as given to modern_cam
+    float timeline = 0.0F;  // 1 while held, easing to 0 over the release
+    float recovered = 0.0F; // 0..1, how much of the held velocity the racer has regained
+    float blend = 0.0F;     // what is applied: timeline * (1 - recovered)
+    bool hit = false;       // this step was a hit
+    bool started = false;   // heading is valid
+    float heading = 0.0F;   // the nose as given to modern_cam
 };
 
 // What modern_cam is given for this step.
@@ -587,7 +708,8 @@ inline HitInput hit_steady_input(MCVec3 velocity, float heading, float dt, BumpG
     guard.hit = bounced || stopped;
     if (timing.hold <= 0.0F && timing.release <= 0.0F) {
         guard.hold = 0.0F;
-        guard.blend = 0.0F;
+        guard.timeline = 0.0F;
+        guard.recovered = 0.0F;
     } else if (guard.hit) {
         // What the hit interrupted. A hit while an earlier one is still
         // easing out starts from the mix given so far, not from the earlier
@@ -597,12 +719,30 @@ inline HitInput hit_steady_input(MCVec3 velocity, float heading, float dt, BumpG
         guard.held_forward = f + (guard.held_forward - f) * guard.blend;
         guard.held_side = s + (guard.held_side - s) * guard.blend;
         guard.hold = timing.hold;
-        guard.blend = 1.0F;
+        guard.timeline = 1.0F;
+        guard.recovered = 0.0F;
     } else if (guard.hold > 0.0F) {
         guard.hold = std::max(guard.hold - dt, 0.0F);
     } else {
-        guard.blend = timing.release > 0.0F ? std::max(guard.blend - dt / timing.release, 0.0F) : 0.0F;
+        guard.timeline = timing.release > 0.0F ? std::max(guard.timeline - dt / timing.release, 0.0F) : 0.0F;
     }
+    // The hold is over as soon as the racer has the held velocity back: what
+    // it has regained along it, in the nose's frame, and never less than
+    // before, so braking after a partial recovery does not bring the hold
+    // back. Below it the mix eases in step with the recovery, and there is
+    // nothing to ease out later.
+    if (guard.timeline > 0.0F && !guard.hit) {
+        const float held = guard.held_forward * guard.held_forward + guard.held_side * guard.held_side;
+        if (held > 1.0F) {
+            const float progress = (forward * guard.held_forward + side * guard.held_side) / held;
+            guard.recovered = std::max(guard.recovered, std::clamp(progress, 0.0F, 1.0F));
+        }
+        if (guard.recovered >= 0.98F) {
+            guard.hold = 0.0F;
+            guard.timeline = 0.0F;
+        }
+    }
+    guard.blend = guard.timeline * (1.0F - guard.recovered);
     if (guard.hit) {
         guard.count = 0U; // so the same stop is not read again
     } else {
@@ -636,82 +776,17 @@ inline MCVec3 bump_steady_velocity(MCVec3 velocity, float heading, float dt, Bum
     return hit_steady_input(velocity, heading, dt, guard, HitTiming{hold_time, release_time, 0.0F}).velocity;
 }
 
-// What the camera shows: the eye, the point it looks at, and the view
-// direction (modern_cam's yaw and pitch convention), which modern_cam's shake
-// may turn off that point.
-struct ViewPose {
-    double x = 0.0;
-    double y = 0.0;
-    double z = 0.0;
-    double target_x = 0.0;
-    double target_y = 0.0;
-    double target_z = 0.0;
-    double yaw = 0.0;
-    double pitch = 0.0;
-};
-
-// Steadying the velocity keeps modern_cam from turning on a hit, but its
-// position spring trails the racer by up to ~3 m at speed, and a stop
-// collapses that in a tenth of a second: the eye lunges at the racer. So on
-// a hit the eye keeps its distance and height from the racer for the hit's
-// hold, then eases back to modern_cam's over its release. Only those: the
-// direction it looks from still follows modern_cam, so steering away from a
-// wall turns the camera as usual (a frozen direction goes stale at once).
-struct HitHold {
-    bool shown = false; // last_* are valid
-    double last_distance = 0.0;
-    double last_height = 0.0;
-    double distance = 0.0; // held, from the racer
-    double height = 0.0;
-    float hold = 0.0F;
-    float blend = 0.0F;    // 1 = the held distance, easing to 0
-};
-
-inline void view_direction(double dx, double dy, double dz, double& yaw, double& pitch) {
-    yaw = std::atan2(dx, dz);
-    pitch = std::atan2(dy, std::hypot(dx, dz));
-}
-
-// hit: this step was a hit. orbiting: the player is turning the camera,
-// which ends the hold early. cut: a camera reset or look-back toggle, which
-// drops it.
-inline ViewPose hit_steady_pose(const ViewPose& modern, MCVec3 racer, bool hit, bool orbiting, bool cut,
-                                float dt, float hold_time, float release_time, HitHold& h) {
-    if (cut || (hold_time <= 0.0F && release_time <= 0.0F)) {
-        h.hold = 0.0F;
-        h.blend = 0.0F;
-    } else if (hit && h.shown) {
-        // From what is on screen, so a second hit mid-blend does not jump.
-        h.distance = h.last_distance;
-        h.height = h.last_height;
-        h.hold = hold_time;
-        h.blend = 1.0F;
-    } else if (h.hold > 0.0F) {
-        h.hold = orbiting ? 0.0F : std::max(h.hold - dt, 0.0F);
-    } else {
-        h.blend = release_time > 0.0F ? std::max(h.blend - dt / release_time, 0.0F) : 0.0F;
-    }
-    ViewPose shown = modern;
-    const double ox = modern.x - racer.x, oz = modern.z - racer.z;
-    const double flat = std::hypot(ox, oz);
-    if (h.blend > 0.0F && flat > 1.0) {
-        const double w = static_cast<double>(h.blend) * h.blend * (3.0 - 2.0 * h.blend);
-        const double distance = flat + (h.distance - flat) * w;
-        shown.x = racer.x + ox / flat * distance;
-        shown.z = racer.z + oz / flat * distance;
-        shown.y = modern.y + (racer.y + h.height - modern.y) * w;
-        // Still looking at modern_cam's point, plus whatever its shake adds.
-        double yaw = 0.0, pitch = 0.0, base_yaw = 0.0, base_pitch = 0.0;
-        view_direction(modern.target_x - shown.x, modern.target_y - shown.y, modern.target_z - shown.z, yaw, pitch);
-        view_direction(modern.target_x - modern.x, modern.target_y - modern.y, modern.target_z - modern.z,
-                       base_yaw, base_pitch);
-        shown.yaw = std::remainder(modern.yaw + std::remainder(yaw - base_yaw, 2.0 * kPi), 2.0 * kPi);
-        shown.pitch = modern.pitch + (pitch - base_pitch);
-    }
-    h.shown = true;
-    h.last_distance = std::hypot(shown.x - racer.x, shown.z - racer.z);
-    h.last_height = shown.y - racer.y;
-    return shown;
+// The tuning for one step of a hit. While the held velocity is in use the
+// yaw spring must not keep up with the nose (that is the point: a knocked
+// nose turns on screen, not the world), so its keep-up fades with the hold
+// and comes back as the racer regains its speed. The position spring keeps
+// following the racer: the bounce moves the camera with the racer, as the
+// retail camera does, instead of making the racer leap at the camera and
+// the camera back away again.
+inline MCParams hit_step_params(const MCParams& params, const BumpGuard& guard) {
+    MCParams p = params;
+    p.yawKeepUp *= 1.0F - std::clamp(guard.blend, 0.0F, 1.0F);
+    return p;
 }
 
 // modern_cam starts recentring at full speed the moment the orbit has been

@@ -228,14 +228,23 @@ int main(void) {
         CHECK(o.fovDeg > fov0 + 6.0f, "FOV deveria abrir com a velocidade");
     }
 
-    /* 2. Curva constante: atraso de yaw (o 'swing') */
+    /* 2. Curva constante: a mola acompanha o giro (yawKeepUp); sem a
+       compensação ela fica para trás o tempo todo (o 'swing' antigo) */
     printf("[2] curva constante 15 m/s, 0.75 rad/s\n");
     {
         MCInput last;
+        MCParams lagging;
+        float lag, oldLag;
         o = run_circle(1.0f / 60.0f, 6.0f, 15.0f, 0.75f, 0.0f, 0, &last);
-        float lag = wrapf(last.yaw - o.yaw);
-        printf("  camera atrasada %.1f graus em relacao ao carro\n", lag * 57.2958f);
-        CHECK(lag > 0.05f && lag < 0.5f, "atraso de yaw fora do esperado (%.3f)", lag);
+        lag = wrapf(last.yaw - o.yaw);
+        ModernCam_DefaultParams(&lagging);
+        lagging.yawKeepUp = 0.0f;
+        o = run_circle_p(&lagging, 1.0f / 60.0f, 6.0f, 15.0f, 0.75f, 0.0f, 0, &last);
+        oldLag = wrapf(last.yaw - o.yaw);
+        printf("  camera atrasada %.1f graus em relacao ao carro (%.1f com yawKeepUp = 0)\n", lag * 57.2958f,
+               oldLag * 57.2958f);
+        CHECK(fabsf(lag) < 0.1f, "numa curva constante a camera deveria acompanhar o giro (%.3f)", lag);
+        CHECK(oldLag > 0.1f && oldLag < 0.5f, "sem compensacao o atraso deveria voltar (%.3f)", oldLag);
     }
 
     /* 3. Independência de FPS */
@@ -384,6 +393,51 @@ int main(void) {
         printf("  orbita: %.1f graus -> %.1f graus apos soltar\n", peak * 57.2958f, s.orbitYaw * 57.2958f);
         CHECK(peak > 1.2f, "orbita deveria girar com o analogico");
         CHECK(fabsf(s.orbitYaw) < 0.25f, "deveria recentralizar");
+    }
+
+    /* 9b. Em velocidade constante a âncora fica em cima do carro; numa
+       parada seca ela não avança de uma vez (o antigo salto da mola) */
+    printf("[9b] ancora em velocidade constante e numa parada seca\n");
+    {
+        MCParams spring, trailing;
+        MCState s1, s2;
+        MCOutput o1, o2;
+        float dt = 1.0f / 60.0f, lag1 = 0.0f, lag2 = 0.0f, lunge1 = 0.0f, lunge2 = 0.0f, d1 = 0.0f, d2 = 0.0f;
+        ModernCam_DefaultParams(&spring);
+        spring.enablePosSpring = 1;
+        spring.posFreq = 2.3f;
+        spring.posDamping = 0.98f;
+        trailing = spring;
+        trailing.posKeepUp = 0.0f;
+        s1.initialized = s2.initialized = 0;
+        for (i = 1; i <= 300; ++i) {
+            float t = i * dt;
+            in = base_input();
+            in.pos.z = t < 3.0f ? 20.0f * t : 60.0f;
+            in.vel.z = t < 3.0f ? 20.0f : 0.0f;
+            ModernCam_Update(&s1, &spring, &in, dt, NULL, NULL, &o1);
+            ModernCam_Update(&s2, &trailing, &in, dt, NULL, NULL, &o2);
+            if (i == 179) {
+                lag1 = in.pos.z - s1.anchor.z;
+                lag2 = in.pos.z - s2.anchor.z;
+                d1 = s1.anchor.z;
+                d2 = s2.anchor.z;
+            }
+            /* depois da parada: a ancora compensada passa um pouco do carro
+               e volta; a antiga avanca o atraso inteiro de uma vez */
+            if (t >= 3.0f) {
+                if (s1.anchor.z - in.pos.z > lunge1) lunge1 = s1.anchor.z - in.pos.z;
+                if (s2.anchor.z - d2 > lunge2) lunge2 = s2.anchor.z - d2;
+            }
+        }
+        (void)d1;
+        printf("  a 20 m/s a ancora fica %.2f m atras do carro (%.2f m com posKeepUp = 0)\n", lag1, lag2);
+        printf("  parada seca: a ancora passa %.2f m do carro (com posKeepUp = 0 ela avanca %.2f m)\n", lunge1,
+               lunge2);
+        CHECK(fabsf(lag1) < 0.1f, "a ancora deveria ficar em cima do carro");
+        CHECK(lag2 > 2.0f, "sem compensacao a ancora deveria ficar para tras");
+        CHECK(lunge1 < 0.7f, "a parada nao deveria fazer a ancora passar tanto do carro (%.2f m)", lunge1);
+        CHECK(lunge2 > 2.0f, "sem compensacao a ancora deveria avancar o atraso todo");
     }
 
     /* 10. Teleporte */

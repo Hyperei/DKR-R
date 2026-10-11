@@ -153,7 +153,9 @@ bool TuningFileRoundTrip() {
         odd.params.rollMax == 0.0F && odd.params.enableBoostKick == 0 &&
         same_tuning(parse_tuning(""), defaults) &&
         tuning_code(defaults).find("p.distMin = 5.9F;") != std::string::npos &&
-        tuning_code(defaults).find("p.enableSteerLead = 1;") != std::string::npos;
+        tuning_code(defaults).find("p.yawDamping = 1.0F;") != std::string::npos &&
+        tuning_code(defaults).find("p.enablePosSpring = 1;") != std::string::npos &&
+        tuning_code(defaults).find("p.enableSteerLead") == std::string::npos;
 }
 
 // Comfort drops what usually makes a chase camera nauseating.
@@ -354,77 +356,216 @@ bool BrakingIsNotAHit() {
     return true;
 }
 
-// Straight at 700 units/s into a wall. The position spring trails the racer
-// at speed; the hit hold keeps the eye at that distance instead of letting
-// it lunge in, then eases it to modern_cam's.
+// The whole chain as modern_camera.cpp runs it, at DKR's 30 Hz: straight at
+// 600 units/s into a wall. DKR pushes the racer back along the wall normal
+// at 1.075x its speed for three ticks (racer.c), leaves it with 15% of its
+// speed and it accelerates again (about 0.9 s to 63%). What the camera does
+// in the three seconds after.
 struct WallResult {
-    double before = 0.0;     // eye to racer, flat, just before the hit
-    double after = 0.0;      // the same, three ticks after it
-    double settled = 0.0;    // and two seconds later
-    double modern = 0.0;     // modern_cam's own distance then
+    double before = 0.0;        // eye to racer, flat, just before the hit
+    double nearest = 1e9;       // the same, at its least after the hit
+    double farthest = 0.0;      // and at its most
+    double settled = 0.0;       // and three seconds later
+    double fov_swing = 0.0;     // degrees the FOV moved
+    double aim_swing = 0.0;     // units the aim point moved along the nose, relative to the racer
+    double turn = 0.0;          // the view's fastest turn, degrees/s
+    double eye_accel = 0.0;     // the eye's fastest speed change, units/s^2
+    bool landed = false;        // modern_cam saw a landing during the hit
 };
 
-WallResult wall_hit(const Tuning& tuning) {
-    const MCParams p = layout_params(tuning, 0U);
+WallResult wall_hit(const Tuning& tuning, bool hop = false) {
+    const MCParams params = layout_params(tuning, 0U);
     const float dt = 1.0F / 30.0F;
     MCState s{};
     BumpGuard guard{};
-    HitHold hold{};
     float x = 0.0F, z = 0.0F;
     WallResult result;
     const HitTiming timing = hit_timing(tuning.hitReaction);
-    for (int i = 0; i < 180; ++i) {
-        const MCVec3 velocity = along(kNose, i < 60 ? 700.0F : 0.0F);
+    double aim_before = 0.0, fov_before = 0.0, previous_yaw = 0.0, previous_speed = 600.0;
+    float previous_x = 0.0F, previous_z = 0.0F;
+    const float nx = static_cast<float>(std::sin(kNose)), nz = static_cast<float>(std::cos(kNose));
+    for (int i = 0; i < 150; ++i) {
+        float speed = 600.0F;
+        if (i >= 60) {
+            const float t = static_cast<float>(i - 60) * dt;
+            const float forward = 90.0F + 510.0F * (1.0F - std::exp(-t / 0.9F));
+            speed = i < 63 ? forward - 645.0F : forward;
+        }
+        const MCVec3 velocity = along(kNose, speed);
         x += velocity.x * dt;
         z += velocity.z * dt;
         MCInput in{};
         in.pos = MCVec3{x, 0.0F, z};
-        in.yaw = static_cast<float>(kNose);
-        in.vel = hit_steady_input(velocity, in.yaw, dt, guard, timing).velocity;
-        in.grounded = 1;
-        const bool reset = !s.initialized;
+        const HitInput given = hit_steady_input(velocity, static_cast<float>(kNose), dt, guard, timing);
+        in.yaw = given.heading;
+        in.vel = given.velocity;
+        // The wall lifts the wheels for a tick, as a kerb does.
+        in.grounded = hop && (i == 60 || i == 61) ? 0 : 1;
+        const MCParams p = hit_step_params(params, guard);
+        const bool was_grounded = s.prevGrounded != 0;
+        if (s.initialized && guard.blend > 0.0F) s.prevGrounded = in.grounded;
+        if (s.initialized && in.grounded && !was_grounded && guard.blend <= 0.0F) result.landed = true;
         MCOutput out{};
         ModernCam_Update(&s, &p, &in, dt, nullptr, nullptr, &out);
-        const ViewPose shown = hit_steady_pose(
-            ViewPose{out.eye.x, out.eye.y, out.eye.z, out.target.x, out.target.y, out.target.z, out.yaw, out.pitch},
-            in.pos, guard.hit, false, reset, dt, timing.hold, timing.release, hold);
-        const double distance = std::hypot(shown.x - x, shown.z - z);
-        if (i == 59) result.before = distance;
-        if (i == 63) result.after = distance;
-        if (i == 179) {
-            result.settled = distance;
-            result.modern = std::hypot(out.eye.x - x, out.eye.z - z);
+        if (s.dipV != 0.0F || s.dipY != 0.0F) result.landed = true;
+        const double distance = std::hypot(out.eye.x - x, out.eye.z - z);
+        const double aim = (out.target.x - x) * nx + (out.target.z - z) * nz;
+        if (i >= 1) {
+            const double eye_speed = std::hypot(out.eye.x - previous_x, out.eye.z - previous_z) / dt;
+            if (i >= 60) result.eye_accel = std::max(result.eye_accel, std::fabs(eye_speed - previous_speed) / dt);
+            previous_speed = eye_speed;
         }
+        previous_x = out.eye.x;
+        previous_z = out.eye.z;
+        if (i == 59) {
+            result.before = distance;
+            aim_before = aim;
+            fov_before = out.fovDeg;
+        }
+        if (i >= 60) {
+            result.nearest = std::min(result.nearest, distance);
+            result.farthest = std::max(result.farthest, distance);
+            result.fov_swing = std::max(result.fov_swing, std::fabs(out.fovDeg - fov_before));
+            result.aim_swing = std::max(result.aim_swing, std::fabs(aim - aim_before));
+            result.turn = std::max(result.turn, std::fabs(std::remainder(out.yaw - previous_yaw, 2.0 * kPi)) / dt *
+                                                    180.0 / kPi);
+        }
+        previous_yaw = out.yaw;
+        if (i == 149) result.settled = distance;
     }
     return result;
 }
 
-bool HitHoldsTheDistance() {
-    Tuning off = default_tuning();
-    off.hitReaction = 100.0F;
-    const WallResult bare = wall_hit(off);
+// A wall hit is not a spring any more: the camera moves back with the
+// bounce (as retail's does), its aim, zoom and FOV ignore the stop, and
+// once the racer is back up to speed the framing is what it was. Raw
+// modern_cam (hits at 100%) still whips round and pumps the FOV.
+bool WallHitIsNotASpring() {
+    Tuning raw = default_tuning();
+    raw.hitReaction = 100.0F;
+    const WallResult bare = wall_hit(raw);
     const WallResult held = wall_hit(default_tuning());
-    std::printf("[test][modern-camera] wall at 700 u/s: eye %.0f -> %.0f units bare, %.0f -> %.0f held\n",
-                bare.before, bare.after, held.before, held.after);
-    return bare.before - bare.after > 40.0 && std::fabs(held.after - held.before) < 2.0 &&
-        std::fabs(held.settled - held.modern) < 0.5;
+    std::printf("[test][modern-camera] wall at 600 u/s: eye %.0f -> %.0f..%.0f -> %.0f units, aim moved %.0f, "
+                "fov %.1f deg, view turned %.0f deg/s (raw: eye %.0f..%.0f, aim %.0f, fov %.1f, %.0f deg/s)\n",
+                held.before, held.nearest, held.farthest, held.settled, held.aim_swing, held.fov_swing, held.turn,
+                bare.nearest, bare.farthest, bare.aim_swing, bare.fov_swing, bare.turn);
+    return bare.turn > 100.0 && held.turn < 5.0 && held.nearest > held.before * 0.85 &&
+        held.farthest < held.before * 1.1 && std::fabs(held.settled - held.before) < 8.0 &&
+        held.aim_swing < 40.0 && held.fov_swing < 1.0;
 }
 
-// Moving the camera ends the hold at once and a reset drops the blend.
-bool HitHoldYieldsToTheCamera() {
-    HitHold hold{};
-    const ViewPose near{0.0, 40.0, -100.0, 0.0, 30.0, 50.0, 0.0, -0.2};
-    const ViewPose far{0.0, 40.0, -200.0, 0.0, 30.0, 50.0, 0.0, -0.2};
-    const MCVec3 racer{0.0F, 0.0F, 0.0F};
-    hit_steady_pose(far, racer, false, false, false, 0.05F, 0.3F, 0.8F, hold);
-    const ViewPose kept = hit_steady_pose(near, racer, true, false, false, 0.05F, 0.3F, 0.8F, hold);
-    if (!close(kept.z, -200.0, 1e-6)) return false;
-    hit_steady_pose(near, racer, false, true, false, 0.05F, 0.3F, 0.8F, hold);
-    if (hold.hold != 0.0F || hold.blend != 1.0F) return false;
-    hit_steady_pose(near, racer, false, false, false, 0.05F, 0.3F, 0.8F, hold);
-    if (!(hold.blend < 1.0F)) return false;
-    const ViewPose cut = hit_steady_pose(near, racer, false, false, true, 0.05F, 0.3F, 0.8F, hold);
-    return hold.blend == 0.0F && close(cut.z, -100.0, 1e-6);
+// A hop off the wall is not a landing: no dip and no shake during a hit.
+bool HitIsNotALanding() {
+    Tuning raw = default_tuning();
+    raw.hitReaction = 100.0F;
+    return wall_hit(raw, true).landed && !wall_hit(default_tuning(), true).landed;
+}
+
+// The hold ends by itself as the racer regains its speed, long before the
+// release would; a racer that stays slow keeps it for the hold and then
+// eases out over the release.
+bool HoldEndsWithRecovery() {
+    const HitTiming calm = hit_timing(0.0F);
+    const float dt = 1.0F / 30.0F;
+    BumpGuard driving{}, stopped{};
+    int released_at = -1;
+    for (int i = 0; i < 120; ++i) {
+        float speed = 600.0F;
+        if (i >= 30) {
+            const float t = static_cast<float>(i - 30) * dt;
+            speed = i < 33 ? -555.0F : 90.0F + 510.0F * (1.0F - std::exp(-t / 0.6F));
+        }
+        hit_steady_input(along(kNose, speed), static_cast<float>(kNose), dt, driving, calm);
+        hit_steady_input(along(kNose, i < 30 ? 600.0F : i < 33 ? -555.0F : 30.0F), static_cast<float>(kNose), dt,
+                         stopped, calm);
+        if (i == 30 && (!driving.hit || !stopped.hit)) return false;
+        if (i > 33 && driving.blend > 0.0F && driving.blend > driving.recovered + 1.0F) return false;
+        if (released_at < 0 && i > 33 && driving.blend <= 0.0F) released_at = i;
+        // Mid-recovery the mix eases with the speed, monotonically.
+        if (i == 60 && !(driving.blend > 0.0F && driving.blend < 0.8F)) return false;
+    }
+    std::printf("[test][modern-camera] hold released %.2f s after the hit while driving off (calm timing: %.0f s "
+                "hold + %.0f s release); stopped racer still at %.2f\n",
+                (released_at - 30) * dt, calm.hold, calm.release, stopped.blend);
+    // Driving off: over once the speed is back (2.3 s with this
+    // acceleration), not at the end of the 4 s timeline. Stopped: a third
+    // of the way through the release, with nothing recovered.
+    return released_at > 33 && (released_at - 30) * dt < 3.0F && stopped.blend > 0.25F &&
+        stopped.blend < 0.4F && stopped.recovered < 0.1F;
+}
+
+// A version 1 modern-camera.ini: values the player left alone follow the new
+// defaults, changed ones are kept, and a changed distMax grows by the lag the
+// old position spring added at speed. A version 2 file is taken as is.
+bool LegacyFileMigrates() {
+    bool migrated = false;
+    const Tuning legacy = parse_tuning("distMin=3.09\ndistMax=4.25\nyawDamping=0.85\nenableSteerLead=1\n"
+                                       "rollMax=0.05\nposFreq=2.3\nspeedForMax=25\n",
+                                       &migrated);
+    const Tuning defaults = default_tuning();
+    const float lag = 2.0F * 0.98F / (2.0F * static_cast<float>(kPi) * 2.3F) * 25.0F;
+    std::printf("[test][modern-camera] legacy file: distMax 4.25 -> %.2f m (lag %.2f), steer lead %d, roll %g, "
+                "keep-up %g/%g\n",
+                legacy.params.distMax, lag, legacy.params.enableSteerLead, legacy.params.rollMax,
+                legacy.params.yawKeepUp, legacy.params.posKeepUp);
+    if (!migrated || legacy.params.distMin != 3.09F || !close(legacy.params.distMax, 4.25 + lag, 1e-4) ||
+        legacy.params.enableSteerLead != 0 || legacy.params.rollMax != 0.0F || legacy.params.yawKeepUp != 1.0F ||
+        legacy.params.posKeepUp != 1.0F || legacy.params.yawDamping != defaults.params.yawDamping ||
+        legacy.params.alignSharpness != defaults.params.alignSharpness) {
+        return false;
+    }
+    // Changed values survive: a lower stiffness and roll of its own.
+    const Tuning custom = parse_tuning("yawFreq=1.5\nrollMax=0.08\nenablePosSpring=0\nposSharpness=10\ndistMax=5\n");
+    if (custom.params.yawFreq != 1.5F || !close(custom.params.rollMax, 0.08, 1e-6) ||
+        !close(custom.params.distMax, 5.0 + 25.0 / 10.0, 1e-4)) {
+        return false;
+    }
+    const Tuning current = parse_tuning("version=2\ndistMax=4.25\nenableSteerLead=1\n", &migrated);
+    return !migrated && current.params.distMax == 4.25F && current.params.enableSteerLead == 1 &&
+        serialize_tuning(defaults).find("version=2\n") != std::string::npos;
+}
+
+// Through a steady 90 degrees/s corner the yaw spring keeps up: what is
+// left off the nose is the alignment with the motion (velocityAlign) and the
+// look-ahead's parallax, both steady, so the kart holds one angle on screen.
+// The camera stays level. With the keep-up off the old spring lag returns
+// on top.
+bool SteadyCornerKeepsUp() {
+    const auto corner = [](const Tuning& tuning) {
+        const MCParams p = layout_params(tuning, 0U);
+        MCState s{};
+        MCOutput out{};
+        float x = 0.0F, z = 0.0F;
+        double heading = kNose, lag = 0.0, roll = 0.0;
+        const float dt = 1.0F / 30.0F;
+        for (int i = 0; i < 90; ++i) {
+            if (i >= 30) heading += 1.5708 * dt;
+            const MCVec3 velocity = along(heading - 0.17, 600.0F);
+            x += velocity.x * dt;
+            z += velocity.z * dt;
+            MCInput in{};
+            in.pos = MCVec3{x, 0.0F, z};
+            in.yaw = static_cast<float>(heading);
+            in.vel = velocity;
+            in.grounded = 1;
+            in.steer = 1.0F;
+            ModernCam_Update(&s, &p, &in, dt, nullptr, nullptr, &out);
+            if (i >= 75) {
+                lag = std::max(lag, std::fabs(std::remainder(heading - out.yaw, 2.0 * kPi)) * 180.0 / kPi);
+                roll = std::max(roll, static_cast<double>(std::fabs(out.roll)));
+            }
+        }
+        return std::pair<double, double>{lag, roll};
+    };
+    Tuning lagging = default_tuning();
+    lagging.params.yawKeepUp = 0.0F;
+    const auto kept = corner(default_tuning()), old = corner(lagging);
+    std::printf("[test][modern-camera] steady corner: view %.1f degrees off the nose (%.1f with the keep-up off), "
+                "roll %.2f\n",
+                kept.first, old.first, kept.second);
+    // The spring's lag at 90 degrees/s is 2 * damping * rate / omega: about
+    // 11 degrees here.
+    return kept.first < 12.0 && old.first > kept.first + 7.0 && kept.second == 0.0;
 }
 
 // 0% is the calmest, 100% is raw modern_cam.
@@ -534,8 +675,11 @@ int main() {
         {"stop mid-drift", StopInDriftDoesNotSwing},
         {"hits off", HitsOffLeavesTheVelocity},
         {"braking is not a hit", BrakingIsNotAHit},
-        {"hit holds the distance", HitHoldsTheDistance},
-        {"hit hold yields", HitHoldYieldsToTheCamera},
+        {"wall hit is not a spring", WallHitIsNotASpring},
+        {"hit is not a landing", HitIsNotALanding},
+        {"hold ends with recovery", HoldEndsWithRecovery},
+        {"legacy file migrates", LegacyFileMigrates},
+        {"steady corner keeps up", SteadyCornerKeepsUp},
         {"recentring eases in", RecentringEasesIn},
         {"hit reaction scale", HitReactionScale},
         {"knocked nose", KnockedNoseTurnsOnScreen},
