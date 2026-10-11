@@ -203,6 +203,10 @@
         {
           "path": "patches/rt64/0017-enable-retina-swapchain.patch",
           "sha256": "899c2f115332b02fb75b8dfed919d31796c3cd6b9f6ec7d96f91f005d61a29eb"
+        },
+        {
+          "path": "patches/rt64/0018-validate-hle-commands-before-fetch.patch",
+          "sha256": "96ebbc5cbd9b671064ca986bd647980626c35acee9f9ce63f7ebf4f8c8458b42"
         }
       ]
     },

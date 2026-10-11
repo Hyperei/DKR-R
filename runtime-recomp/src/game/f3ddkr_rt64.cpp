@@ -1,4 +1,5 @@
 #include "f3ddkr_rt64.hpp"
+#include "f3ddkr_execution_policy.hpp"
 #include "postrace_viewport_rt64.hpp"
 
 #include "interpolation_state_policy.hpp"
@@ -390,6 +391,7 @@ struct dkr::runtime::F3DDKRRT64Bridge::StateData {
     std::uint8_t matrix_aspect_override = G_EX_ASPECT_AUTO;
     std::uint8_t rect_aspect_mode = G_EX_ASPECT_AUTO;
     bool task_rejected = false;
+    f3ddkr::CommandBudget command_budget{};
     bool split_viewport_fill_pending = false;
     bool postrace_full_viewport_pending = false;
     bool split_viewport_scissor_adjusted = false;
@@ -1831,7 +1833,25 @@ void dkr::runtime::F3DDKRRT64Bridge::process(RT64::Application& application,
     rsp.modelViewProjChanged = true;
 
     const std::uint32_t start = PhysicalAddress(rsp, task.t.data_ptr);
-    application.processDisplayLists(application.core.RDRAM, start, 0, true);
+    // Keep RT64's normal profiling and interrupt completion path. Its optional
+    // guard runs before even the opcode fetch, including after a branch.
+    struct ValidationScope {
+        RT64::Interpreter& interpreter;
+        decltype(RT64::Interpreter::hleCommandValidator) previous;
+        ~ValidationScope() { interpreter.hleCommandValidator = previous; }
+    } validation_scope{*application.interpreter,
+                       application.interpreter->hleCommandValidator};
+    application.interpreter->hleCommandValidator = &ValidateCommand;
+    // Avoid forming an out-of-allocation pointer in processDisplayLists even
+    // when a malformed task start resolves outside the owned 8 MiB snapshot.
+    if (start >= kRDRAMSize) {
+        data_->task_rejected = true;
+        if (g_logged_counted_errors++ < 64U)
+            std::fprintf(stderr, "[boot][f3ddkr] rejected task start=0x%06X\n", start);
+        application.state->spInterrupt();
+    } else {
+        application.processDisplayLists(application.core.RDRAM, start, 0, true);
+    }
     // Malformed/aborted tasks must not leave presentation state in RT64.
     while (data_->hud_widget_depth > 0) {
         state->flush();
@@ -1916,6 +1936,39 @@ void dkr::runtime::F3DDKRRT64Bridge::RejectTask(
 void dkr::runtime::F3DDKRRT64Bridge::MoveMem(
     RT64::State* state, RT64::DisplayList** display_list) {
     RT64::GBI_F3D::moveMem(state, display_list);
+}
+
+bool dkr::runtime::F3DDKRRT64Bridge::ValidateCommand(
+    RT64::State* state, RT64::DisplayList* command) {
+    if (active_ == nullptr || state == nullptr || command == nullptr) return false;
+    auto& data = *active_->data_;
+    if (data.task_rejected) return false;
+    const auto check = data.command_budget.validate(
+        reinterpret_cast<std::uintptr_t>(state->RDRAM),
+        reinterpret_cast<std::uintptr_t>(command), kRDRAMSize,
+        [command] { return static_cast<std::uint8_t>(command->w0 >> 24U); },
+        [command](std::uint8_t opcode) -> std::size_t {
+            if (opcode == G_TEXRECT || opcode == G_TEXRECTFLIP) return 3U;
+            if (opcode == kMoveMemOpcode &&
+                command->p0(16, 8) == F3D_G_MV_MATRIX_1) return 4U;
+            return 1U;
+        });
+    // Retail F3DDKR uses no RT64 extension stream; presentation metadata is
+    // out-of-band. Unknown extension layouts must not bypass span validation.
+    const bool extension = check == f3ddkr::CommandCheck::Okay &&
+        state->ext.interpreter->extendedOpCode != 0 &&
+        (command->w0 >> 24U) == state->ext.interpreter->extendedOpCode;
+    if (check == f3ddkr::CommandCheck::Okay && !extension) return true;
+    if (g_logged_counted_errors++ < 64U) {
+        std::fprintf(stderr,
+            "[boot][f3ddkr] rejected command stream task=%llu reason=%u "
+            "extension=%u remaining-words=%zu\n",
+            static_cast<unsigned long long>(data.task_count),
+            static_cast<unsigned>(check), extension ? 1U : 0U,
+            data.command_budget.remaining_words());
+    }
+    data.task_rejected = true;
+    return false;
 }
 
 void dkr::runtime::F3DDKRRT64Bridge::Dispatch(
@@ -3263,6 +3316,7 @@ void dkr::runtime::F3DDKRRT64Bridge::RunCommands(
     std::array<RT64::DisplayList*, kMaxNestedDisplayLists> return_stack{};
     std::uint32_t return_depth = 0;
     while (command != nullptr && consumed < command_count) {
+        if (!ValidateCommand(state, command)) break;
         RT64::DisplayList* before = command;
         ApplyPresentationMarkers(state, command);
         const std::uint8_t opcode = static_cast<std::uint8_t>(command->w0 >> 24U);
