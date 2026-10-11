@@ -29,7 +29,7 @@ jobs:
             "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;29.0.14206865'
           fi
           mkdir -p build/android-compile
-          cat "$ANDROID_HOME/ndk/29.0.14206865/source.properties" | tee build/android-compile/toolchain.txt
+          tee build/android-compile/toolchain.txt < "$ANDROID_HOME/ndk/29.0.14206865/source.properties"
       - name: Configure actual Android sources without ROM payloads
         run: |
           cmake -S runtime-recomp/tests/android_compile -B build/android-compile -G Ninja \
