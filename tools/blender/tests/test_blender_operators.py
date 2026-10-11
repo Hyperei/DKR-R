@@ -529,6 +529,71 @@ def test_race_ai():
           "Copy Difficulty takes the levels and skills, not the checkpoint sets")
 
 
+def test_track_select_flight():
+    print("track select flight: generated in the scene and in the package")
+    from track_lab import flythrough, race_ai
+    from track_lab.operators import race_ai as race_ai_ops
+
+    fresh()
+    context = bpy.context
+    catalog = catalog_module.load()
+    object_type = catalog.get(race_ai.CHECKPOINT)
+    root = scene.ensure_root(context)
+    for number in range(8):
+        angle = 2.0 * math.pi * number / 8
+        fields = object_type.fresh_fields()
+        fields.update(index=number, vehicleType=0, isAltCheckpoint=0)
+        placed = gltf_io.MapObject(
+            object_id=race_ai.CHECKPOINT, name="Checkpoint",
+            translation=[5000.0 * math.sin(angle), 0.0, 5000.0 * math.cos(angle)],
+            fields=fields)
+        scene.create_empty(context, placed, catalog, root)["dkr_order"] = number
+
+    def flight_in(target):
+        written = gltf_io.load(os.path.join(target, "source", "objects_structure.gltf"))
+        return [o for o in written.objects if flythrough.is_preview_node(o)]
+
+    temporary = tempfile.mkdtemp(prefix="dkr-flight-")
+    try:
+        # Nothing in the scene: export flies the racers' line by itself.
+        target = os.path.join(temporary, "ring.dkrmap")
+        result = bpy.ops.dkr.export_dkrmap(filepath=target, validate_first=False)
+        check(result == {"FINISHED"}, "a ring of checkpoints exports")
+        made = flight_in(target)
+        check(len(made) >= flythrough.MIN_NODES,
+              "export adds a track select flight when the scene has none (%d)"
+              % len(made))
+        check(not any(race_ai_ops.flight_nodes(context)),
+              "and leaves the scene as it was")
+
+        result = bpy.ops.dkr.generate_flight()
+        check(result == {"FINISHED"}, "Generate Preview Flight runs")
+        generated, placed = race_ai_ops.flight_nodes(context)
+        check(len(generated) == len(made) and not placed,
+              "it puts the same flight in the scene (%d, export made %d)"
+              % (len(generated), len(made)))
+        bpy.ops.dkr.generate_flight()
+        again, _placed = race_ai_ops.flight_nodes(context)
+        check(len(again) == len(generated), "running it again replaces, not adds")
+
+        bpy.ops.dkr.export_dkrmap(filepath=target, validate_first=False)
+        check(len(flight_in(target)) == len(again),
+              "export writes the scene's flight and adds no second one")
+
+        # A flight the author placed is theirs: the button refuses to touch it.
+        for obj in again:
+            del obj[race_ai_ops.PROP_GENERATED_FLIGHT]
+        try:
+            refused = bpy.ops.dkr.generate_flight() == {"CANCELLED"}
+        except RuntimeError:  # Blender raises on an ERROR report
+            refused = True
+        check(refused and len(race_ai_ops.flight_nodes(context)[1]) == len(again),
+              "a hand-placed flight is never replaced")
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
+        fresh()
+
+
 def test_skybox():
     print("skybox")
     from track_lab import prefs, skyboxes
@@ -5410,6 +5475,7 @@ def main():
         test_refresh_keeps_grids()
         test_import_sets_level_type()
         test_race_ai()
+        test_track_select_flight()
         test_skybox()
         test_dkrmap_export()
         test_import_export_operators()

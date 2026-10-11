@@ -1,0 +1,53 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "policy-base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/../build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "ON",
+        "DKR_RUNTIME_BUILD_GENERATED": "OFF",
+        "DKR_RUNTIME_BUILD_RT64": "OFF"
+      }
+    },
+    {
+      "name": "policy",
+      "displayName": "ROM-free policy tests (Ninja)",
+      "inherits": "policy-base",
+      "generator": "Ninja"
+    },
+    {
+      "name": "policy-windows",
+      "displayName": "ROM-free policy tests (Visual Studio 2022)",
+      "inherits": "policy-base",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "policy", "configurePreset": "policy", "configuration": "Release" },
+    { "name": "policy-windows", "configurePreset": "policy-windows", "configuration": "Release" }
+  ],
+  "testPresets": [
+    {
+      "name": "policy",
+      "configurePreset": "policy",
+      "configuration": "Release",
+      "filter": { "include": { "name": "^DKR" } },
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" }
+    },
+    {
+      "name": "policy-windows",
+      "configurePreset": "policy-windows",
+      "configuration": "Release",
+      "filter": { "include": { "name": "^DKR" } },
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" }
+    }
+  ]
+}

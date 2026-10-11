@@ -5,6 +5,44 @@ Keep the changes focused and reproducible. Project-owned runtime code lives in
 `assets`/`packaging`, automation in `scripts` and Track Lab in
 `tools/blender`.
 
+## First contribution: tests without a ROM
+
+Policy tests exercise project-owned rules, state ownership and build tooling
+without generated game functions or a GPU renderer. You need Git, Python 3,
+CMake 3.24+, a C++20 compiler and Ninja (or Visual Studio 2022 on Windows).
+From the repository root, prepare the pinned source dependencies once:
+
+```sh
+python3 scripts/bootstrap_dependencies.py --only n64-modern-runtime --only rt64 --only gekkonet --only monocypher --only libdatachannel --only mbedtls --only sdl3
+python3 scripts/apply_dependency_patches.py
+cd runtime-recomp
+cmake --preset policy
+cmake --build --preset policy
+ctest --preset policy
+```
+
+On Windows, use `python` and the `policy-windows` preset for all three CMake/CTest
+commands. Run the Ninja preset from a shell with a configured compiler. The
+presets write to separate `build/policy` and `build/policy-windows` directories.
+They use Release mode with test assertions retained. For a focused change,
+append `-R <test-name>` to `ctest --preset policy`; use `ctest --preset policy -N`
+to list available tests. These checks do not compile the complete game or
+validate gameplay; follow [Building](BUILDING.md) for that path.
+
+## Where a change belongs
+
+| Change | Owner | Verification |
+|---|---|---|
+| Game-independent rules and state transitions | `runtime-recomp/src/game/*_policy.hpp` and focused tests | ROM-free policy preset |
+| Runtime, UI and renderer integration | `runtime-recomp/src/game` and platform adapters | Focused tests, full target build, relevant runtime checks |
+| Dependency behaviour | `patches/<dependency>` and `patches/manifest.json` | Patch tooling tests and affected target build |
+| Guest game code | Revision policies and composed fragments | Regenerate both revisions and run guest/runtime tests |
+| Setup and packaging | `scripts`, platform CMake modules, `packaging` | Hermetic tooling tests and a real target package |
+
+Keep platform APIs behind their adapter boundary. Extract shared behaviour
+when multiple callers need it; a file split alone does not reduce coupling.
+Generated files and dependency checkouts are outputs of their owners above.
+
 ## Protected inputs
 
 Never hand-edit submodules/dependency checkouts, `RecompiledFuncs` or

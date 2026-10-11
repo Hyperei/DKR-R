@@ -10,6 +10,8 @@ import subprocess
 import sys
 from typing import Any
 
+from apply_dependency_patches import is_reviewed_checkout
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 LOCK_FILE = ROOT / "dependencies.lock.json"
 RESOLVED_FILE = ROOT / "extern" / ".resolved-dependencies.json"
@@ -38,7 +40,7 @@ def ensure_tool(name: str) -> None:
 
 
 def is_dirty(directory: pathlib.Path) -> bool:
-    return bool(run(["git", "status", "--porcelain"], cwd=directory, capture=True))
+    return bool(run(["git", "status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"], cwd=directory, capture=True))
 
 
 def prepare_dependency(entry: dict[str, Any], force: bool) -> dict[str, str]:
@@ -52,23 +54,30 @@ def prepare_dependency(entry: dict[str, Any], force: bool) -> dict[str, str]:
             raise RuntimeError(f"{destination} exists but is not a Git checkout. Move or remove it first.")
         destination.rmdir()
 
-    if not destination.exists():
+    cloned = not destination.exists()
+    if cloned:
         destination.parent.mkdir(parents=True, exist_ok=True)
         run(["git", "clone", "--filter=blob:none", "--no-checkout", repository, str(destination)])
     else:
         current_remote = run(["git", "remote", "get-url", "origin"], cwd=destination, capture=True)
         if current_remote.rstrip("/").removesuffix(".git").lower() != repository.rstrip("/").removesuffix(".git").lower():
             raise RuntimeError(f"Unexpected origin for {entry['name']}: {current_remote}")
-        if is_dirty(destination) and not force:
+        dirty = is_dirty(destination)
+        reviewed = dirty and is_reviewed_checkout(ROOT, destination, commit)
+        if dirty and not reviewed and not force:
             raise RuntimeError(
                 f"{entry['name']} contains local changes. Commit/stash them or rerun with --force to discard them."
             )
-        if force and is_dirty(destination):
+        if force and dirty and not reviewed:
             run(["git", "reset", "--hard"], cwd=destination)
             run(["git", "clean", "-fd"], cwd=destination)
 
-    run(["git", "fetch", "--no-tags", "origin", commit], cwd=destination)
-    run(["git", "checkout", "--detach", commit], cwd=destination)
+    # A pinned checkout is already resolved, including one with exactly the
+    # reviewed patches. Avoid checkout/fetch churn and support offline reruns.
+    current = "" if cloned else run(["git", "rev-parse", "HEAD"], cwd=destination, capture=True)
+    if cloned or current.lower() != commit.lower():
+        run(["git", "fetch", "--no-tags", "origin", commit], cwd=destination)
+        run(["git", "checkout", "--detach", commit], cwd=destination)
     if recursive:
         run(["git", "submodule", "update", "--init", "--recursive"], cwd=destination)
 

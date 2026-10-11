@@ -11,10 +11,11 @@ import bpy
 from bpy.props import BoolProperty, StringProperty
 from bpy_extras.io_utils import ExportHelper
 
-from .. import (catalog as catalog_module, dkrmap, level_model, level_types,
-                minimap, prefs, scene, validate, water)
+from .. import (catalog as catalog_module, dkrmap, flythrough, level_model,
+                level_types, minimap, prefs, scene, validate, water)
 from . import geometry_export
 from . import minimap as minimap_ops
+from . import race_ai as race_ai_ops
 
 
 class DKR_OT_export_dkrmap(bpy.types.Operator, ExportHelper):
@@ -128,6 +129,8 @@ class DKR_OT_export_dkrmap(bpy.types.Operator, ExportHelper):
             written = []
             for slot in scene.SLOTS:
                 part = scene.export_object_map(context, catalog, slot=slot)
+                if slot == scene.SLOT_STRUCTURE:
+                    _add_flythrough(context, package, part, object_map, key)
                 package.write_object_map(part, "objects_" + slot)
                 if not table:
                     continue
@@ -254,6 +257,27 @@ class DKR_OT_export_dkrmap(bpy.types.Operator, ExportHelper):
                    pack_note),
             )
         return {"FINISHED"}
+
+
+def _add_flythrough(context, package, part, whole, key):
+    """Give a race without a track select flight one along the racers' line.
+
+    The track select screen flies a camera along the level's channel-1
+    Animation nodes, and a track with none shows a camera that never moves. A
+    flight the author placed - Generate Preview Flight, or by hand - is left
+    alone; this only fills the gap, in the package and not in the scene.
+    """
+    if not level_types.needs_checkpoints(key) or flythrough.has_preview(whole.objects):
+        return
+    try:
+        nodes = flythrough.build(whole.objects, race_ai_ops.vehicle_set(context))
+    except flythrough.FlythroughError as error:
+        package.notes.append("no track select flight: %s" % error)
+        return
+    part.objects.extend(nodes)
+    package.notes.append(
+        "track select flight: %d camera nodes along the racers' line "
+        "(Generate Preview Flight puts them in the scene to edit)" % len(nodes))
 
 
 def _encode_textures(operator, context, package):

@@ -6,10 +6,16 @@
  * recebe eye/target/up/FOV prontos para o guLookAt/guPerspective do jogo.
  *
  * O que ela faz (técnicas usadas em câmeras atuais, estilo GTA V / Forza):
- *   - Yaw segue o carro por uma MOLA angular (atrasa nas curvas e "balança"
- *     ao voltar), em vez de ficar travada atrás do carro.
+ *   - Yaw segue o carro por uma MOLA angular, em vez de ficar travada atrás
+ *     do carro. Numa curva constante ela acompanha o giro sem atraso fixo
+ *     (yawKeepUp); o atraso aparece só quando o giro muda, na entrada e na
+ *     saída da curva, e dura uma fração de segundo. Com yawKeepUp = 0 a
+ *     mola atrasa o tempo todo, como numa câmera de cinema.
  *   - Mistura direção do nariz com direção da VELOCIDADE: no drift você vê o
  *     carro de lado; numa rodada a câmera continua olhando para onde você vai.
+ *     A parcela de alinhamento passa por um filtro (alignSharpness), então
+ *     começar ou terminar um drift gira a câmera em meio segundo, não de uma
+ *     vez; a rodada não passa pelo filtro.
  *   - Distância, altura e FOV crescem com a velocidade (sensação de velocidade).
  *   - Look-ahead: mira um pouco à frente, na direção do movimento.
  *   - Vertical amortecida separada (pulos e lombadas não chacoalham a tela).
@@ -22,12 +28,17 @@
  *
  * Melhorias opcionais (desligadas por padrão, ligue pelos campos enable*):
  *   - Antecipação pelo volante: começa a virar quando você esterça.
- *   - Mola na posição: inércia nas freadas e acelerações.
+ *   - Mola na posição: inércia nas freadas e acelerações. Em velocidade
+ *     constante a âncora fica em cima do carro (posKeepUp); só uma mudança
+ *     de velocidade a desloca. Sem isso a âncora ficava metros atrás do
+ *     carro em alta velocidade e, numa batida, avançava tudo de uma vez.
  *   - Afundada na aterrissagem: a câmera desce e volta ao aterrissar.
  *   - Puxão no turbo: o braço estica por um instante quando o turbo começa.
  *   - Tremor só rotacional: ruído em camadas girando a câmera.
- * São idênticas às da Bancada ModernCam; o "Exportar para C" de lá gera
- * o bloco de parâmetros pronto para colar.
+ * São as da Bancada ModernCam; o "Exportar para C" de lá gera o bloco de
+ * parâmetros pronto para colar. Desde 2026-10 este módulo vai além dela em
+ * três pontos (a Bancada não os tem; o export continua válido, os campos
+ * novos ficam no padrão): yawKeepUp, posKeepUp e alignSharpness.
  *
  * Convenções:
  *   - Y para cima. Ângulos em radianos.
@@ -92,14 +103,17 @@ typedef struct {
     float driftAlign;           /* mesmo, durante drift */
     float driftLead;            /* giro extra para dentro da curva no drift (rad), estilo Mario Kart; 0 desliga */
     float spinFollowSpeed;      /* acima disso, numa rodada a câmera segue a velocidade (m/s) */
+    float alignSharpness;       /* quão rápido o alinhamento com a velocidade muda (1/s) */
 
     /* mola do yaw */
     float yawFreq;              /* frequência natural (Hz): maior = câmera mais presa */
     float yawFreqSpeedBoost;    /* Hz extras na velocidade máxima */
     float yawDamping;           /* 1 = sem balanço; < 1 = balança um pouco ao voltar */
+    float yawKeepUp;            /* 0..1: quanto do atraso da mola numa curva constante é compensado */
 
     /* seguimento de posição */
     float posSharpness;         /* horizontal (1/s) */
+    float posKeepUp;            /* 0..1: quanto do atraso em velocidade constante é compensado (mola ou não) */
     float heightSharpness;      /* vertical no chão (1/s) */
     float airHeightSharpness;   /* vertical no ar (1/s) */
     float maxVerticalLag;       /* atraso vertical máximo permitido (m) */
@@ -183,6 +197,11 @@ typedef struct {
     MCVec3 prevLookAheadTarget;
     float prevSpeed01Raw;
     float prevTargetYaw;
+    /* alinhamento filtrado e compensação do atraso de giro */
+    float slipSm;               /* escorregamento filtrado (rad) */
+    float turnRate;             /* taxa de giro filtrada que a mola do yaw acompanha (rad/s) */
+    float prevVelYaw;           /* direção da velocidade no tick anterior (rad) */
+    MCVec3 prevVel;             /* velocidade medida no tick anterior (xz) */
     /* melhorias */
     MCVec3 anchorVel;
     float steerSm;

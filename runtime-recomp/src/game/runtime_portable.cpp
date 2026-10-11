@@ -95,7 +95,9 @@ void configure(const char* executable_argument) {
 const std::filesystem::path& application_directory() { return g_application_directory; }
 const std::filesystem::path& marker_path() { return g_marker; }
 bool supported() {
-#if defined(__ANDROID__)
+#if defined(DKR_IOS)
+    return false; // signed bundle cannot hold portable.txt
+#elif defined(__ANDROID__)
     return false;
 #else
     return !g_marker.empty();

@@ -17,8 +17,12 @@ struct CameraTuningGroup {
 
 constexpr std::array<CameraTuningGroup, 12> kCameraTuningGroups{{
     {camtune::TuningGroup::Framing, "Framing", "Distance, height and zoom with speed.", true},
-    {camtune::TuningGroup::Direction, "Direction", "How much the camera follows the nose or the motion.", true},
-    {camtune::TuningGroup::YawSpring, "Yaw spring", "Lag and sway in corners. Damping below 1 overshoots.", true},
+    {camtune::TuningGroup::Direction, "Direction",
+     "How much the camera follows the nose or the motion, and how quickly that alignment changes when a "
+     "drift starts or ends.", true},
+    {camtune::TuningGroup::YawSpring, "Yaw spring",
+     "How the camera takes a change of direction. It keeps up through a steady corner; the kart turns on "
+     "screen only while the turn is starting or ending. Damping below 1 overshoots.", true},
     {camtune::TuningGroup::Follow, "Follow", "How elastic the position is.", false},
     {camtune::TuningGroup::Terrain, "Terrain", "Pitching with the track's slope.", false},
     {camtune::TuningGroup::LookAhead, "Look ahead", "Aiming where the racer is going.", false},
@@ -32,10 +36,11 @@ constexpr std::array<CameraTuningGroup, 12> kCameraTuningGroups{{
      "Boosts, landings, and the game's own hits and explosions. All at 0 is no shake; the swing "
      "when you hit a wall is under Hits.", true},
     {camtune::TuningGroup::Hits, "Hits",
-     "Walls and karts stop the racer dead, bounce it off or knock its nose round. At 0% the camera "
-     "barely reacts: it keeps the motion and distance it had, lets the racer turn on screen, and "
-     "drifts back over a few seconds. 100% is the camera's raw reaction. The Hit light under State "
-     "shows when one is being smoothed.",
+     "Walls and karts stop the racer dead, bounce it off or knock its nose round. Below 100% the camera "
+     "keeps following the motion it had, so its aim, zoom and FOV ignore the stop and the bounce until "
+     "the racer has its speed back, and the racer turns on screen instead of the world. The lower, "
+     "the longer it waits for a racer that stays slow. 100% is the camera's raw reaction. The Hit "
+     "light under State shows when one is being smoothed.",
      true},
 }};
 
@@ -53,16 +58,25 @@ std::filesystem::path CameraTuningPath() {
     return g_config_directory / "modern-camera.ini";
 }
 
+bool SaveCameraTuning(const camtune::Tuning& tuning);
+
 void LoadCameraTuning() {
     camtune::Tuning tuning = camtune::default_tuning();
+    bool migrated = false;
     std::ifstream input(CameraTuningPath(), std::ios::binary);
     if (input) {
         std::ostringstream text;
         text << input.rdbuf();
-        tuning = camtune::parse_tuning(text.str());
+        tuning = camtune::parse_tuning(text.str(), &migrated);
     }
     camtune::set_tuning(tuning);
     g_camera_tuning.saved = tuning;
+    // An older file is brought up to date once, so the panel and the file
+    // agree on what is saved.
+    if (migrated && SaveCameraTuning(tuning)) {
+        g_camera_tuning.status = "modern-camera.ini was updated to the current camera: values you had not "
+                                 "changed follow the new defaults.";
+    }
 }
 
 bool SaveCameraTuning(const camtune::Tuning& tuning) {

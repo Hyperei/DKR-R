@@ -443,6 +443,26 @@ dkr::runtime::RT64Renderer::RT64Renderer(
     std::fprintf(stderr, "[boot][android] private renderer storage ready\n");
     android_pipeline_cache::directory = application_config.dataPath / "pipeline-cache";
 #endif
+#if defined(DKR_IOS)
+    // Path detection picks $HOME/.dkr-port, and a device sandbox (unlike the
+    // simulator) refuses writes at the container root.
+    application_config.detectDataPath = false;
+    {
+        const char* home = std::getenv("HOME");
+        std::error_code storage_error;
+        if (home != nullptr && *home != '\0') {
+            application_config.dataPath = std::filesystem::path(home) /
+                "Library" / "Application Support" / "RT64";
+            std::filesystem::create_directories(application_config.dataPath, storage_error);
+        }
+        if (home == nullptr || *home == '\0' || storage_error) {
+            std::fprintf(stderr, "[boot][ios] renderer storage unavailable: %s\n",
+                         storage_error.message().c_str());
+            setup_result = ultramodern::renderer::SetupResult::GraphicsAPINotFound;
+            return;
+        }
+    }
+#endif
     auto config = ultramodern::renderer::get_graphics_config();
 #if defined(__ANDROID__)
     if (!dkr::runtime::enhancements::modern_presentation_enabled()) {

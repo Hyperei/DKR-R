@@ -164,6 +164,35 @@ to recover a stage. See [macOS kit notes](../packaging/MACOS-BUILD-README.md).
 The integrated experimental backend is gated out on Apple; use a supported
 legacy backend rather than expecting Auto to provide an unavailable engine.
 
+## iOS sideload build
+
+The iOS port builds an arm64 device app for iOS 18 or newer. Use a Mac with
+full Xcode, the iPhoneOS SDK and Metal compiler, plus the prerequisites above.
+Prepare both original ROM revisions before building the IPA:
+
+```bash
+bash scripts/Prepare-DKR-Runtime-macOS.sh --rom-v77 "/path/to/US 1.0.z64" --rom-v80 "/path/to/US Rev A.z64"
+bash scripts/build-ios.sh
+```
+
+The build uses native macOS shader tools and a separate iOS runtime directory.
+`DKR_IOS_V77_GENERATED_SOURCE` and `DKR_IOS_V80_GENERATED_SOURCE` can select
+existing prepared payloads; `DKR_IOS_BUILD_DIR` selects the device build directory.
+Use separate build directories for devices and simulators. The IPA packager
+rejects simulator binaries.
+
+The output is `dist/DKR-R-<version>-iOS-arm64.ipa`. Its ad-hoc signature must
+be replaced by your sideloading tool's signing identity before installation.
+The app requests no JIT or increased-memory entitlement. Import your ROM with
+the in-app document picker or copy it into the app's Documents directory using
+Files. Back up that directory before removing the app. Legacy mod import that
+requires a separate worker process is unavailable on iOS.
+
+Packaging validates the device binary, release metadata, bundle layout,
+signature and bundled asset policy. A successful build does not establish
+physical-device gameplay, audio interruption or background/resume behavior;
+check those on an iPhone or iPad before distributing a release.
+
 ## Linux ARM64 and Android
 
 Use the project-owned ARM/Android toolchains and packaging adapters, with
