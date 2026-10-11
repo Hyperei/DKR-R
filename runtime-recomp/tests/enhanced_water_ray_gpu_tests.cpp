@@ -825,7 +825,9 @@ void lavaDrawProbe(RT64::RenderWorker& worker,plume::RenderShaderFormat format,c
         if(!pixels)throw std::runtime_error("No lava lighting raster readback");
         const auto red=pixels[8*256+8*4],green=pixels[8*256+8*4+1];
         readback->unmap(0,&none);
-        if(red<=green+20 || red<=140)throw std::runtime_error("Lava lighting did not illuminate the receiver pixels");
+        // Capture linearizes the 0.2 grey input. The bounded irradiance should
+        // encode back to about 110 red, not the >140 of an unlinearized capture.
+        if(red<=green+20 || red<=90)throw std::runtime_error("Lava lighting did not illuminate the receiver pixels");
         std::printf("PASS: actual %ux lava lighting submission/capture/ray bindings and warm receiver readback (%u,%u).\n",samples,unsigned(red),unsigned(green));
     }
 }

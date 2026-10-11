@@ -1089,6 +1089,11 @@ if(DKR_EXPERIMENTAL_OWNED_GENERATED)
         "${DKR_MODERN_RUNTIME_SOURCE}/librecomp/include"
         "${DKR_MODERN_RUNTIME_SOURCE}/ultramodern/include"
         "${DKR_MODERN_RUNTIME_SOURCE}/thirdparty/concurrentqueue")
+    # Native ModWorld adapters use the ordinary runtime header, just as the
+    # executable does. The private generated MEM_* fault trampolines belong
+    # only to the revision-isolated owned libraries, never the C++ adapter.
+    target_include_directories(DKROwnedRevisionRegistryTests BEFORE PRIVATE
+        "${DKR_RECOMP_SOURCE}/include")
     if(MSVC)
         target_compile_options(DKROwnedRevisionRegistryTests PRIVATE /EHs /EHc-)
     endif()
@@ -1101,6 +1106,8 @@ if(DKR_EXPERIMENTAL_OWNED_GENERATED)
             "${DKR_MODERN_RUNTIME_SOURCE}/librecomp/include"
             "${DKR_MODERN_RUNTIME_SOURCE}/ultramodern/include"
             "${DKR_MODERN_RUNTIME_SOURCE}/thirdparty/concurrentqueue")
+        target_include_directories(DKRExperimentalOwnedQuickJoinTests BEFORE PRIVATE
+            "${DKR_RECOMP_SOURCE}/include")
         file(READ "${DKR_EXPERIMENTAL_OWNED_GENERATED}/manifest.json" DKR_OWNED_MANIFEST)
         string(JSON DKR_OWNED_REVISION GET "${DKR_OWNED_MANIFEST}" revision)
         string(JSON DKR_OWNED_FULL_SCENES ERROR_VARIABLE DKR_OWNED_FULL_SCENES_ERROR GET "${DKR_OWNED_MANIFEST}" full_scenes)
