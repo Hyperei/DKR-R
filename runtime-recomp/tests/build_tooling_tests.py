@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import apply_dependency_patches as patches  # noqa: E402
+import bootstrap_dependencies as bootstrap  # noqa: E402
 import legacy_character_presentation_policy as presentation  # noqa: E402
 import validate_release_metadata as release_metadata  # noqa: E402
 
@@ -56,7 +57,7 @@ class ReleaseMetadataTests(unittest.TestCase):
                             release_metadata.main()
 
 
-class PatchPipelineTests(unittest.TestCase):
+class PatchFixture:
     """Stacked patches where the second edits the first's file and adds a new
     one, which is exactly what broke the old all-or-reset logic."""
 
@@ -117,6 +118,8 @@ class PatchPipelineTests(unittest.TestCase):
         self.assertEqual((self.repo / "empty.txt").read_bytes(), b"")
         self.assertFalse((self.repo / "blob.bin").exists())
 
+
+class PatchPipelineTests(PatchFixture, unittest.TestCase):
     def test_submodule_style_checkout_is_patched(self):
         self.assertTrue((self.repo / ".git").is_file())
         self.apply()
@@ -168,6 +171,133 @@ class PatchPipelineTests(unittest.TestCase):
             self.apply()
         self.assertEqual((self.repo / "unrelated.txt").read_text(), "developer edit\n")
         self.assertEqual((self.repo / "a.txt").read_text(), "one\ntwo\nthree\n")
+
+
+class BootstrapPatchTests(PatchFixture, unittest.TestCase):
+    """Exercise bootstrap against local-only origins and the real patch stack."""
+
+    def setUp(self):
+        super().setUp()
+        self.env = patch.dict(os.environ, GIT_ENV)
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.manifest.rename(self.root / "patches" / "manifest.json")
+        self.manifest = self.root / "patches" / "manifest.json"
+        self.entry = {"name": "dep", "destination": "dep", "commit": self.commit,
+                      "repository": str(self.root / "upstream")}
+        git(self.repo, "remote", "add", "origin", self.entry["repository"])
+
+    def bootstrap(self):
+        with patch.object(bootstrap, "ROOT", self.root):
+            return bootstrap.prepare_dependency(self.entry, False)
+
+    def test_bootstrap_patch_bootstrap_preserves_files_and_index(self):
+        self.bootstrap()
+        self.apply()
+        before = {p.name: p.stat().st_mtime_ns for p in self.repo.iterdir()}
+        index = git(self.repo, "write-tree")
+        with patch.object(bootstrap, "run", wraps=bootstrap.run) as commands:
+            self.assertEqual(self.bootstrap()["commit"], self.commit)
+        self.assertFalse(any(call.args[0][1] in ("fetch", "checkout", "reset", "clean")
+                             for call in commands.call_args_list))
+        self.assert_patched()
+        self.assertEqual(git(self.repo, "write-tree"), index)
+        self.assertEqual(before, {p.name: p.stat().st_mtime_ns for p in self.repo.iterdir()})
+
+    def test_bootstrap_rejects_unexpected_work_without_mutation(self):
+        for kind in ("tracked", "managed", "untracked", "staged"):
+            with self.subTest(kind=kind):
+                self.apply()
+                target = self.repo / {"tracked": "unrelated.txt", "managed": "a.txt",
+                                      "untracked": "leftover.txt", "staged": "unrelated.txt"}[kind]
+                original = target.read_bytes() if target.exists() else None
+                target.write_bytes(b"developer work\n")
+                if kind == "staged":
+                    git(self.repo, "add", "--", target.name)
+                    target.write_bytes(original)
+                index = git(self.repo, "write-tree")
+                work = target.read_bytes()
+                with self.assertRaisesRegex(RuntimeError, "contains local changes"):
+                    self.bootstrap()
+                self.assertEqual(target.read_bytes(), work)
+                self.assertEqual(git(self.repo, "write-tree"), index)
+                if kind == "staged":
+                    git(self.repo, "reset", "--", target.name)
+                if original is None:
+                    target.unlink()
+                else:
+                    target.write_bytes(original)
+
+    def test_bootstrap_clones_and_checks_out_pinned_commit(self):
+        self.entry["destination"] = "fresh"
+        self.bootstrap()
+        self.assertEqual((self.root / "fresh" / "a.txt").read_text(), "one\ntwo\nthree\n")
+        self.assertEqual(git(self.root / "fresh", "rev-parse", "HEAD"), self.commit)
+
+    def test_bootstrap_rejects_incomplete_patch_stack(self):
+        git(self.repo, "apply", str(self.patches[0]))
+        with self.assertRaisesRegex(RuntimeError, "contains local changes"):
+            self.bootstrap()
+        self.assertEqual((self.repo / "a.txt").read_text(), "one\nTWO\nthree\n")
+
+    def test_bootstrap_rejects_patch_manifest_pin_mismatch(self):
+        self.apply()
+        manifest = json.loads(self.manifest.read_text())
+        manifest["dependencies"][0]["expectedCommit"] = "0" * 40
+        self.manifest.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(RuntimeError, "contains local changes"):
+            self.bootstrap()
+        self.assert_patched()
+
+    def test_bootstrap_rejects_corrupt_reviewed_patch(self):
+        self.apply()
+        write(self.patches[0], self.patches[0].read_text() + "\n")
+        with self.assertRaisesRegex(SystemExit, "checksum mismatch"):
+            self.bootstrap()
+        self.assert_patched()
+
+    def test_bootstrap_preserves_reviewed_submodule_and_rejects_local_edits(self):
+        child_origin = self.root / "child-origin"
+        child_origin.mkdir()
+        git(child_origin, "init", "-q")
+        write(child_origin / "child.txt", "original\n")
+        git(child_origin, "add", ".")
+        git(child_origin, "commit", "-qm", "child base")
+        child_commit = git(child_origin, "rev-parse", "HEAD")
+        git(self.repo, "-c", "protocol.file.allow=always", "submodule", "add",
+            str(child_origin), "nested child")
+        git(self.repo, "commit", "-qm", "add child")
+        self.commit = git(self.repo, "rev-parse", "HEAD")
+        self.entry.update(commit=self.commit, recursive=True)
+        child = self.repo / "nested child"
+        write(child / "child.txt", "reviewed\n")
+        patch_path = self.root / "patches/child.patch"
+        write(patch_path, git(child, "diff") + "\n")
+        manifest = json.loads(self.manifest.read_text())
+        manifest["dependencies"][0]["expectedCommit"] = self.commit
+        manifest["dependencies"].append({
+            "name": "child", "repositoryPath": "dep/nested child",
+            "expectedCommit": child_commit, "patches": [{
+                "path": "patches/child.patch",
+                "sha256": hashlib.sha256(patch_path.read_bytes()).hexdigest()}]})
+        self.manifest.write_text(json.dumps(manifest))
+        self.apply()
+        before = (child / "child.txt").stat().st_mtime_ns
+        self.bootstrap()
+        self.assert_patched()
+        self.assertEqual((child / "child.txt").read_text(), "reviewed\n")
+        self.assertEqual((child / "child.txt").stat().st_mtime_ns, before)
+        for name in ("child.txt", "untracked.txt"):
+            with self.subTest(name=name):
+                target = child / name
+                target.write_text("developer work\n")
+                with self.assertRaisesRegex(RuntimeError, "contains local changes"):
+                    self.bootstrap()
+                self.assertEqual(target.read_text(), "developer work\n")
+                if name == "child.txt":
+                    target.write_text("reviewed\n")
+                else:
+                    target.unlink()
 
 
 def elf32be(sections):
@@ -249,6 +379,8 @@ class RepositoryContractTests(unittest.TestCase):
             (root / "scripts").mkdir()
             (root / "bin").mkdir()
             (root / "scripts/macos_build_lock.py").write_text((ROOT / "scripts/macos_build_lock.py").read_text())
+            (root / "scripts/lib").mkdir()
+            (root / "scripts/lib/apple-build.sh").write_text((ROOT / "scripts/lib/apple-build.sh").read_text())
             build = root / "Build-macOS.sh"
             build.write_text((ROOT / "Build-macOS.sh").read_text())
             prepare = root / "scripts" / "Prepare-DKR-Runtime-macOS.sh"
@@ -273,6 +405,8 @@ class RepositoryContractTests(unittest.TestCase):
             root = Path(temporary)
             (root / "scripts").mkdir()
             (root / "scripts/macos_build_lock.py").write_text((ROOT / "scripts/macos_build_lock.py").read_text())
+            (root / "scripts/lib").mkdir()
+            (root / "scripts/lib/apple-build.sh").write_text((ROOT / "scripts/lib/apple-build.sh").read_text())
             for script in ("Build-macOS.sh", "scripts/Prepare-DKR-Runtime-macOS.sh"):
                 (root / script).write_text((ROOT / script).read_text())
                 for option in ("--rom-v77", "--rom-v80", "--jobs"):
@@ -390,6 +524,46 @@ class MacOSDevexTests(unittest.TestCase):
             parent.write_text('exit 0\n')
             self.assertEqual(subprocess.run(cmd).returncode, 0)
 
+    def test_apple_helpers_validate_jobs_without_source_side_effects(self):
+        helper = ROOT / 'scripts/lib/apple-build.sh'
+        script = r"""
+set -euo pipefail
+before_pwd="$PWD"
+before_options="$-"
+# Sourcing must not probe or install anything.
+uname() { return 91; }
+xcodebuild() { return 92; }
+sysctl() { return 93; }
+source "$1"
+[[ "$PWD" == "$before_pwd" && "$-" == "$before_options" ]]
+export CMAKE_BUILD_PARALLEL_LEVEL=7
+[[ "$(dkr_apple_build_jobs)" == 7 ]]
+[[ "$(dkr_apple_build_jobs 3)" == 3 ]]
+for invalid in 0 -1 abc '2 3' 1.5; do
+  if dkr_apple_build_jobs "$invalid" >/dev/null 2>&1; then exit 1; fi
+done
+export CMAKE_BUILD_PARALLEL_LEVEL=invalid
+if dkr_apple_build_jobs >/dev/null 2>&1; then exit 1; fi
+unset CMAKE_BUILD_PARALLEL_LEVEL
+sysctl() { printf '12\n'; }
+[[ "$(dkr_apple_build_jobs)" == 12 ]]
+sysctl() { return 1; }
+[[ "$(dkr_apple_build_jobs)" == 1 ]]
+uname() { printf 'Linux\n'; }
+if dkr_require_macos >/dev/null 2>&1; then exit 1; fi
+uname() { printf 'Darwin\n'; }
+dkr_require_macos
+dkr_require_tools bash
+if dkr_require_tools dkr_nonexistent_tool >/dev/null 2>&1; then exit 1; fi
+xcodebuild() { [[ "$1" == -version ]]; }
+if dkr_require_xcode >/dev/null 2>&1; then exit 1; fi
+xcodebuild() { return 0; }
+dkr_require_xcode
+"""
+        result = subprocess.run(['/bin/bash', '-c', script, 'apple-helper-test', str(helper)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_host_check_rejects_missing_sha1sum_and_old_gmake(self):
         helper = ROOT / 'scripts/macos-host-tools.sh'
         with tempfile.TemporaryDirectory() as tmp:
@@ -406,7 +580,7 @@ class MacOSDevexTests(unittest.TestCase):
             env = dict(os.environ, PATH=str(root))
             missing = subprocess.run(cmd, env=env, capture_output=True, text=True)
             self.assertNotEqual(missing.returncode, 0)
-            self.assertIn('Missing sha1sum', missing.stderr)
+            self.assertIn('missing from PATH: sha1sum', missing.stderr)
             executable('sha1sum')
             old_make = subprocess.run(cmd, env=env, capture_output=True, text=True)
             self.assertNotEqual(old_make.returncode, 0)
