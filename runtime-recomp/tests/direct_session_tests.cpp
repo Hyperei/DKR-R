@@ -51,18 +51,23 @@ public:
 };
 
 struct DirectSessionTestAccess {
-    DKR_TEST_NOINLINE static void owned_lane_isolation() {
-        DirectSession receiver;
-        // This fixture injects state without a real transport. Keep the normal
-        // worker from observing that deliberately incomplete session.
+    // Fixtures that inject state without a real transport or peers must keep
+    // the live network worker from observing that deliberately incomplete
+    // session; otherwise it runs gameplay and timeout paths against it.
+    static void stop_worker(DirectSession& session) {
+        if (!session.network_worker_.joinable()) return;
         {
             // Match production shutdown: change the wait predicate under its
             // mutex so a notification cannot slip between predicate and wait.
-            std::scoped_lock lock(receiver.mutex_);
-            receiver.worker_stop_.store(true, std::memory_order_release);
+            std::scoped_lock lock(session.mutex_);
+            session.worker_stop_.store(true, std::memory_order_release);
         }
-        receiver.state_changed_.notify_all();
-        receiver.network_worker_.join();
+        session.state_changed_.notify_all();
+        session.network_worker_.join();
+    }
+    DKR_TEST_NOINLINE static void owned_lane_isolation() {
+        DirectSession receiver;
+        stop_worker(receiver);
         assert(receiver.enable_owned_backend(true));
         assert(receiver.owned_backend_available());
         {
@@ -132,12 +137,7 @@ struct DirectSessionTestAccess {
     }
     static void input_freshness_regression() {
         DirectSession client;
-        {
-            std::scoped_lock lock(client.mutex_);
-            client.worker_stop_.store(true, std::memory_order_release);
-        }
-        client.state_changed_.notify_all();
-        client.network_worker_.join();
+        stop_worker(client);
         prepare_fast_forward_guest(client, 100U, 1U);
         client.frame_commits_.clear();
         client.input_delay_ = 1U;
@@ -163,6 +163,7 @@ struct DirectSessionTestAccess {
     }
     static void online_save_status_regression() {
         DirectSession client;
+        stop_worker(client); // drives *_locked and the outbound queues directly
         client.is_host_ = false;
         client.state_ = ConnectionState::Lobby;
         client.local_slot_ = 1U;
@@ -701,6 +702,7 @@ struct DirectSessionTestAccess {
 
     static bool enqueue_checkpoint(DirectSession& session,
                                    std::uint8_t marker) {
+        std::scoped_lock lock(session.mutex_);
         PeerAddress destination{};
         destination.size = 1U;
         destination.storage[0] = 1U;
@@ -709,15 +711,18 @@ struct DirectSessionTestAccess {
             std::vector<std::uint8_t>{marker});
     }
     static std::size_t checkpoint_queue_size(const DirectSession& session) {
+        std::scoped_lock lock(session.mutex_);
         return session.authority_outbound_.size();
     }
     static std::uint8_t oldest_checkpoint_marker(
         const DirectSession& session) {
+        std::scoped_lock lock(session.mutex_);
         return session.authority_outbound_.front().bytes.front();
     }
     static bool enqueue_admission(DirectSession& session,
                                   protocol::MessageType type,
                                   std::uint8_t marker) {
+        std::scoped_lock lock(session.mutex_);
         PeerAddress destination{};
         destination.size = 1U;
         destination.storage[0] = 1U;
@@ -725,9 +730,11 @@ struct DirectSessionTestAccess {
             destination, type, std::vector<std::uint8_t>{marker});
     }
     static std::size_t admission_queue_size(const DirectSession& session) {
+        std::scoped_lock lock(session.mutex_);
         return session.critical_outbound_.size();
     }
     static std::size_t ordinary_queue_size(const DirectSession& session) {
+        std::scoped_lock lock(session.mutex_);
         return session.normal_priority_outbound_.size();
     }
     static std::uint64_t packets_sent(const DirectSession& session) {
@@ -759,6 +766,7 @@ struct DirectSessionTestAccess {
     static void prepare_fast_forward_guest(
         DirectSession& session, std::uint32_t first_frame,
         std::uint32_t frame_count, bool break_last_link = false) {
+        stop_worker(session);
         std::scoped_lock lock(session.mutex_);
         session.is_host_ = false;
         session.state_ = ConnectionState::Running;
@@ -933,6 +941,7 @@ struct DirectSessionTestAccess {
     static protocol::InputBatch repair_unproduced_input(
         DirectSession& session, std::uint32_t submitted_frame,
         std::uint32_t requested_frame, PackedInput held) {
+        stop_worker(session);
         std::scoped_lock lock(session.mutex_);
         session.is_host_ = false;
         session.state_ = ConnectionState::Running;
@@ -960,6 +969,7 @@ struct DirectSessionTestAccess {
     static bool repair_created_input_while_gameplay_is_parked(
         DirectSession& session, std::uint32_t submitted_frame,
         std::uint32_t requested_frame, PackedInput held) {
+        stop_worker(session);
         std::scoped_lock lock(session.mutex_);
         session.is_host_ = false;
         session.state_ = ConnectionState::Running;
@@ -992,6 +1002,7 @@ struct DirectSessionTestAccess {
     }
     static bool enqueue_input_repair(DirectSession& session,
                                      std::uint32_t frame = 0U) {
+        std::scoped_lock lock(session.mutex_);
         PeerAddress destination{};
         destination.size = 1U;
         destination.storage[0] = 1U;
@@ -1000,6 +1011,7 @@ struct DirectSessionTestAccess {
             std::vector<std::uint8_t>{0x52U}, frame);
     }
     static bool enqueue_realtime_input(DirectSession& session) {
+        std::scoped_lock lock(session.mutex_);
         PeerAddress destination{};
         destination.size = 1U;
         destination.storage[0] = 1U;
@@ -1014,28 +1026,27 @@ struct DirectSessionTestAccess {
         // counters (particularly under ARM emulation). Stop it for this one
         // deterministic unit case; pump-free admission below still tests the
         // real workers. Keep every exact-count assertion unchanged.
-        {
-            std::scoped_lock lock(session.mutex_);
-            session.worker_stop_.store(true, std::memory_order_release);
-        }
-        session.state_changed_.notify_all();
-        session.network_worker_.join();
+        stop_worker(session);
         auto transport = std::make_unique<BlockingRealtimeTransport>();
         BlockingRealtimeTransport* result = transport.get();
         session.transport_ = std::move(transport);
         return result;
     }
     static void flush_outbound(DirectSession& session) {
+        std::scoped_lock lock(session.mutex_);
         session.flush_outbound_locked();
     }
     static std::size_t repair_queue_size(const DirectSession& session) {
+        std::scoped_lock lock(session.mutex_);
         return session.repair_outbound_.size();
     }
     static std::size_t realtime_queue_size(const DirectSession& session) {
+        std::scoped_lock lock(session.mutex_);
         return session.high_priority_outbound_.size();
     }
     static std::size_t simulation_queue_size(
         const DirectSession& session) {
+        std::scoped_lock lock(session.mutex_);
         return session.repair_outbound_.size() +
                session.high_priority_outbound_.size();
     }
