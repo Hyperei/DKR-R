@@ -41,9 +41,11 @@ cmake --build --preset host
 ctest --preset host
 ```
 
-CI uses these same presets. Windows uses `host-windows` for all three
-commands. CI runs two host tests at a time, then collects performance reports
-in a separate step so concurrent tests do not distort those measurements.
+CI uses the Ninja `host` preset on every desktop platform. Windows CI
+initializes the x64 Visual Studio developer environment and explicitly uses
+MSVC with bounded Ninja parallelism. For local Windows builds, `host-windows`
+uses Visual Studio 2022 without requiring a developer shell. CI runs two host
+tests at a time, then collects performance reports in a separate step so concurrent tests do not distort those measurements.
 JUnit results are retained on successful and failed runs. Workflows run for
 pull requests and pushes to `main`, avoiding duplicate branch/PR builds. Use
 **Run workflow** for a branch without a pull request.
@@ -53,6 +55,31 @@ lockfile, reviewed patches, and preparation scripts. Every cache hit still
 passes checkout and patch validation. The cache is saved before configuration
 and excludes build outputs, ROMs, and generated retail payloads.
 
+macOS CI caches C/C++ compiler results with ccache; Windows CI uses pinned
+sccache with a local disk cache. GitHub Actions stores these caches separately
+for each runner architecture and compiler/SDK version. A new commit can reuse
+unchanged compilations; both caches still check source, headers, and compiler
+options. Builds
+remain fresh CMake configurations, and every test still runs. Cache statistics
+and toolchain details are retained with the test-results artifact. The first
+run for a toolchain is a cold build. The miniz target embeds MSVC debug
+information per object to avoid parallel shared-PDB writes. Its few C files
+bypass the compiler cache because upstream also supplies a literal `/Zi` flag;
+its pinned dependency sources stay unchanged.
+
+Every desktop job writes a summary directly to the GitHub Actions run page,
+including test totals, failed-test output, the five slowest tests, regression
+scenario results, checkpoint timing, and available compiler-cache statistics.
+Missing or malformed reports are called out explicitly, including when an
+earlier build step failed. The summary runs after failures; full logs and
+HTML/JSON/JUnit artifacts remain available for deeper inspection.
+To render the same summary locally:
+
+```sh
+python3 scripts/ci_summary.py --junit build/host/junit.xml \
+  --regression build/regression/ci/report.json
+```
+
 `host-debug` and `host-windows-debug` provide separate Debug
 build directories; Release also retains assertions in project test programs.
 The Ninja presets write `compile_commands.json` in their build directory for
@@ -60,7 +87,8 @@ clangd and other editors (for example `build/host/compile_commands.json`).
 
 Use `ctest --preset host -R <test-name>` for a focused test, `-L tooling` for
 Python/CMake tooling tests, and `-N` to list tests without running them.
-`--output-junit ../build/host/junit.xml` writes a machine-readable report.
+`--output-junit junit.xml` writes the report in the preset build directory
+(`build/host/junit.xml`, or `build/host-windows/junit.xml` for Visual Studio).
 Failure details are in `build/host/Testing/Temporary/LastTest.log`.
 These checks do not compile the complete game or validate gameplay; follow
 [Building](BUILDING.md) for that path. The separate [iOS compilation check](IOS-CI.md)

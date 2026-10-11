@@ -19,6 +19,7 @@ TOOLING_TESTS = (
     "regression_harness_tests.py",
     "harness_report_tests.py",
     "replay_capture_tests.py",
+    "ci_summary_tests.py",
 )
 
 

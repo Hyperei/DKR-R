@@ -15,6 +15,7 @@ Windows). Commands with options describe them with `--help`.
 | Track Lab Python suites | `python3 scripts/check.py --suite track-lab` | Private fixtures optional; absence is SKIP |
 | Native host build/tests | [CMake presets](../docs/DEVELOPMENT.md) | C++20, CMake and pinned dependencies |
 | Regression and performance reports | `python3 scripts/regression.py --output build/regression/baseline` | Built host tests; see [harness guide](../docs/REGRESSION.md) for private replay and comparisons |
+| Summarize CI results | `python3 scripts/ci_summary.py --junit build/host/junit.xml --regression build/regression/ci/report.json` | Existing JUnit and harness reports; optional `--cache-stats` and `--output` |
 | Capture an actual-ROM replay fixture | `python3 scripts/capture_replay_fixture.py --help` | Qualification runtime and canonical US ROM; [capture workflow](../docs/REGRESSION.md#prepare-actual-rom-fixtures) |
 | Runtime build | `Build-Windows.cmd`, `./Build-Linux.sh`, `./Build-macOS.sh` | [Platform prerequisites and prepared payloads](../docs/BUILDING.md) |
 

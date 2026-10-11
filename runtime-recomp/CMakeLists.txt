@@ -170,6 +170,14 @@ if(MSVC)
             target_compile_options(${DKR_PDB_SAFE_TARGET} PRIVATE /FS)
         endif()
     endforeach()
+    if(TARGET miniz)
+        # Upstream adds /Zi even in Release. Embed its debug information in
+        # each object: Ninja's parallel sources must not share miniz.pdb.
+        target_compile_options(miniz PRIVATE /Z7)
+        # sccache still interprets upstream's literal /Zi as a PDB output even
+        # after /Z7 overrides it. Compile these few sources directly.
+        set_property(TARGET miniz PROPERTY C_COMPILER_LAUNCHER "")
+    endif()
 endif()
 
 if(NOT EXISTS "${DKR_GEKKONET_SOURCE}/GekkoLib/CMakeLists.txt")
@@ -1346,7 +1354,8 @@ if(BUILD_TESTING)
             "DKRAssetScan|asset_scan_tests.py"
             "DKRRegressionHarness|regression_harness_tests.py"
             "DKRHarnessReports|harness_report_tests.py"
-            "DKRReplayCapture|replay_capture_tests.py")
+            "DKRReplayCapture|replay_capture_tests.py"
+            "DKRCiSummary|ci_summary_tests.py")
         string(REPLACE "|" ";" tooling_test "${tooling_test}")
         list(GET tooling_test 0 test_name)
         list(GET tooling_test 1 test_script)

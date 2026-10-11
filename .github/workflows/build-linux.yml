@@ -32,9 +32,12 @@ jobs:
         run: cmake --build --preset host --parallel
       - name: Test
         working-directory: runtime-recomp
-        run: ctest --preset host --parallel 2 --output-junit ../build/host/junit.xml
+        run: ctest --preset host --parallel 2 --output-junit junit.xml
       - name: Capture regression and benchmark report
         run: python3 scripts/regression.py --build-dir build/host --repeat 1 --warmup 0 --output build/regression/ci
+      - name: Summarize host checks
+        if: ${{ always() }}
+        run: python3 scripts/ci_summary.py --label "Linux host tests" --junit build/host/junit.xml --regression build/regression/ci/report.json --output "$GITHUB_STEP_SUMMARY"
       - name: Preserve regression report
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
