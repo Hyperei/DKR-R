@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a sideloadable DKR-R iOS app: one arm64 IPA for iOS 16 or newer.
+# Build a sideloadable DKR-R iOS app: one arm64 IPA for iOS 18 or newer.
 #
 # The IPA is ad-hoc signed. AltStore Classic, SideStore, or Sideloadly
 # re-signs it with your Apple ID. Free Apple IDs cannot grant special
@@ -66,6 +66,13 @@ if [[ ! -e "${project_root}/extern/sdl2/.git" ]]; then
   python3 "${project_root}/scripts/bootstrap_dependencies.py" --only sdl2
 fi
 python3 "${project_root}/scripts/apply_dependency_patches.py" --root "${project_root}"
+# RT64 and the runtime include metal-cpp from src/contrib/metal-cpp. The
+# macOS prepare script links it too, but prepared payloads may come from
+# elsewhere through the DKR_IOS_*_GENERATED_SOURCE overrides.
+rt64="${project_root}/extern/rt64"
+if [[ -d "${rt64}/src/contrib/plume/contrib/metal-cpp" && ! -e "${rt64}/src/contrib/metal-cpp" ]]; then
+  ln -s plume/contrib/metal-cpp "${rt64}/src/contrib/metal-cpp"
+fi
 
 cmake -S "${project_root}/packaging/ios/host-tools" -B "${host_dir}" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release
@@ -83,7 +90,7 @@ cmake -S "${project_root}/runtime-recomp" -B "${build_dir}" -G Ninja \
   -DCMAKE_SYSTEM_PROCESSOR=arm64 \
   -DCMAKE_OSX_SYSROOT=iphoneos \
   -DCMAKE_OSX_ARCHITECTURES=arm64 \
-  -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=18.0 \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTING=OFF \
   -DDKR_RUNTIME_BUILD_GENERATED=ON \

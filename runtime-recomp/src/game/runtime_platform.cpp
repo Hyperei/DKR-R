@@ -1522,8 +1522,11 @@ void dkr::runtime::platform::shutdown() {
 ultramodern::renderer::WindowHandle dkr::runtime::platform::create_window() {
     if (g_window == nullptr) {
 #if defined(DKR_IOS)
+        // Desktop fullscreen, as on the Mac. Real fullscreen makes SDL restore
+        // its display mode on every refocus (Control Center, app switcher),
+        // and UIKit records that mode in portrait.
         const Uint32 flags = SDL_WINDOW_METAL | SDL_WINDOW_ALLOW_HIGHDPI |
-            SDL_WINDOW_FULLSCREEN | SDL_WINDOW_BORDERLESS;
+            SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_BORDERLESS;
 #else
         Uint32 flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
 #if !defined(__ANDROID__) && !defined(DKR_IOS)

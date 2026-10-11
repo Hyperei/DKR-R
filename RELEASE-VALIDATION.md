@@ -2,27 +2,25 @@
 
 ## 11 October 2026 — iOS sideload validation
 
-Validated the iOS work based on `32bf1c7` with the platform and packaging
-changes in this branch. Xcode built arm64 device and simulator targets with
-an iOS 16.0 deployment target and both prepared US revision payloads.
+Validated on an iPhone 18 Pro Max running iOS 27, built with Xcode 27 and
+the iOS 27 SDK for an iOS 18.0 deployment target, from both prepared US
+revision payloads. The IPA was re-signed with an Apple Development identity
+and installed with `devicectl`.
 
-- `bash scripts/build-ios.sh` rebuilt and packaged the device app.
-- All 13 IPA packaging regression tests and 22 build tooling tests passed;
-  release metadata validated 53 pinned patch hashes.
-- Mobile UI, touch policy and iOS event queue tests passed on the macOS host.
-- The rebuilt simulator app installed and launched on iPhone 17 Pro / iOS
-  26.5; its landscape ROM-selection screen rendered successfully.
-- IPA validation checked device platform, bundle metadata, prohibited assets,
-  signature and entitlements. The package is ad-hoc signed for re-signing by
-  a sideload tool and requests no JIT or increased-memory entitlement.
-- Shell formatting and repository asset scanning passed.
+- `bash scripts/build-ios.sh` rebuilt and packaged the device app from a
+  clean dependency checkout; all patches applied from pristine sources.
+- The app launched, found a v1.0 ROM copied into Documents and reached
+  gameplay with touch controls. After Control Center the game and overlay
+  stayed landscape at full resolution; logged SDL and ImGui sizes held at
+  956x440 points and 3x scale throughout.
+- All 13 IPA packaging tests and the build tooling tests passed; release
+  metadata validated 57 pinned patch hashes; the asset scan passed.
 
 Artifact: `dist/DKR-R-1.0.5-iOS-arm64.ipa`
-SHA-256: `e9aff75776d4821cdf9d3f43c4493e284c9a0e5fb7c01c7c39f190c01aa63166`
+SHA-256: `426ff1461c3079897a560ae0d4d41a653bb42390a225ffe29da412dd2a86c42d`
 
-Physical-device gameplay, simultaneous touch comfort, controller switching,
-audio interruptions and background/resume remain unverified. Simulator launch
-and host input tests do not establish those results. No release was published.
+Audio, audio interruptions, simultaneous touch comfort, controller switching
+and iPad layouts remain unverified. No release was published.
 
 ## 10 October 2026 — 1.0.5 Public Build
 

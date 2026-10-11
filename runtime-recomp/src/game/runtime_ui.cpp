@@ -2764,6 +2764,30 @@ bool IsRomFile(const std::filesystem::path& path) {
     return extension == ".z64" || extension == ".v64" || extension == ".n64";
 }
 
+#if defined(DKR_IOS)
+// Files and Open In put ROMs in Documents. The container path changes when the
+// app is reinstalled, so the remembered absolute paths can't be the only record.
+void AddDocumentsRomsToCatalog(std::vector<RomCatalogEntry>& catalog) {
+    std::error_code error;
+    const std::filesystem::path documents = dkr::runtime::ios::documents_directory();
+    if (documents.empty()) {
+        return;
+    }
+    std::filesystem::directory_iterator it(documents, error);
+    for (; !error && it != std::filesystem::directory_iterator(); it.increment(error)) {
+        std::error_code entry_error;
+        if (!it->is_regular_file(entry_error) || entry_error || !IsRomFile(it->path())) {
+            continue;
+        }
+        std::string validation_error;
+        dkr::runtime::rom::Identity identity{};
+        if (dkr::runtime::ValidateRomForLauncher(it->path(), identity, validation_error)) {
+            RememberRomInCatalog(it->path(), identity, catalog);
+        }
+    }
+}
+#endif
+
 std::filesystem::path DefaultBrowserDirectory(const std::filesystem::path& selected) {
     std::error_code error;
     if (!selected.empty()) {
@@ -8440,6 +8464,9 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(
     const auto rom_catalog_started_at =
         dkr::runtime::startup_performance::Clock::now();
     std::vector<RomCatalogEntry> rom_catalog = LoadRomCatalog();
+#if defined(DKR_IOS)
+    AddDocumentsRomsToCatalog(rom_catalog);
+#endif
     dkr::runtime::startup_performance::report(
         "rom-catalog-load", rom_catalog_started_at);
     const std::optional<std::filesystem::path> initial_rom =

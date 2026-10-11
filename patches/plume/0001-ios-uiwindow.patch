@@ -1,8 +1,8 @@
 diff --git a/plume_apple.mm b/plume_apple.mm
-index 1384fe9..ecf3965 100644
+index 1384fe9..22fc694 100644
 --- a/plume_apple.mm
 +++ b/plume_apple.mm
-@@ -7,6 +7,139 @@
+@@ -7,6 +7,144 @@
  
  #include "plume_apple.h"
  
@@ -18,7 +18,12 @@ index 1384fe9..ecf3965 100644
 +
 +    CGFloat getScaleFactor(UIWindow *uiWindow) {
 +#ifdef PLUME_APPLE_RETINA_ENABLED
-+        return [uiWindow contentScaleFactor];
++        // contentScaleFactor is a view property and drops to 1 while UIKit
++        // snapshots the app (Control Center, app switcher), which shrinks the
++        // swapchain to points. Use the screen's native scale, which is also
++        // what SDL_GetWindowSizeInPixels reports for the overlay.
++        UIScreen *screen = uiWindow.windowScene.screen ?: uiWindow.screen;
++        return screen != nil ? screen.nativeScale : [uiWindow contentScaleFactor];
 +#else
 +        return 1.0f;
 +#endif
@@ -142,7 +147,7 @@ index 1384fe9..ecf3965 100644
  #import <AppKit/AppKit.h>
  #import <Foundation/Foundation.h>
  #import <IOKit/IOKitLib.h>
-@@ -176,3 +309,4 @@ namespace plume {
+@@ -176,3 +314,4 @@ namespace plume {
          }
      }
  }

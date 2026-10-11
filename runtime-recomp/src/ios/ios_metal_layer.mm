@@ -21,7 +21,7 @@ extern "C" void dkr_set_window_fullscreen(Uint32 window_id, bool fullscreen) {
 extern "C" bool dkr_handle_fullscreen_event(const SDL_Event* event) {
     if (event == nullptr || event->type != fullscreen_event_type()) return false;
     SDL_Window* window = SDL_GetWindowFromID(event->user.windowID);
-    if (window && SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN) != 0)
+    if (window && SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP) != 0)
         std::fprintf(stderr, "[window] fullscreen change failed: %s\n", SDL_GetError());
     return true;
 }
@@ -83,7 +83,11 @@ extern "C" void* dkr_create_metal_layer(void* window_ptr) {
         // SDL owns touch delivery in the underlying UIKit view.
         host.userInteractionEnabled = NO;
         CAMetalLayer* metal = (CAMetalLayer*)host.layer;
-        metal.contentsScale = content.contentScaleFactor > 0 ? content.contentScaleFactor : 2.0;
+        // Match the swapchain and SDL_GetWindowSizeInPixels, both of which use
+        // the screen's native scale (it differs from scale under Display Zoom).
+        UIScreen* screen = window.windowScene.screen ?: window.screen;
+        metal.contentsScale = screen != nil ? screen.nativeScale
+            : (content.contentScaleFactor > 0 ? content.contentScaleFactor : 2.0);
         metal.frame = host.bounds;
         [content addSubview:host];
         retained = (__bridge_retained void*)metal;

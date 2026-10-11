@@ -128,7 +128,7 @@ def make_icon(logo: Path, destination: Path, pixels: int) -> None:
 
 
 def install_icon(app: Path, scratch: Path) -> None:
-    logo = ROOT / "assets/ui/Icons/DKR-R-Short-Logo.png"
+    logo = ROOT / "assets/ui/Icons/DKR-R-Icon.png"
     icon = scratch / "AppIcon.png"
     make_icon(logo, icon, 1024)
     catalog = scratch / "Assets.xcassets" / "AppIcon.appiconset"
@@ -150,7 +150,7 @@ def install_icon(app: Path, scratch: Path) -> None:
             "xcrun", "actool", str(scratch / "Assets.xcassets"),
             "--compile", str(app),
             "--platform", "iphoneos",
-            "--minimum-deployment-target", "16.0",
+            "--minimum-deployment-target", "18.0",
             "--target-device", "iphone",
             "--target-device", "ipad",
             "--app-icon", "AppIcon",
@@ -243,7 +243,7 @@ def compile_launch_screen(app: Path) -> None:
     run([
         "xcrun", "ibtool",
         "--errors", "--warnings", "--notices",
-        "--minimum-deployment-target", "16.0",
+        "--minimum-deployment-target", "18.0",
         "--target-device", "iphone",
         "--target-device", "ipad",
         "--compile", str(compiled),
@@ -258,7 +258,7 @@ def require_plist(app: Path, version: str, bundle_version: str) -> None:
         "CFBundleShortVersionString": version,
         "CFBundleVersion": bundle_version,
         "CFBundleExecutable": "DKR-R",
-        "MinimumOSVersion": "16.0",
+        "MinimumOSVersion": "18.0",
         "UILaunchStoryboardName": "LaunchScreen",
     }
     for key, value in expected.items():
@@ -311,8 +311,8 @@ def check_binary(app: Path) -> None:
     if not platforms or any(platform not in {"IOS", "2"} for platform in platforms):
         raise RuntimeError(f"DKR-R is not an iOS device binary:\n{build}")
     minimums = re.findall(r"^\s*minos\s+(\S+)\s*$", build, re.MULTILINE)
-    if len(minimums) != len(platforms) or any(value not in {"16.0", "16.0.0"} for value in minimums):
-        raise RuntimeError(f"DKR-R minimum OS is not 16.0:\n{build}")
+    if len(minimums) != len(platforms) or any(value not in {"18.0", "18.0.0"} for value in minimums):
+        raise RuntimeError(f"DKR-R minimum OS is not 18.0:\n{build}")
 
 
 def reject_symlinks(app: Path) -> None:

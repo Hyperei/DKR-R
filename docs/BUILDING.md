@@ -166,7 +166,7 @@ legacy backend rather than expecting Auto to provide an unavailable engine.
 
 ## iOS sideload build
 
-The iOS port builds an arm64 device app for iOS 16 or newer. Use a Mac with
+The iOS port builds an arm64 device app for iOS 18 or newer. Use a Mac with
 full Xcode, the iPhoneOS SDK and Metal compiler, plus the prerequisites above.
 Prepare both original ROM revisions before building the IPA:
 

@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 
 let args = CommandLine.arguments
 guard args.count == 4, let pixels = Int(args[3]), pixels > 0 else {
-    fputs("usage: MakeIcon.swift logo.png out.png size\n", stderr)
+    fputs("usage: MakeIcon.swift art.png out.png size\n", stderr)
     exit(1)
 }
 guard let logo = NSImage(contentsOfFile: args[1]),
@@ -34,7 +34,11 @@ context.setFillColor(sky)
 context.fill(CGRect(x: 0, y: 0, width: pixels, height: pixels))
 let size = CGFloat(pixels)
 let logoSize = CGSize(width: logoImage.width, height: logoImage.height)
-let scale = min((size * 0.86) / logoSize.width, (size * 0.46) / logoSize.height)
+// Square art is already a full icon: draw it edge to edge. iOS applies its own
+// corner mask, and the sky fill covers any transparent corners in the art.
+let scale = logoSize.width == logoSize.height
+    ? size / logoSize.width
+    : min((size * 0.86) / logoSize.width, (size * 0.46) / logoSize.height)
 let width = logoSize.width * scale
 let height = logoSize.height * scale
 let dest = CGRect(x: (size - width) / 2, y: (size - height) / 2, width: width, height: height)

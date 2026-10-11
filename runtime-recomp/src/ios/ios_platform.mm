@@ -143,7 +143,7 @@ UIWindow* key_window() {
         }
         if (window_scene.windows.firstObject) return window_scene.windows.firstObject;
     }
-    // SDL stays on the app-delegate lifecycle, so connectedScenes is empty.
+    // Before UIKit connects the scene, fall back to the application windows.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     NSArray<UIWindow*>* windows = UIApplication.sharedApplication.windows;
@@ -204,3 +204,4 @@ extern "C" void dkr_ios_ui_metrics(float* scale, float* text_scale, float insets
     *text_scale = cached_metrics.text_scale;
     for (int i = 0; i < 4; ++i) insets[i] = cached_metrics.insets[i];
 }
+

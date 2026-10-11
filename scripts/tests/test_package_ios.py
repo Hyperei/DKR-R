@@ -36,7 +36,7 @@ class PackageIOSTests(unittest.TestCase):
                 package.release_number(version)
 
     def test_device_platform_and_minimum_are_exact(self):
-        for platform, minimum, accepted in (("IOS", "16.0", True), ("2", "16.0.0", True), ("IOSSIMULATOR", "16.0", False), ("20", "16.0", False), ("IOS", "16.01", False), ("MACOS", "16.0", False)):
+        for platform, minimum, accepted in (("IOS", "18.0", True), ("2", "18.0.0", True), ("IOSSIMULATOR", "18.0", False), ("20", "18.0", False), ("IOS", "18.01", False), ("MACOS", "18.0", False)):
             output = f"    platform {platform}\n       minos {minimum}\n"
             with self.subTest(platform=platform, minimum=minimum), patch.object(package, "run", side_effect=["Mach-O 64-bit executable arm64", output]):
                 if accepted:
@@ -46,7 +46,7 @@ class PackageIOSTests(unittest.TestCase):
                         package.check_binary(self.app)
 
     def test_mixed_device_and_simulator_is_rejected(self):
-        with patch.object(package, "run", side_effect=["Mach-O arm64", "platform IOS\nminos 16.0\nplatform IOSSIMULATOR\nminos 16.0\n"]):
+        with patch.object(package, "run", side_effect=["Mach-O arm64", "platform IOS\nminos 18.0\nplatform IOSSIMULATOR\nminos 18.0\n"]):
             with self.assertRaises(RuntimeError):
                 package.check_binary(self.app)
 
