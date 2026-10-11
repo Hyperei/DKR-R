@@ -474,6 +474,8 @@ void DrawAboutSupport(float width) {
         };
 #if defined(__ANDROID__)
         facts.push_back({"Android build", dkr::runtime::android::build_identity()});
+#elif defined(DKR_IOS)
+        facts.push_back({"iOS build", dkr::runtime::ios::build_identity()});
 #endif
         if (g_support_summary) {
             facts.push_back({"OS", g_support_summary->operating_system});

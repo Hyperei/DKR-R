@@ -33,21 +33,13 @@ def main() -> int:
     manifest = json.loads((ROOT / "patches/manifest.json").read_text(encoding="utf-8"))
     locked = {item["name"].lower(): item["commit"].lower()
               for item in lock["dependencies"]}
-    aliases = {
-        "n64modernruntime": "n64-modern-runtime",
-        "n64recomp": "n64recomp",
-        "rt64": "rt64",
-        "hlslpp": "hlslpp",
-        "usrsctp": "usrsctp",
-        "gekkonet": "gekkonet",
-        "monocypher": "monocypher",
-        "libdatachannel": "libdatachannel",
-        "mbedtls": "mbedtls",
-        "sdl3": "sdl3",
-    }
+    aliases = {"n64modernruntime": "n64-modern-runtime"}
     checked = 0
     for dependency in manifest["dependencies"]:
-        key = aliases[dependency["name"].lower()]
+        name = dependency["name"].lower()
+        key = aliases.get(name, name)
+        if key not in locked:
+            fail(f"Patched dependency is missing from lockfile: {dependency['name']}")
         if locked[key] != dependency["expectedCommit"].lower():
             fail(f"Pinned commit mismatch for {dependency['name']}")
         for entry in dependency["patches"]:
