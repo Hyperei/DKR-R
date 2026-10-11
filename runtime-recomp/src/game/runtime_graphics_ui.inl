@@ -633,9 +633,10 @@ void DrawGraphicsPage(float available_width, bool live) {
         SettingsCardHead("Ray tracing & water", "Optional water presentation. Original preserves the game's water.", inner);
         ImGui::BeginDisabled(!enh::modern_options_visible(enh::presentation_profile()));
         int quality=int(water::requested_quality.load());
-        if(SettingsDropdown("water-quality", "Water quality", &quality,
-            {"Original", "Enhanced", "High"}, inner)) {
-            water::set_quality(quality); SaveSettings();
+        int preset=water::preset();
+        if(SettingsDropdown("water-quality", "Water preset", &preset,
+            {"Original", "Performance", "Balanced", "High", "Custom"}, inner)) {
+            water::apply_preset(preset);quality=int(water::requested_quality.load());SaveSettings();
         }
         PaddockGap(16.0F);
         int reflections=int(water::requested_reflection.load());
@@ -654,21 +655,91 @@ void DrawGraphicsPage(float available_width, bool live) {
         if(SettingsCheck("##water-spray", "Water spray", &spray, inner)) {
             water::spray_enabled.store(spray); SaveSettings();
         }
+        PaddockGap(16.0F);
+        static bool water_advanced=false;
+        if(SettingsDisclosure("##water-advanced", "Advanced water settings", water_advanced, inner)) {
+            const auto detail=[&](const char* id,const char* label,std::atomic<int>& setting) {
+                int value=setting.load()+1;
+                if(SettingsDropdown(id,label,&value,{"Preset default", "Low", "Medium", "High"},inner)) {
+                    setting.store(value-1);SaveSettings();
+                }
+                PaddockGap(12.0F);
+            };
+            detail("water-reflection-detail","Reflection detail",water::reflection_detail);
+            detail("water-wake-detail","Wake quality",water::wake_detail);
+            detail("water-spray-detail","Spray detail",water::spray_detail);
+            const auto percent=[&](const char* id,const char* label,std::atomic<int>& setting,int low,int high,const char* help) {
+                int value=setting.load();
+                if(SettingsRange(id,label,&value,low,high,inner,
+                    [](int v){return SettingsRangeValue{std::to_string(v),"%"};},help)) {
+                    setting.store(value);SaveSettings();
+                }
+                PaddockGap(12.0F);
+            };
+            percent("##water-ray-range","Hardware reflection distance",water::reflection_distance,25,200,
+                "100% preserves the existing trace distance. Farther rays can cost more GPU time.");
+            percent("##water-reflect-strength","Reflection strength",water::reflection_strength,0,200,
+                "Changes the look. Zero skips reflection tracing; other values do not reduce game resolution.");
+            percent("##water-roughness","Surface roughness",water::roughness_scale,25,200,
+                "100% uses each track's authored water profile. Higher values soften highlights.");
+            percent("##water-ripple-strength","Fine ripple strength",water::ripple_scale,0,200,
+                "Visual ripples only. Waves, collisions and buoyancy are unchanged.");
+            percent("##water-foam-strength","Foam intensity",water::foam_scale,0,200,
+                "Adjusts surface and shoreline foam without changing the race simulation.");
+            percent("##water-wake-strength","Wake visibility",water::wake_strength,0,200,
+                "Adjusts the visible racer trails independently of wake simulation quality.");
+            percent("##water-clarity","Water clarity",water::clarity_scale,25,200,
+                "100% preserves each track's underwater visibility. Higher values show deeper receivers.");
+            percent("##water-refraction","Refraction strength",water::refraction_scale,0,200,
+                "Adjusts underwater image distortion. This does not affect physics.");
+            percent("##water-waterfall","Waterfall flowing detail",water::waterfall_detail,0,200,
+                "Zero keeps the original artwork. 100% uses continuous flowing water; higher values brighten the film. Authored transparency is retained.");
+            bool track_colours=water::use_track_colours.load();
+            if(SettingsCheck("##water-track-colours","Use track colours",&track_colours,inner)) {
+                water::use_track_colours.store(track_colours);SaveSettings();
+            }
+            PaddockGap(12.0F);
+            if(!track_colours) {
+                percent("##water-red","Water tint: red",water::tint_red,0,200,"100% keeps the original red component.");
+                percent("##water-green","Water tint: green",water::tint_green,0,200,"100% keeps the original green component.");
+                percent("##water-blue","Water tint: blue",water::tint_blue,0,200,"100% keeps the original blue component.");
+            }
+            if(SettingsButton("Reset water appearance")) {water::reset_appearance();SaveSettings();}
+            PaddockGap(8.0F);
+            if(SettingsButton("Restore existing water quality defaults")) {water::reset_tuning();SaveSettings();}
+            PaddockGap(12.0F);
+            bool timings=water::timing_enabled.load();
+            if(SettingsCheck("##water-timings","Log water GPU timings",&timings,inner,
+                "Takes effect on the next game launch. Records bounded timing summaries without an extra GPU drain.")) {
+                water::timing_enabled.store(timings);SaveSettings();
+            }
+            PaddockGap(12.0F);
+            SettingsHelp("Water presets never change the game's resolution, MSAA, FPS target or reflection method. "
+                "Quality changes are applied at a safe renderer workload boundary; appearance stays local in online play.",inner);
+        }
         ImGui::EndDisabled();
         ImGui::EndDisabled();
         PaddockGap(16.0F);
+        const int active=water::active_reflection.load();
+        if(quality!=0 && active>=0 && active!=reflections)
+            SettingsHelp(active==0 ? "Last rendered water used sky reflections." :
+                active==1 ? "Last rendered water used screen-space reflections (hardware fallback)." :
+                "Last rendered water used hardware reflections.",inner);
+        if(water::scratch_fallbacks.load())
+            SettingsHelp("This renderer encountered a bounded water allocation fallback. See runtime.log for dimensions and the reason.",inner);
         if(reflections==int(water::Reflection::Hardware)) {
             const int capability=water::hardware_ray_capability.load();
             SettingsHelp(capability<0 ? "GPU capability is checked when you start the game." :
                 capability==0 ? "This renderer cannot use hardware ray queries. Screen-space reflections will be used." :
-                "GPU ray queries are available. Scenes exceeding the safety budget use screen-space reflections.", inner);
+                "GPU ray queries are available. Hardware-scene failures retain screen-space reflections; allocation fallbacks are recorded in runtime.log.", inner);
             PaddockGap(8.0F);
         }
         SettingsHelp("Screen-space reflections use visible scene depth, not hardware ray tracing. "
             "Hardware ray tracing needs a compatible GPU and driver; otherwise screen-space reflections are used. "
             "The experimental hardware path traces opaque level geometry; moving racers use screen-space reflections. "
             "Off-screen surfaces currently use their vertex colours, not their texture-pack detail. "
-            "Waterfalls and fountains preserve their authored appearance with added flowing detail. "
+            "Waterfalls and fountains use a continuous flowing-water material while retaining authored transparency and fog. "
+            "Hot Top Volcano's lava uses an emissive molten material with the same quality and reflection settings, without water wakes or refraction. "
             "These settings do not change collisions, buoyancy or online simulation.", inner);
     });
 #endif

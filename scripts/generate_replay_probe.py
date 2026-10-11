@@ -415,12 +415,16 @@ INPUT_NATIVE_HASH = {
     "runtime-recomp/src/game/runtime_magic_codes.cpp": "e7d661472bb041991b3e8cfc6373c1d647b0fa300281d21448ed74efdb01021f",
     # Frozen online course sizing/ID routing bypasses the offline catalogue.
     # The no-session path remains the prior offline/vanilla implementation.
-    "runtime-recomp/src/game/custom_tracks_hooks.cpp": "d6f79bfd1fb03d735f7e85375c43ba132b2138ecd11b933027259324caafa704",
+    # Oct 11: aligned, RAM-bounded scans/copies; frozen online tables still
+    # bypass offline expansion before reaching the changed implementation.
+    "runtime-recomp/src/game/custom_tracks_hooks.cpp": "86314b49a57dd14c141c367d92d2a6b6d12b2fcf87aa60847672efd7935da46d",
     # Online mod owner: same no-session returns, explicit TLS namespace and
     # closed private guest callback table; no live/default dispatch fallback.
     # Oct 6: bounded sparse model-slot scan and pre-dereference allocation
     # fences. Pure guest-memory checks only; no live I/O or pointer repair.
-    "runtime-recomp/src/game/runtime_legacy_mods.cpp": "186fb8756657a6a0d53fc3b018a49651266230fa9e653e9fc51874e7ceaba2d7",
+    # Oct 11: shared artwork sections 2/4/12 use the immutable boot bank;
+    # their 3/5/13 tables are already extended, never appended twice.
+    "runtime-recomp/src/game/runtime_legacy_mods.cpp": "c6552ed442783a99bb266286a9126413400f65a56f8b4db0300b0e0798aeeaf1",
     # Oct 9: guest-owned deferred queue/reserve; no shortened borrower lifetime.
     "runtime-recomp/src/game/mods/legacy_memory_safety.h": "17b293ec170dd7d8d25377a01a73b9c5cdfca9636b2c959d06930c178d02cd85",
     "runtime-recomp/src/game/mods/legacy_model_safety.hpp": "64520d21f6721b9caf40ee51f88548266ffaf5bc8821a7c17e6bdc72fa244bb7",
@@ -455,8 +459,10 @@ INPUT_NATIVE_HASH = {
 # is checkpointed; water diagnostics retain their exact disabled branch.
 FULL_SCENE_NATIVE_HASH = {
     "runtime-recomp/src/game/finish_presentation_policy.hpp": "0368b5447ae477d1debd7d32829a989a690a9e809fd95223a391a8574a9aed6a",
-    "runtime-recomp/src/game/widescreen_policy.hpp": "b926703163fa542f8fbd7af1aee297595c1a58a74c61a82d457c8fbae4ccbb62",
-    "runtime-recomp/src/game/runtime_stubs.cpp": "7ab0b1f43932ea68be360212b2082930b0daf1b79add714412b8e341307b988a",
+    # PR49 ultrawide sky: presentation-only column scaling; no new gameplay,
+    # I/O, ownership or checkpoint fields.
+    "runtime-recomp/src/game/widescreen_policy.hpp": "0d6080326b9794cf468e5c54f2b93bfbb01f43f39b6c6eaf04cbd9f1e53df0dd",
+    "runtime-recomp/src/game/runtime_stubs.cpp": "b161d8864437403855a5fbe744ee10250eef75418bad94fb05bce7f55514a94d",
     "runtime-recomp/src/game/audio_event_queue.h": "efb6c0cdadbc5a1fbab30ee7ff524f558ea54523a43a3424727bba4a997535c2",
     "runtime-recomp/src/game/audio_event_queue_state.h": "ca400d843e9018f5d69c2aa75ec40889a303574c7789a7297185369dcde79b18",
     "runtime-recomp/src/game/intro_tail_policy.hpp": "5f5362ff5de40f5f9aa3a653c6e3849b8f27997b9db4592abd833022b9d47a36",
@@ -480,11 +486,21 @@ def full_scene_native_audit():
             raise ValueError(f"Unreviewed full-scene native participant: {name}")
 
 
+# Exact alternate source resulting from integrating origin/main d089593.
+# Its Track Lab vehicle-selection loan is explicitly offline-only and revoked
+# before gameplay/save writes. Online asset routing retains the same fixes.
+# Accept only these two reviewed images, not arbitrary edits after a merge.
+REVIEWED_MAIN_MERGE_HASH = {
+    "runtime-recomp/src/game/runtime_legacy_mods.cpp": "bd7f4834046ce3f5b310d3d560974dabcba1b0758424ff06139ec8db9b0de650",
+}
+
+
 def input_native_audit():
     """Guard the reviewed private ownership boundary against native drift."""
     root = Path(__file__).resolve().parents[1]
     for name, expected in INPUT_NATIVE_HASH.items():
-        if hashlib.sha256((root/name).read_bytes()).hexdigest() != expected:
+        actual = hashlib.sha256((root/name).read_bytes()).hexdigest()
+        if actual not in (expected, REVIEWED_MAIN_MERGE_HASH.get(name)):
             raise ValueError(f"Unreviewed native input/Pak/rumble boundary: {name}")
 
 
@@ -822,6 +838,12 @@ def native_stub(name, signature, full_scenes=False):
     }
     if name in audited_assets and signature != audited_assets[name]:
         raise ValueError(f"Unreviewed owned-asset ABI: {name}")
+    # The Play checkbox is offline-only. Private checkpoint replay must not
+    # consult launcher state, even if a stale request exists during handoff.
+    if name in ("dkr_skip_intro_logos", "dkr_skip_intro_title"):
+        if signature != ("void", ["uint8_t*", "recomp_context*"]):
+            raise ValueError("Unreviewed startup-skip ABI")
+        return f'void {name}({params}) {{ /* Offline preference: disabled in owned replay. */ }}'
     # water_profile.cpp: these diagnostic-only hooks return before reading RAM
     # or changing any state when DKR_WATER_PROFILE is disabled. The private
     # services explicitly keep it disabled; no generic scalar-import bypass.

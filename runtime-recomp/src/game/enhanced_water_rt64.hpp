@@ -22,6 +22,7 @@ inline const Registry& task_registry(RT64::State& state,std::uint32_t scene) {
     struct Cache {
         Registry registry;
         std::array<std::uint32_t,6> key{};
+        TextureScrolls scrolls{};
         rom::Revision revision=rom::Revision::Unsupported;
         unsigned trace_lines=0;
     };
@@ -29,14 +30,17 @@ inline const Registry& task_registry(RT64::State& state,std::uint32_t scene) {
     Memory m(std::span<const std::uint8_t>(state.RDRAM,0x800000));
     const auto model=m.u32(level_model_symbol());
     const bool rays=requested_reflection.load(std::memory_order_relaxed)==Reflection::Hardware &&
+        reflection_strength.load(std::memory_order_relaxed)>0 &&
         hardware_ray_capability.load(std::memory_order_relaxed)==1;
     const std::array<std::uint32_t,6> key{scene,model,m.u32(revision_addresses::TextureCache),
         m.u32(revision_addresses::NumberOfLoadedTextures),m.u32(wave_batch_symbol()),rays ? 1U : 0U};
     const auto revision=revision_addresses::selected_revision();
-    if(cache.key!=key || cache.revision!=revision) {
-        cache.key=key;cache.revision=revision;
+    const auto scrolls=texture_scrolls(m,m.u32(revision_addresses::ObjectList),m.u32(revision_addresses::ObjectCount));
+    if(cache.key!=key || cache.revision!=revision || cache.scrolls!=scrolls) {
+        const bool preserve_flow_phase=cache.key[0]==scene && cache.key[1]==model && cache.revision==revision;
+        cache.key=key;cache.revision=revision;cache.scrolls=scrolls;
         cache.registry.rebuild(m,key[1],key[2],key[3],key[4],
-            legacy::renderer_water_for_level(static_cast<std::int32_t>(m.u32(revision_addresses::CurrentMapId))),rays);
+            legacy::renderer_water_for_level(static_cast<std::int32_t>(m.u32(revision_addresses::CurrentMapId))),rays,preserve_flow_phase,scrolls);
         if(key[4] && cache.trace_lines<64) {
             ++cache.trace_lines;
             const auto symbols=wave_symbols(revision==rom::Revision::UsV80);
@@ -96,28 +100,45 @@ inline void apply_material(RT64::State& state, const Registry& registry,
     if(dynamic) surface=dynamic;
     if(!surface && camera_valid) {
         const auto kind=registry.vertical_image_kind(state.rdp->texture.address);
-        if(kind!=Kind::None)surface=Surface{0,0,0,kind,0};
+        if(kind!=Kind::None)surface=Surface{0,0,0,kind,0,registry.vertical_scroll_period(state.rdp->texture.address)};
     }
     // Vertical water preserves its authored combiner and opacity, with a
     // separate flowing-water shader branch. It never uses horizontal optics.
     if(q!=Quality::Original && camera_valid && surface) {
         const auto map=static_cast<std::int32_t>(m.u32(revision_addresses::CurrentMapId));
+        const bool lava=surface->kind==Kind::Lava;
         const auto profile=registry.metadata() && registry.metadata()->profile
-            ? *registry.metadata()->profile : stock_profile(map);
+            ? *registry.metadata()->profile : lava ? lava_profile() : stock_profile(map);
         material.deepColor={profile.deep.x,profile.deep.y,profile.deep.z,profile.absorption};
         material.shallowColor={profile.shallow.x,profile.shallow.y,profile.shallow.z,profile.roughness};
         material.sunDirection={profile.sun.x,profile.sun.y,profile.sun.z,1.0F};
         material.sunColor={1.0F,0.9F,0.7F,0.5F};
         material.skyColor={profile.sky.x,profile.sky.y,profile.sky.z,0.4F};
+        const auto scale=[](const std::atomic<int>& setting){return float(setting.load(std::memory_order_relaxed))*0.01F;};
+        material.shallowColor.w=std::clamp(profile.roughness*scale(roughness_scale),0.02F,1.0F);
+        if(!use_track_colours.load(std::memory_order_relaxed)) {
+            material.deepColor.x*=scale(tint_red);material.shallowColor.x*=scale(tint_red);
+            material.deepColor.y*=scale(tint_green);material.shallowColor.y*=scale(tint_green);
+            material.deepColor.z*=scale(tint_blue);material.shallowColor.z*=scale(tint_blue);
+        }
         const auto& crafts=task_crafts(m,registry,scene,time);
         material.animation={crafts.previous_time,time,profile.ripple,profile.foam};
-        // Reference quality 1 = sky reflections, 2 = screen-space reflections.
+        material.animation.z*=scale(ripple_scale);material.animation.w*=scale(foam_scale);
         const auto reflection=requested_reflection.load(std::memory_order_relaxed);
+        const int automatic=q==Quality::High && reflection!=Reflection::Sky ? 2 : 1;
+        const auto detail=[&](const std::atomic<int>& setting){const int v=setting.load();return v<0 ? automatic : v;};
+        material.performance={float(detail(reflection_detail)==0 ? 12 : detail(reflection_detail)==1 ? 24 : 36),
+            float(detail(wake_detail)==0 ? 128 : detail(wake_detail)==1 ? 256 : 512),
+            6000.0F*scale(reflection_distance),float(detail(spray_detail))};
+        material.appearance={scale(reflection_strength),scale(refraction_scale),scale(wake_strength),scale(waterfall_detail)};
+        // Reference quality 1 = sky reflections, 2 = screen-space reflections.
         material.identity={reflection==Reflection::Sky ? 1.0F : q==Quality::High ? 3.0F : 2.0F,0.0F,float(map),float(scene&0xFFFFFFU)};
         material.surface={surface->height,0.8F,0.2F,0.0F};
         const bool vertical=surface->kind==Kind::Waterfall || surface->kind==Kind::Fountain;
-        material.optics={profile.visibility,0.0F,0.35F,vertical ? 1.0F : 0.0F};
-        material.effects={spray_enabled.load(std::memory_order_relaxed) ? 1.0F : 0.0F,
+        material.optics={profile.visibility,vertical ? surface->scroll_period[0] : 0.0F,
+            vertical ? surface->scroll_period[1] : 0.35F,vertical ? 1.0F : 0.0F};
+        material.optics.x*=scale(clarity_scale);
+        material.effects={!lava && spray_enabled.load(std::memory_order_relaxed) ? 1.0F : 0.0F,
             float(camera_address),float(surface->kind),reflection==Reflection::Hardware && !vertical ? 1.0F : 0.0F};
         material.cameraViewProjection=cameraVP;
         // Water batches in the same task share a camera. Cache only exact
@@ -141,7 +162,7 @@ inline void apply_material(RT64::State& state, const Registry& registry,
         for(unsigned i=0;i<8;++i) {
             material.craftPrevious[i]=crafts.previous[i];
             material.craftCurrent[i]=crafts.current[i];
-            if(vertical || !wakes_enabled.load(std::memory_order_relaxed)) {
+            if(vertical || lava || !wakes_enabled.load(std::memory_order_relaxed)) {
                 material.craftPrevious[i].w=-1;
                 material.craftCurrent[i].w=-1;
             }

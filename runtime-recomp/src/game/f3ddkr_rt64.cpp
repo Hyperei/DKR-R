@@ -3037,6 +3037,15 @@ void dkr::runtime::F3DDKRRT64Bridge::Triangle(RT64::State* state,
         for (std::size_t corner = 0; corner < vertices.size(); ++corner) {
             skipped += water::set_texcoord(rsp, draw, vertices[corner], s[corner], t[corner], skip_equal_uv);
         }
+#if defined(DKR_ENHANCED_WATER)
+        if(data.water_registry && state->waterMaterial.identity.x>0 && state->waterMaterial.optics.w>0.5F) {
+            const auto* flow=data.water_registry->flow_triangle(address);
+            for(unsigned corner=0;corner<3;++corner) {
+                const auto at=flow ? flow->corners[corner] : std::array<float,4>{};
+                draw.waterfallFlow[rsp.indices[vertices[corner]]]={at[0],at[1],at[2],at[3]};
+            }
+        }
+#endif
         rsp.drawIndexedTri(vertices[0], vertices[1], vertices[2]);
     }
 #if defined(DKR_ENHANCED_WATER)

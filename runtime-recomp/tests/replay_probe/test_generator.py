@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 import hashlib
 import os
 
@@ -78,6 +79,24 @@ class InstrumentationTests(unittest.TestCase):
                      "dkr_netplay_character_select_lock", "dkr_character_select_animation_fraction"):
             self.assertIn("dkr_probe_native",generator.native_stub(name,('void',['uint8_t*','recomp_context*']),True))
             with self.assertRaises(ValueError):generator.native_stub(name,('int',['uint8_t*','recomp_context*']),True)
+
+    def test_offline_intro_skip_never_enters_owned_replay(self):
+        for name in ("dkr_skip_intro_logos", "dkr_skip_intro_title"):
+            emitted = generator.native_stub(name, ('void', ['uint8_t*', 'recomp_context*']), True)
+            self.assertIn("disabled in owned replay", emitted)
+            self.assertNotIn("dkr_probe_native", emitted)
+            with self.assertRaises(ValueError):
+                generator.native_stub(name, ('int', ['uint8_t*', 'recomp_context*']), True)
+
+    def test_merge_audit_accepts_only_exact_reviewed_native_images(self):
+        root = Path(__file__).resolve().parents[3]
+        name = "runtime-recomp/src/game/runtime_legacy_mods.cpp"
+        actual = hashlib.sha256((root/name).read_bytes()).hexdigest()
+        with patch.dict(generator.INPUT_NATIVE_HASH, {name: "different-primary"}, clear=True):
+            with patch.dict(generator.REVIEWED_MAIN_MERGE_HASH, {name: actual}, clear=True):
+                generator.input_native_audit()
+            with patch.dict(generator.REVIEWED_MAIN_MERGE_HASH, {name: "unreviewed"}, clear=True):
+                with self.assertRaises(ValueError): generator.input_native_audit()
 
     def reviewed_bodies(self, revision):
         root=Path("G:/DiddykongWorkFolder" if os.name=="nt" else "/mnt/g/DiddykongWorkFolder")
@@ -494,7 +513,7 @@ class InstrumentationTests(unittest.TestCase):
     def test_audited_native_source_contracts_do_not_drift(self):
         root=Path(__file__).resolve().parents[3]
         pins={
-            "runtime-recomp/src/game/runtime_stubs.cpp":"7ab0b1f43932ea68be360212b2082930b0daf1b79add714412b8e341307b988a",
+            "runtime-recomp/src/game/runtime_stubs.cpp":"b161d8864437403855a5fbe744ee10250eef75418bad94fb05bce7f55514a94d",
             "runtime-recomp/src/game/audio_event_queue.h":"efb6c0cdadbc5a1fbab30ee7ff524f558ea54523a43a3424727bba4a997535c2",
             "runtime-recomp/src/game/audio_event_queue_state.h":"ca400d843e9018f5d69c2aa75ec40889a303574c7789a7297185369dcde79b18",
             "runtime-recomp/src/game/runtime_enhancements.cpp":"7a868375b1a8e4e0f3e5e1c60036795fa2630e7d4b3cd6e954308495743918de",
@@ -506,7 +525,7 @@ class InstrumentationTests(unittest.TestCase):
             # The local Modern camera's look-back adds a one-shot camera epoch
             # cut here; it is never set in owned or replayed frames.
             "runtime-recomp/src/game/presentation_identity.cpp":"bcfa277012ccca66123351a50a97ca77c3123f3011a97cd4d02b483bcd77e29a",
-            "runtime-recomp/src/game/widescreen_policy.hpp":"b926703163fa542f8fbd7af1aee297595c1a58a74c61a82d457c8fbae4ccbb62",
+            "runtime-recomp/src/game/widescreen_policy.hpp":"0d6080326b9794cf468e5c54f2b93bfbb01f43f39b6c6eaf04cbd9f1e53df0dd",
             "extern/dkr-decomp/src/save_data.c":"898df1a185c17e1d6ba11302fc5c140a1d7bd10ff3d8b86ff937c834bb13a607",
             "extern/dkr-decomp/src/thread3_main.c":"437434837706ee88e91578ce9e1aa2cd960e65e1e3a6f1aa47ae3b6289892d8e",
             "extern/dkr-decomp/src/audiomgr.c":"ba7b39838f59ede6eceb7406ce6f92518175458398bddd52cdef55b62a2d8055",

@@ -781,6 +781,7 @@ if(DKR_RUNTIME_BUILD_GENERATED)
         src/game/runtime_save_routing.cpp
         src/game/runtime_portable.cpp
         src/game/runtime_stubs.cpp
+        src/game/startup_flow.cpp
         src/game/runtime_support.cpp
         src/game/runtime_telemetry.cpp
         src/game/startup_performance.cpp
@@ -1332,6 +1333,10 @@ if(BUILD_TESTING)
         add_test(NAME DKRBuildTooling
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/tests/build_tooling_tests.py")
     endif()
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME DKRStartupFlowPipeline
+            COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_LIST_DIR}/tests/test_startup_flow_pipeline.py")
+    endif()
     if(APPLE)
         # Compiled directly so the policy-only CI configuration, which has no
         # DKRLegacyModProcess target, still runs the sandbox regression test.
@@ -1796,11 +1801,16 @@ if(BUILD_TESTING)
     if(TARGET DKRLegacyGuestIO)
         add_executable(DKRLegacyCacheCapacityTests tests/legacy_cache_capacity_tests.cpp)
         target_link_libraries(DKRLegacyCacheCapacityTests PRIVATE DKRLegacyModCore)
+        add_executable(DKRLegacyDkrmapArtworkTests tests/legacy_dkrmap_artwork_tests.cpp src/game/dkr_save_codec.cpp)
+        target_link_libraries(DKRLegacyDkrmapArtworkTests PRIVATE DKRLegacyModLaunch)
+        add_test(NAME DKRLegacyDkrmapArtwork COMMAND DKRLegacyDkrmapArtworkTests)
         add_executable(DKRLegacyTrackMenuAdapterTests tests/legacy_track_menu_adapter_tests.cpp)
         target_link_libraries(DKRLegacyTrackMenuAdapterTests PRIVATE DKRLegacyGuestIO DKRNetplayCore)
         target_compile_definitions(DKRLegacyTrackMenuAdapterTests PRIVATE DKR_TRACK_MENU_ROLLBACK_TEST=1)
         if(WIN32 AND TARGET rt64)
             target_link_directories(DKRLegacyCacheCapacityTests PRIVATE
+                "${DKR_RT64_SOURCE}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/lib/x64")
+            target_link_directories(DKRLegacyDkrmapArtworkTests PRIVATE
                 "${DKR_RT64_SOURCE}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/lib/x64")
             target_link_directories(DKRLegacyTrackMenuAdapterTests PRIVATE
                 "${DKR_RT64_SOURCE}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/lib/x64")
@@ -2488,6 +2498,23 @@ if(BUILD_TESTING)
           "${CMAKE_CURRENT_LIST_DIR}/src/game"
       )
     add_test(NAME DKRIntroTailPolicy COMMAND DKRIntroTailPolicyTests)
+
+    add_executable(DKRStartupFlowTests tests/startup_flow_tests.cpp)
+    target_include_directories(DKRStartupFlowTests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/src/game")
+    add_test(NAME DKRStartupFlow COMMAND DKRStartupFlowTests)
+    add_executable(DKRStartupFlowGuestTests tests/startup_flow_guest_tests.cpp src/game/startup_flow.cpp)
+    target_include_directories(DKRStartupFlowGuestTests PRIVATE
+        "${CMAKE_CURRENT_LIST_DIR}/src/game" "${DKR_MODERN_RUNTIME_SOURCE}/N64Recomp/include")
+    add_test(NAME DKRStartupFlowGuest COMMAND DKRStartupFlowGuestTests)
+    # Explicit for the current tree, also compatible with main's centralized
+    # assertion policy (which covers these new targets automatically).
+    foreach(startup_test IN ITEMS DKRStartupFlowTests DKRStartupFlowGuestTests)
+        if(MSVC)
+            target_compile_options(${startup_test} PRIVATE /UNDEBUG)
+        else()
+            target_compile_options(${startup_test} PRIVATE -UNDEBUG)
+        endif()
+    endforeach()
 
     add_executable(DKRSchedulerEventPolicyTests
         tests/scheduler_event_policy_tests.cpp

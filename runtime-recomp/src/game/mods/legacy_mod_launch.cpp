@@ -16,28 +16,31 @@ void regular(const std::filesystem::path& path) {
         throw Error("The Adventure save must be a regular file, not a link.");
 }
 }
-std::vector<Bytes> publish_dkrmap_artwork(std::shared_ptr<const AssetBank> boot) {
+AssetBank::Overrides publish_dkrmap_artwork(std::shared_ptr<const AssetBank> boot) {
     if(!boot)throw Error("dkrmap artwork requires a verified boot bank.");
-    const auto count=boot->record_count(2);
-    const auto directory=AssetDirectory::build(std::move(boot));
-    const auto table_bytes=directory->read(3,0,directory->section_size(3));
-    std::vector<std::int32_t> table;
-    for(std::size_t at=0;at+4<=table_bytes.size();at+=4) {
-        table.push_back(static_cast<std::int32_t>(be32(table_bytes,at)));
-        if(table.back()==-1)break;
-    }
-    if(table.size()<2 || table.back()!=-1 || table.size()-2!=count)
-        throw Error("Boot artwork table does not describe its records.");
+    const auto directory=AssetDirectory::build(boot);
     namespace authored=dkr::runtime::custom_tracks;
-    // Section-3 loads of a mounted boot bank never reach the dkrmap table
-    // hook, so this is the one build of the texture table for the session.
-    const auto extended=authored::build_extended_table(authored::Section::Textures3D,table.data());
-    std::vector<Bytes> artwork;
-    for(std::size_t id=count;id+2<extended.size();++id) {
-        const auto size=extended[id+1]-extended[id];
-        const auto bytes=authored::payload_for(authored::Section::Textures3D,extended[id],size);
-        if(!bytes || size<=0)throw Error("Shared track artwork lost its published payload.");
-        artwork.emplace_back(bytes,bytes+size);
+    AssetBank::Overrides artwork;
+    for(const auto section:{authored::Section::Textures3D,authored::Section::Textures2D,authored::Section::Sprites}) {
+        const unsigned data=section==authored::Section::Textures3D?2:section==authored::Section::Textures2D?4:12;
+        const auto count=boot->record_count(data);
+        const auto table_bytes=directory->read(data+1,0,directory->section_size(data+1));
+        std::vector<std::int32_t> table;
+        for(std::size_t at=0;at+4<=table_bytes.size();at+=4) {
+            table.push_back(static_cast<std::int32_t>(be32(table_bytes,at)));
+            if(table.back()==-1)break;
+        }
+        if(table.size()<2 || table.back()!=-1 || table.size()-2!=count)
+            throw Error("Boot artwork table does not describe its records.");
+        // Exact lengths also cover large character/portrait namespaces; never
+        // truncate them at the old 4096-word retail scan limit.
+        const auto extended=authored::build_extended_table(section,table.data(),table.size());
+        for(std::size_t id=count;id+2<extended.size();++id) {
+            const auto size=extended[id+1]-extended[id];
+            const auto bytes=authored::payload_for(section,extended[id],size);
+            if(!bytes || size<=0)throw Error("Shared track artwork lost its published payload.");
+            artwork.emplace(AssetKey{data,static_cast<unsigned>(id)},Bytes(bytes,bytes+size));
+        }
     }
     return artwork;
 }
@@ -64,8 +67,9 @@ std::shared_ptr<const PreparedModLaunch> prepare_mod_launch(
     report("Preparing the isolated game asset session");
     // Character IDs are allocated first. Publish dkrmap IDs against that
     // namespace, then retain the same immutable artwork in every scene bank.
-    auto shared_textures=publish_dkrmap_artwork(names?names->apply(stock):stock);
-    auto session=std::make_shared<RuntimeSession>(stock,names,std::move(shared_textures));
+    auto artwork=std::make_shared<const AssetBank::Overrides>(publish_dkrmap_artwork(names?names->apply(stock):stock));
+    auto session=std::make_shared<RuntimeSession>(stock,names,std::vector<Bytes>{},
+        [artwork](std::shared_ptr<const AssetBank> bank){return AssetBank::append_artwork(std::move(bank),*artwork);});
     std::vector<std::string> identities;
     for(auto& track:tracks) {
         report("Preparing custom Track Select previews");

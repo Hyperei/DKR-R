@@ -59,7 +59,12 @@ qualified. The [platform guide](docs/PLATFORMS.md) explains the current coverage
    dropdown lets you switch between installed revisions.
 4. Choose **Accurate** for the original 4:3/30 FPS presentation, or **Modern**
    for widescreen, higher presentation rates and the additional settings.
-5. Select **START DIDDY KONG RACING - RECOMPILED**.
+5. Tick **Skip intro** in Play if you want to go straight to the normal Start
+   Game title screen when playing offline, then select **PLAY OFFLINE**.
+
+Skip intro is remembered between launches and is off by default. It does not
+change online startup or skip file/character selection. Track Lab's direct-track
+launch still takes priority when it is enabled.
 
 `.z64`, `.v64` and `.n64` byte orders are detected from the file itself.
 Both supported revisions run inside the same application; there's no separate

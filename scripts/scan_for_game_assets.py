@@ -36,7 +36,9 @@ def main() -> int:
     failures: list[str] = []
     inspected = 0
     for path in ROOT.rglob("*"):
-        if not path.is_file() or should_skip(path):
+        # Excluded build trees may contain WSL-only links which Windows cannot
+        # stat. They are not source candidates: exclude them before any I/O.
+        if should_skip(path) or not path.is_file():
             continue
         inspected += 1
         relative = path.relative_to(ROOT).as_posix()

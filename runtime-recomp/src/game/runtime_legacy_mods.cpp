@@ -766,9 +766,10 @@ extern "C" int dkr_legacy_asset_api(std::uint8_t* rdram,recomp_context* ctx,unsi
     try {
         auto lease=active->acquire();const auto mount=lease.route();if(!mount)return 0;
         const auto section=static_cast<std::uint32_t>(ctx->r4);
-        // Section 2 is already part of the shared boot-owned texture bank;
-        // its offsets may change with the active legacy course's artwork.
-        if(!legacy::frozen_courses() && operation==static_cast<unsigned>(dkr::mods::AssetOperation::PartialLoad) && section!=2 &&
+        // All texture/sprite artwork is boot-owned. A legacy course can change
+        // earlier record sizes, so only its bank may resolve these offsets.
+        const bool shared_artwork=section==2 || section==4 || section==12;
+        if(!legacy::frozen_courses() && operation==static_cast<unsigned>(dkr::mods::AssetOperation::PartialLoad) && !shared_artwork &&
            dkr_custom_tracks_asset_override(rdram,ctx))return 1;
         const auto payload=legacy::guest_payload();
         if(!payload)throw dkr::mods::Error("The custom asset loader has no selected revision.");
@@ -776,7 +777,7 @@ extern "C" int dkr_legacy_asset_api(std::uint8_t* rdram,recomp_context* ctx,unsi
             {rdram,legacy::guest_memory_size()},*ctx,{payload->asset_allocate,payload->asset_release,payload->asset_copy});
         if(handled && operation==static_cast<unsigned>(dkr::mods::AssetOperation::TableLoad)) {
             if(legacy::frozen_courses()) {if(section==22)legacy::course_budget(rdram,true);}
-            else if(section!=3)dkr_custom_tracks_extend_table(rdram,ctx,section);
+            else if(section!=3 && section!=5 && section!=13)dkr_custom_tracks_extend_table(rdram,ctx,section);
         }
         return handled;
     } catch(const ultramodern::thread_terminated&){throw;}

@@ -56,6 +56,8 @@ def main() -> int:
     policy = compose_behaviour(policy, arguments.elf, revision)
     from audio_queue_policy import compose_audio_queue
     policy = compose_audio_queue(policy, arguments.elf, revision)
+    from startup_flow_policy import compose_startup_flow
+    policy = compose_startup_flow(policy, arguments.elf, revision)
     if arguments.water_profile:
         from water_profile_policy import compose_water_profile
         policy = compose_water_profile(policy, arguments.elf)

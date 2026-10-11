@@ -4,6 +4,12 @@ This is the player-facing release history. Current instructions live in the
 [documentation index](docs/README.md); dated investigations retain the findings
 and limitations of the build they describe.
 
+## Unreleased
+
+- Play now has a **Skip intro** tickbox! Go straight to the normal Start Game
+  title screen when launching offline. The choice is remembered; online startup
+  and Track Lab's direct-track launch stay as they were.
+
 ## 1.0.5 Public Build — 10 October 2026
 
 There's been a lot added since the earlier releases! This update brings the

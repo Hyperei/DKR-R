@@ -16,6 +16,7 @@
 #include "countdown_tone_policy.hpp"
 #include "custom_tracks.hpp"
 #include "launcher_render_policy.hpp"
+#include "startup_flow.hpp"
 #include "launcher_frame_policy.hpp"
 #include "launcher_performance.hpp"
 #include "launcher_solid_geometry.hpp"
@@ -411,6 +412,7 @@ using ultramodern::renderer::RefreshRate;
 using ultramodern::renderer::WindowMode;
 
 std::filesystem::path g_config_directory;
+bool g_skip_intro = false;
 dkr::mods::ModLibrary g_legacy_imports;
 dkr::mods::ModLaunch g_mod_launch;
 std::unique_ptr<dkr::runtime::netplay::DirectModSyncLink> g_online_mod_link;
@@ -1589,6 +1591,7 @@ void SaveSettings() {
         }
         output << "settings_version="
                << dkr::runtime::enhancements::kCurrentSettingsVersion << '\n';
+        output << "skip_intro=" << (g_skip_intro ? 1 : 0) << '\n';
         output << "presentation_profile="
                << static_cast<int>(dkr::runtime::enhancements::presentation_profile()) << '\n';
         output << "window_mode=" << static_cast<int>(config.wm_option) << '\n';
@@ -1720,6 +1723,10 @@ void SaveSettings() {
         output << "enhanced_water_reflections=" << int(dkr::runtime::water::enhanced::requested_reflection.load()) << '\n';
         output << "enhanced_water_wakes=" << int(dkr::runtime::water::enhanced::wakes_enabled.load()) << '\n';
         output << "enhanced_water_spray=" << int(dkr::runtime::water::enhanced::spray_enabled.load()) << '\n';
+        for(const auto& setting:dkr::runtime::water::enhanced::tuning_settings)
+            output << setting.key << '=' << setting.value->load() << '\n';
+        output << "enhanced_water_track_colours=" << int(dkr::runtime::water::enhanced::use_track_colours.load()) << '\n';
+        output << "enhanced_water_timings=" << int(dkr::runtime::water::enhanced::timing_enabled.load()) << '\n';
         output << "modern_extended_culling="
                << (dkr::runtime::enhancements::extended_culling_requested() ? 1 : 0)
                << '\n';
@@ -1982,6 +1989,7 @@ bool LoadLegacyBindingSetting(const std::string& key, int number) {
 }
 
 void LoadSettings() {
+    g_skip_intro = false;
     GraphicsConfig config = ultramodern::renderer::get_graphics_config();
     int settings_version = 0;
     bool settings_complete = false;
@@ -2021,6 +2029,10 @@ void LoadSettings() {
         }
         const std::string key = line.substr(0, separator);
         const std::string value = line.substr(separator + 1);
+        if (key == "skip_intro") {
+            g_skip_intro = dkr::runtime::startup::parse_skip_intro(value);
+            continue;
+        }
         bool controller_key = false;
         for (std::size_t player = 0; player < dkr::runtime::input::kPlayerCount;
              ++player) {
@@ -2110,6 +2122,8 @@ void LoadSettings() {
         if (player_gyro_key) continue;
         try {
             const int number = std::stoi(value);
+            if(dkr::runtime::water::enhanced::load_tuning(key,number))continue;
+            if(key=="enhanced_water_timings") {dkr::runtime::water::enhanced::timing_enabled.store(number!=0);continue;}
             if (key == "enhanced_water_quality") {
                 dkr::runtime::water::enhanced::set_quality(number);continue;
             }
@@ -8239,6 +8253,7 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(
     SDL_Window* window, const std::filesystem::path& preselected_rom,
     bool software_failure_recovery) {
     StartupResult result{};
+    dkr::runtime::startup::prepare_launch(false, false, false);
     if (window == nullptr) {
         return result;
     }
@@ -8810,6 +8825,9 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(
             } else {
                 dkr::runtime::startup_performance::mark("launcher-local-launch-requested");
                 result.start_game=true;result.rom_path=mod_launch_rom;result.mods=prepared.prepared;
+                dkr::runtime::startup::prepare_launch(g_skip_intro, false,
+                    dkr::runtime::custom_tracks::auto_boot_enabled() &&
+                    !dkr::runtime::custom_tracks::armed_track_id().empty());
                 g_mod_launch.dismiss();running=false;continue;
             }
         }
