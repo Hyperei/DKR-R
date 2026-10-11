@@ -58,12 +58,8 @@ endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(CTest)
+include(cmake/ProjectTests.cmake)
 
-if(BUILD_TESTING AND NOT ANDROID)
-    add_executable(DKREnhancedWaterPolicyTests tests/enhanced_water_policy_tests.cpp)
-    target_include_directories(DKREnhancedWaterPolicyTests PRIVATE src/game "${CMAKE_CURRENT_LIST_DIR}/../extern/rt64/src/contrib" "${CMAKE_CURRENT_LIST_DIR}/../patches/enhanced-water/native")
-    add_test(NAME DKREnhancedWaterPolicy COMMAND DKREnhancedWaterPolicyTests)
-endif()
 
 set(DKRPORT_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." CACHE PATH "Root of the DKR Port repository")
 option(DKR_RUNTIME_BUILD_GENERATED "Compile N64Recomp-generated DKR CPU functions" ON)
@@ -96,6 +92,13 @@ get_filename_component(DKRPORT_ROOT "${DKRPORT_ROOT}" ABSOLUTE)
 set(DKR_MODERN_RUNTIME_SOURCE "${DKRPORT_ROOT}/extern/n64-modern-runtime")
 set(DKR_RECOMP_SOURCE "${DKR_MODERN_RUNTIME_SOURCE}/N64Recomp")
 set(DKR_RT64_SOURCE "${DKRPORT_ROOT}/extern/rt64")
+
+if(BUILD_TESTING AND NOT ANDROID)
+    add_executable(DKREnhancedWaterPolicyTests tests/enhanced_water_policy_tests.cpp)
+    target_include_directories(DKREnhancedWaterPolicyTests PRIVATE src/game "${DKR_RT64_SOURCE}/src/contrib" "${CMAKE_CURRENT_LIST_DIR}/../patches/enhanced-water/native")
+    add_test(NAME DKREnhancedWaterPolicy COMMAND DKREnhancedWaterPolicyTests)
+endif()
+
 set(DKR_GEKKONET_SOURCE "${DKRPORT_ROOT}/extern/gekkonet")
 set(DKR_MONOCYPHER_SOURCE "${DKRPORT_ROOT}/extern/monocypher")
 set(DKR_LIBDATACHANNEL_SOURCE "${DKRPORT_ROOT}/extern/libdatachannel")
@@ -1101,11 +1104,6 @@ if(DKR_EXPERIMENTAL_OWNED_GENERATED)
             message(FATAL_ERROR "Integrated rollback requires the full-scene Patch Pipeline; race-only payloads cannot be shipped here")
         endif()
         target_compile_definitions(DKRExperimentalOwnedQuickJoinTests PRIVATE DKR_OWNED_TEST_REVISION=${DKR_OWNED_REVISION} DKR_OWNED_FULL_SCENES=${DKR_OWNED_FULL_SCENES})
-        if(MSVC)
-            target_compile_options(DKRExperimentalOwnedQuickJoinTests PRIVATE /UNDEBUG)
-        else()
-            target_compile_options(DKRExperimentalOwnedQuickJoinTests PRIVATE -UNDEBUG)
-        endif()
     endif()
     if(WIN32)
         foreach(owned_check DKROwnedRevisionRegistryTests DKRExperimentalOwnedQuickJoinTests)
@@ -1343,7 +1341,6 @@ if(BUILD_TESTING)
             src/game/mods/legacy_mod_process.cpp)
         target_include_directories(DKRLegacyModSandboxTests PRIVATE src/game/mods)
         target_compile_features(DKRLegacyModSandboxTests PRIVATE cxx_std_20)
-        target_compile_options(DKRLegacyModSandboxTests PRIVATE -UNDEBUG)
         add_test(NAME DKRLegacyModSandbox COMMAND DKRLegacyModSandboxTests)
     endif()
     add_executable(DKRRenderIdlePolicyTests tests/render_idle_policy_tests.cpp)
@@ -1543,11 +1540,6 @@ if(BUILD_TESTING)
     add_executable(DKRExperimentalConfirmedOutputTests tests/experimental_confirmed_output_tests.cpp)
     find_package(Threads REQUIRED)
     target_link_libraries(DKRExperimentalConfirmedOutputTests PRIVATE DKRNetplayCore Threads::Threads)
-    if(MSVC)
-        target_compile_options(DKRExperimentalConfirmedOutputTests PRIVATE /UNDEBUG)
-    else()
-        target_compile_options(DKRExperimentalConfirmedOutputTests PRIVATE -UNDEBUG)
-    endif()
     add_test(NAME DKRExperimentalConfirmedOutput COMMAND DKRExperimentalConfirmedOutputTests)
     set_tests_properties(DKRExperimentalConfirmedOutput PROPERTIES TIMEOUT 30)
 
@@ -1615,11 +1607,6 @@ if(BUILD_TESTING)
     add_test(NAME DKRExperimentalRollback COMMAND DKRExperimentalRollbackTests)
     add_executable(DKRLocalSceneryTests tests/local_scenery_tests.cpp)
     target_link_libraries(DKRLocalSceneryTests PRIVATE DKRNetplayCore)
-    if(MSVC)
-        target_compile_options(DKRLocalSceneryTests PRIVATE /UNDEBUG)
-    else()
-        target_compile_options(DKRLocalSceneryTests PRIVATE -UNDEBUG)
-    endif()
     add_test(NAME DKRLocalScenery COMMAND DKRLocalSceneryTests)
     if(DKR_EXPERIMENTAL_OWNED_GENERATED)
         add_executable(DKRCheckedMemoryTests
@@ -1628,20 +1615,15 @@ if(BUILD_TESTING)
             "${DKR_EXPERIMENTAL_OWNED_GENERATED}" tests/replay_probe src/game)
         target_compile_features(DKRCheckedMemoryTests PRIVATE c_std_11 cxx_std_20)
         if(MSVC)
-            target_compile_options(DKRCheckedMemoryTests PRIVATE /UNDEBUG /fp:strict)
+            target_compile_options(DKRCheckedMemoryTests PRIVATE /fp:strict)
         else()
-            target_compile_options(DKRCheckedMemoryTests PRIVATE -UNDEBUG -fno-strict-aliasing)
+            target_compile_options(DKRCheckedMemoryTests PRIVATE -fno-strict-aliasing)
             target_link_libraries(DKRCheckedMemoryTests PRIVATE m)
         endif()
         add_test(NAME DKRCheckedMemory COMMAND DKRCheckedMemoryTests)
     endif()
     add_executable(DKRPresentationOwnershipTests tests/experimental_presentation_tests.cpp src/game/renderer_snapshot.cpp)
     target_link_libraries(DKRPresentationOwnershipTests PRIVATE DKRNetplayCore)
-    if(MSVC)
-        target_compile_options(DKRPresentationOwnershipTests PRIVATE /UNDEBUG)
-    else()
-        target_compile_options(DKRPresentationOwnershipTests PRIVATE -UNDEBUG)
-    endif()
     add_test(NAME DKRPresentationOwnership COMMAND DKRPresentationOwnershipTests)
     add_executable(DKRExperimentalOwnerInputTests tests/experimental_owner_input_tests.cpp)
     target_link_libraries(DKRExperimentalOwnerInputTests PRIVATE DKRNetplayCore)
@@ -1660,10 +1642,7 @@ if(BUILD_TESTING)
     add_test(NAME DKRExperimentalNetwork COMMAND DKRExperimentalNetworkTests)
     add_executable(DKRProbeMemoryInlineTests tests/probe_memory_inline_tests.c tests/replay_probe/probe_bridge.c)
     target_include_directories(DKRProbeMemoryInlineTests PRIVATE src/game)
-    if(MSVC)
-        target_compile_options(DKRProbeMemoryInlineTests PRIVATE /UNDEBUG)
-    else()
-        target_compile_options(DKRProbeMemoryInlineTests PRIVATE -UNDEBUG)
+    if(NOT MSVC)
         target_link_libraries(DKRProbeMemoryInlineTests PRIVATE m)
     endif()
     add_test(NAME DKRProbeMemoryInline COMMAND DKRProbeMemoryInlineTests)
@@ -1671,20 +1650,10 @@ if(BUILD_TESTING)
     target_link_libraries(DKRExperimentalLaunchTests PRIVATE DKRNetplayCore)
     add_executable(DKRExperimentalLobbyAdmissionTests tests/experimental_lobby_admission_tests.cpp)
     target_link_libraries(DKRExperimentalLobbyAdmissionTests PRIVATE DKRNetplayCore)
-    if(MSVC)
-        target_compile_options(DKRExperimentalLobbyAdmissionTests PRIVATE /UNDEBUG)
-    else()
-        target_compile_options(DKRExperimentalLobbyAdmissionTests PRIVATE -UNDEBUG)
-    endif()
     add_test(NAME DKRExperimentalLobbyAdmission COMMAND DKRExperimentalLobbyAdmissionTests)
     add_test(NAME DKRExperimentalLaunch COMMAND DKRExperimentalLaunchTests)
     add_executable(DKRExperimentalPcmTests tests/experimental_pcm_tests.cpp)
     target_link_libraries(DKRExperimentalPcmTests PRIVATE DKRNetplayCore)
-    if(MSVC)
-        target_compile_options(DKRExperimentalPcmTests PRIVATE /UNDEBUG)
-    else()
-        target_compile_options(DKRExperimentalPcmTests PRIVATE -UNDEBUG)
-    endif()
     add_test(NAME DKRExperimentalPcm COMMAND DKRExperimentalPcmTests)
     if(WIN32 OR (UNIX AND NOT ANDROID AND NOT APPLE))
         add_executable(DKRExperimentalProcessTests tests/experimental_process_tests.cpp src/game/netplay/experimental_process.cpp)
@@ -1717,11 +1686,6 @@ if(BUILD_TESTING)
         add_executable(DKRFriendDeliveryTests tests/friend_delivery_tests.cpp)
         target_link_libraries(DKRFriendDeliveryTests PRIVATE DKRNetplayCore)
         target_include_directories(DKRFriendDeliveryTests PRIVATE "${DKR_LIBDATACHANNEL_SOURCE}/deps/json/include")
-        if(MSVC)
-            target_compile_options(DKRFriendDeliveryTests PRIVATE /UNDEBUG)
-        else()
-            target_compile_options(DKRFriendDeliveryTests PRIVATE -UNDEBUG)
-        endif()
         add_test(NAME DKRFriendDelivery COMMAND DKRFriendDeliveryTests)
         set_tests_properties(DKRFriendDelivery PROPERTIES TIMEOUT 20)
         add_test(NAME DKRFriendLocalIntegration COMMAND DKRFriendDeliveryTests --integration)
@@ -1729,22 +1693,12 @@ if(BUILD_TESTING)
         add_executable(DKRQuickJoinLifecycleTests tests/quick_join_lifecycle_tests.cpp)
         target_link_libraries(DKRQuickJoinLifecycleTests PRIVATE DKRNetplayCore)
         target_include_directories(DKRQuickJoinLifecycleTests PRIVATE "${DKR_LIBDATACHANNEL_SOURCE}/deps/json/include")
-        if(MSVC)
-            target_compile_options(DKRQuickJoinLifecycleTests PRIVATE /UNDEBUG)
-        else()
-            target_compile_options(DKRQuickJoinLifecycleTests PRIVATE -UNDEBUG)
-        endif()
         add_test(NAME DKRQuickJoinLifecycle COMMAND DKRQuickJoinLifecycleTests)
         set_tests_properties(DKRQuickJoinLifecycle PROPERTIES TIMEOUT 90)
         add_executable(DKRExperimentalQuickJoinTests tests/experimental_network_tests.cpp)
         target_link_libraries(DKRExperimentalQuickJoinTests PRIVATE DKRNetplayCore)
         target_include_directories(DKRExperimentalQuickJoinTests PRIVATE "${DKR_LIBDATACHANNEL_SOURCE}/deps/json/include")
         target_compile_definitions(DKRExperimentalQuickJoinTests PRIVATE DKR_EXPERIMENTAL_QUICKJOIN_TEST=1)
-        if(MSVC)
-            target_compile_options(DKRExperimentalQuickJoinTests PRIVATE /UNDEBUG)
-        else()
-            target_compile_options(DKRExperimentalQuickJoinTests PRIVATE -UNDEBUG)
-        endif()
         add_test(NAME DKRExperimentalQuickJoin COMMAND DKRExperimentalQuickJoinTests)
         set_tests_properties(DKRExperimentalQuickJoin PROPERTIES TIMEOUT 90)
     endif()
@@ -1915,11 +1869,6 @@ if(BUILD_TESTING)
 
     add_executable(DKRFinishPresentationTests tests/finish_presentation_tests.cpp)
     target_include_directories(DKRFinishPresentationTests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/src/game")
-    if(MSVC)
-        target_compile_options(DKRFinishPresentationTests PRIVATE /UNDEBUG)
-    else()
-        target_compile_options(DKRFinishPresentationTests PRIVATE -UNDEBUG)
-    endif()
     add_test(NAME DKRFinishPresentation COMMAND DKRFinishPresentationTests)
 
     add_executable(DKRPresentationCounterPolicyTests
@@ -1996,11 +1945,6 @@ if(BUILD_TESTING)
         else()
             target_link_libraries(DKRSplitScreenRT64Tests PRIVATE ${SDL2_LIBRARIES})
         endif()
-        if(MSVC)
-            target_compile_options(DKRSplitScreenRT64Tests PRIVATE /UNDEBUG)
-        else()
-            target_compile_options(DKRSplitScreenRT64Tests PRIVATE -UNDEBUG)
-        endif()
         add_test(NAME DKRSplitScreenRT64 COMMAND DKRSplitScreenRT64Tests)
 
         add_executable(DKRWaterUVTests tests/water_uv_rt64_tests.cpp)
@@ -2019,11 +1963,6 @@ if(BUILD_TESTING)
                     "$<TARGET_FILE_DIR:DKRWaterUVTests>/SDL2.dll")
         else()
             target_link_libraries(DKRWaterUVTests PRIVATE ${SDL2_LIBRARIES})
-        endif()
-        if(MSVC)
-            target_compile_options(DKRWaterUVTests PRIVATE /UNDEBUG)
-        else()
-            target_compile_options(DKRWaterUVTests PRIVATE -UNDEBUG)
         endif()
         add_test(NAME DKRWaterUV COMMAND DKRWaterUVTests)
 
@@ -2044,11 +1983,6 @@ if(BUILD_TESTING)
                     "$<TARGET_FILE_DIR:DKRHudGroupsTests>/SDL2.dll")
         else()
             target_link_libraries(DKRHudGroupsTests PRIVATE ${SDL2_LIBRARIES})
-        endif()
-        if(MSVC)
-            target_compile_options(DKRHudGroupsTests PRIVATE /UNDEBUG)
-        else()
-            target_compile_options(DKRHudGroupsTests PRIVATE -UNDEBUG)
         endif()
         add_test(NAME DKRHudGroups COMMAND DKRHudGroupsTests)
 
@@ -2073,10 +2007,7 @@ if(BUILD_TESTING)
             target_link_libraries(DKRHudEditorTests PRIVATE ${SDL2_LIBRARIES})
         endif()
         if(MSVC)
-            target_compile_options(DKRHudEditorTests PRIVATE /UNDEBUG)
             target_link_options(DKRHudEditorTests PRIVATE /STACK:262144)
-        else()
-            target_compile_options(DKRHudEditorTests PRIVATE -UNDEBUG)
         endif()
         add_test(NAME DKRHudBasicSettings COMMAND DKRHudEditorTests)
 
@@ -2280,11 +2211,6 @@ if(BUILD_TESTING)
     )
     add_executable(DKRAudioEventQueueTests tests/audio_event_queue_tests.cpp)
     target_include_directories(DKRAudioEventQueueTests PRIVATE src/game "${DKR_RECOMP_SOURCE}/include")
-    if(MSVC)
-        target_compile_options(DKRAudioEventQueueTests PRIVATE /UNDEBUG)
-    else()
-        target_compile_options(DKRAudioEventQueueTests PRIVATE -UNDEBUG)
-    endif()
     add_test(NAME DKRAudioEventQueue COMMAND DKRAudioEventQueueTests)
     target_include_directories(DKRCustomMusicSequenceTests PRIVATE
         "${CMAKE_CURRENT_LIST_DIR}/src/game"
@@ -2292,11 +2218,6 @@ if(BUILD_TESTING)
     # The cases are the addon's, so both validators read the same songs.
     target_compile_definitions(DKRCustomMusicSequenceTests PRIVATE
         DKR_MUSIC_FIXTURES="${DKRPORT_ROOT}/tools/blender/tests/fixtures")
-    if(MSVC)
-        target_compile_options(DKRCustomMusicSequenceTests PRIVATE /UNDEBUG)
-    else()
-        target_compile_options(DKRCustomMusicSequenceTests PRIVATE -UNDEBUG)
-    endif()
     add_test(NAME DKRCustomMusicSequence COMMAND DKRCustomMusicSequenceTests)
 
     add_executable(DKRCountdownTonePolicyTests
@@ -2345,11 +2266,6 @@ if(BUILD_TESTING)
             "${CMAKE_CURRENT_LIST_DIR}/src/game"
             "${DKR_RT64_SOURCE}/src/contrib"
         )
-        if(MSVC)
-            target_compile_options(DKRCustomTracksTests PRIVATE /UNDEBUG)
-        else()
-            target_compile_options(DKRCustomTracksTests PRIVATE -UNDEBUG)
-        endif()
         add_test(NAME DKRCustomTracks COMMAND DKRCustomTracksTests)
         add_executable(DKRCustomTracksRuntimeTests
             tests/custom_tracks_runtime_tests.cpp
@@ -2364,11 +2280,6 @@ if(BUILD_TESTING)
             "${DKR_RT64_SOURCE}/src/contrib"
             "${DKRPORT_ROOT}/extern/n64-modern-runtime/N64Recomp/include"
         )
-        if(MSVC)
-            target_compile_options(DKRCustomTracksRuntimeTests PRIVATE /UNDEBUG)
-        else()
-            target_compile_options(DKRCustomTracksRuntimeTests PRIVATE -UNDEBUG)
-        endif()
         add_test(NAME DKRCustomTracksRuntime COMMAND DKRCustomTracksRuntimeTests)
         add_executable(DKRCustomTracksGuestTests
             tests/custom_tracks_guest_tests.cpp
@@ -2379,11 +2290,6 @@ if(BUILD_TESTING)
         target_include_directories(DKRCustomTracksGuestTests PRIVATE
             "${CMAKE_CURRENT_LIST_DIR}/src/game" "${DKR_RT64_SOURCE}/src/contrib"
             "${DKR_RECOMP_SOURCE}/include")
-        if(MSVC)
-            target_compile_options(DKRCustomTracksGuestTests PRIVATE /UNDEBUG)
-        else()
-            target_compile_options(DKRCustomTracksGuestTests PRIVATE -UNDEBUG)
-        endif()
         add_test(NAME DKRCustomTracksGuest COMMAND DKRCustomTracksGuestTests)
         add_executable(DKRCustomMusicRuntimeTests
             tests/custom_music_runtime_tests.cpp
@@ -2400,11 +2306,6 @@ if(BUILD_TESTING)
             DKR_MUSIC_FIXTURES="${DKRPORT_ROOT}/tools/blender/tests/fixtures")
         find_package(Threads REQUIRED)
         target_link_libraries(DKRCustomMusicRuntimeTests PRIVATE Threads::Threads)
-        if(MSVC)
-            target_compile_options(DKRCustomMusicRuntimeTests PRIVATE /UNDEBUG)
-        else()
-            target_compile_options(DKRCustomMusicRuntimeTests PRIVATE -UNDEBUG)
-        endif()
         add_test(NAME DKRCustomMusicRuntime COMMAND DKRCustomMusicRuntimeTests)
     endif()
     add_executable(DKRPresentationMarkerPolicyTests
@@ -2548,81 +2449,13 @@ if(BUILD_TESTING)
     )
     add_test(NAME DKRInputProfile COMMAND DKRInputProfileTests)
 
-    # These executables intentionally use assert() as their zero-dependency
-    # test primitive. RelWithDebInfo normally defines NDEBUG, which used to turn
-    # every assertion into a no-op in the exact configuration shipped to users.
-    set(DKR_ASSERT_TEST_TARGETS
-        DKRExperimentalCheckpointHashTests
-        DKRNetplayCoreTests
-        DKRQuickJoinTransportTests
-        DKRRollbackDriverTests
-        DKRExperimentalRollbackTests
-        DKRExperimentalOwnerInputTests
-        DKRExperimentalTimelineTests
-        DKRExperimentalEpochTests
-        DKRExperimentalSessionTests
-        DKRExperimentalNetworkTests
-        DKRExperimentalLaunchTests
-        DKRExperimentalEepromTests
-        DKRRuntimeStateTests
-        DKRSecureChannelTests
-        DKRDatagramSocketTests
-        DKRDirectSessionTests
-        DKRNetplayInputLatencyTests
-        DKROnlineRosterPolicyTests
-        DKRReplayRecorderTests
-        DKRNetplayAdverseNetworkTests
-        DKRPresentationPolicyTests
-        DKRPresentationRandomPolicyTests
-        DKRModernCameraPolicyTests
-        DKRWidescreenPolicyTests
-        DKRHudLayoutPolicyTests
-        DKRViPresentationPolicyTests
-        DKRMagicCodePolicyTests
-        DKRMagicCodeRuntimeTests
-        DKRQuickRestartPolicyTests
-        DKRCharacterSelectAnimationPolicyTests
-        DKRCharacterSelectMusicPolicyTests
-        DKRMotionSteeringPolicyTests
-        DKRSaveManagerTests
-        DKRSaveStorageTests
-        DKRSaveCodecTests
-        DKRAudioEqualizerTests
-        DKRAudioMixPolicyTests
-        DKRCustomMusicPolicyTests
-        DKRCustomMusicDecodeTests
-        DKRCustomMusicSequenceTests
-        DKRCountdownTonePolicyTests
-        DKRRendererSnapshotTests
-        DKRPresentationIdentityTests
-        DKRInterpolationStatePolicyTests
-        DKRPresentationMarkerPolicyTests
-        DKRRiceTexturePackPolicyTests
-        DKRUiNotificationPolicyTests
-        DKRIntroTailPolicyTests
-        DKRControllerAssignmentPolicyTests
-        DKRInputBackendPolicyTests
-        DKRControllerMappingPolicyTests
-        DKRControllerDatabaseTests
-        DKRInputProfileTests
-        DKROnlineInputPolicyTests
-        DKRRomRevisionTests
-        DKRRevisionAddressesTests
-        DKRVehicleContextPolicyTests
-        DKRSteeringWheelPolicyTests
-        DKRPresentationCounterPolicyTests
-        DKRDeterminismStateHash77Tests
-        DKRDeterminismStateHash80Tests
-    )
-    if(DKR_RUNTIME_BUILD_RT64)
-        list(APPEND DKR_ASSERT_TEST_TARGETS DKRCustomTracksTests DKRCustomTracksRuntimeTests DKRCustomTracksGuestTests
-            DKRCustomMusicRuntimeTests)
-    endif()
-    foreach(DKR_ASSERT_TEST_TARGET IN LISTS DKR_ASSERT_TEST_TARGETS)
-        if(MSVC)
-            target_compile_options(${DKR_ASSERT_TEST_TARGET} PRIVATE /UNDEBUG)
-        else()
-            target_compile_options(${DKR_ASSERT_TEST_TARGET} PRIVATE -UNDEBUG)
-        endif()
-    endforeach()
+    add_test(NAME DKRTestAssertionContract
+        COMMAND "${CMAKE_COMMAND}"
+            "-DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/test-assertion-contract"
+            "-DTEST_GENERATOR=${CMAKE_GENERATOR}"
+            "-DTEST_C_COMPILER=${CMAKE_C_COMPILER}"
+            "-DTEST_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+            "-DTEST_CTEST_COMMAND=${CMAKE_CTEST_COMMAND}"
+            -P "${CMAKE_CURRENT_LIST_DIR}/tests/cmake/test_assertions.cmake")
+    set_tests_properties(DKRTestAssertionContract PROPERTIES TIMEOUT 120)
 endif()
