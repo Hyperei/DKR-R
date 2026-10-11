@@ -12,8 +12,9 @@
 #   Refresh the install before the 7-day signature expires.
 #
 # Bring your own ROM. Nothing from Nintendo or Rare is in this package.
-# In the Files app, put a .z64, .n64, .v64, or .zip under On My iPhone
-# > DKR-R, or share the file into DKR-R with Open In. Saves stay there.
+# In the Files app, put an unzipped .z64, .n64 or .v64 directly in On My
+# iPhone > DKR-R (not the DKR-R folder inside it, which holds settings), or
+# share the file into DKR-R. Saves stay there.
 # The app is landscape, fullscreen, and the silent switch does not mute it.
 #
 # The binary links N64ModernRuntime (GPL-3.0). This IPA is a GPL-3.0

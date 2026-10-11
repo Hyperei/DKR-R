@@ -17,7 +17,7 @@ and installed with `devicectl`.
   metadata validated 57 pinned patch hashes; the asset scan passed.
 
 Artifact: `dist/DKR-R-1.0.5-iOS-arm64.ipa`
-SHA-256: `426ff1461c3079897a560ae0d4d41a653bb42390a225ffe29da412dd2a86c42d`
+SHA-256: `e7e53940828208f664142cf3a8c62a6b46d2d003c8e82c06a961f06ee55bbc8b`
 
 Audio, audio interruptions, simultaneous touch comfort, controller switching
 and iPad layouts remain unverified. No release was published.
