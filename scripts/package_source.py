@@ -53,6 +53,7 @@ def source_files() -> list[pathlib.Path]:
         pathlib.PurePosixPath("assets/ui/Icons"),
         pathlib.PurePosixPath("assets/ui/Backgrounds"),
         pathlib.PurePosixPath("docs"),
+        pathlib.PurePosixPath("regression"),
         pathlib.PurePosixPath("packaging"),
         pathlib.PurePosixPath("runtime-recomp/cmake"),
         pathlib.PurePosixPath("runtime-recomp/src"),

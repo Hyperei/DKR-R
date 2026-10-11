@@ -65,6 +65,7 @@ include(cmake/ProjectTests.cmake)
 
 
 include(cmake/SourceRoots.cmake)
+include(cmake/RegressionHarness.cmake)
 option(DKR_RUNTIME_BUILD_GENERATED "Compile N64Recomp-generated DKR CPU functions" ON)
 option(DKR_RUNTIME_BUILD_RT64 "Also configure and compile the pinned RT64 renderer" OFF)
 option(DKR_LEGACY_QUALIFICATION "Build private real-runtime legacy scene qualification hooks (not for packaging)" OFF)
@@ -795,7 +796,7 @@ if(DKR_RUNTIME_BUILD_GENERATED)
         set_property(SOURCE src/game/camera_obstruction.cpp tests/replay_probe/probe_native.c
             APPEND PROPERTY COMPILE_OPTIONS -ffp-contract=off)
     endif()
-    if(APPLE AND NOT IOS)
+    if(APPLE AND NOT IOS AND DKR_RUNTIME_BUILD_RT64)
         list(APPEND DKR_GAME_SOURCES src/game/runtime_metal_layer.mm)
     endif()
     if(IOS)
@@ -809,6 +810,7 @@ if(DKR_RUNTIME_BUILD_GENERATED)
     endif()
     if(DKR_REPLAY_QUALIFICATION)
         set_property(SOURCE src/game/runtime_netplay.cpp src/game/custom_tracks_hooks.cpp
+            src/game/replay_probe_capture.cpp
             APPEND PROPERTY COMPILE_DEFINITIONS DKR_REPLAY_QUALIFICATION=1)
     endif()
     if(DKR_EXPERIMENTAL_RACE_TEST)
@@ -1073,6 +1075,10 @@ if(DKR_EXPERIMENTAL_OWNED_GENERATED)
         tests/memory_probe_test_entries.c tests/native_mod_world_test_boundaries.cpp src/game/runtime_legacy_mods.cpp)
     target_link_libraries(DKROwnedRevisionRegistryTests PRIVATE DKRExperimentalOwnedGame)
     target_include_directories(DKROwnedRevisionRegistryTests PRIVATE src/game
+        # Shared native adapters use the production ABI and their explicit
+        # bounds checks, not either revision's guarded guest-memory macros.
+        # Guarded generated headers remain private to each owned CPU library.
+        "${DKR_RECOMP_SOURCE}/include"
         "${DKR_EXPERIMENTAL_OWNED_GENERATED}"
         "${DKR_MODERN_RUNTIME_SOURCE}/librecomp/include"
         "${DKR_MODERN_RUNTIME_SOURCE}/ultramodern/include"
@@ -1337,7 +1343,10 @@ if(BUILD_TESTING)
             "DKRSourcePackaging|source_packaging_tests.py"
             "DKRBuildIteration|build_iteration_tests.py"
             "DKRDeveloperEntrypoints|developer_entrypoint_tests.py"
-            "DKRAssetScan|asset_scan_tests.py")
+            "DKRAssetScan|asset_scan_tests.py"
+            "DKRRegressionHarness|regression_harness_tests.py"
+            "DKRHarnessReports|harness_report_tests.py"
+            "DKRReplayCapture|replay_capture_tests.py")
         string(REPLACE "|" ";" tooling_test "${tooling_test}")
         list(GET tooling_test 0 test_name)
         list(GET tooling_test 1 test_script)

@@ -4,11 +4,40 @@ from pathlib import Path
 import unittest
 import hashlib
 import os
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location(
     "probe_generator", Path(__file__).resolve().parents[3] / "scripts/generate_replay_probe.py")
 generator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(generator)
+
+# Explicit read-only fixture roots; supplying them never disables an audit.
+DEPENDENCIES_DIR = os.environ.get("DKR_TEST_DEPENDENCIES_DIR")
+RSP_SOURCE = Path(os.environ["DKR_TEST_RSP_SOURCE"]) if os.environ.get("DKR_TEST_RSP_SOURCE") else None
+
+
+class DependencyRootTests(unittest.TestCase):
+    def test_shared_dependencies_do_not_redirect_first_party_sources(self):
+        root = Path(generator.__file__).resolve().parents[1]
+        shared = root / "build" / "read-only-dependencies"
+        self.assertEqual(generator.audited_input_path("extern/runtime/input.cpp", shared),
+                         shared / "runtime/input.cpp")
+        self.assertEqual(generator.audited_input_path("runtime-recomp/src/game/input.cpp", shared),
+                         root / "runtime-recomp/src/game/input.cpp")
+        self.assertEqual(generator.audited_input_path("extern/runtime/input.cpp"),
+                         root / "extern/runtime/input.cpp")
+
+    def test_shared_input_audit_retains_pins_and_reads_selected_paths(self):
+        shared = Path("/private/shared-extern")
+        visited = []
+        def reject_read(path):
+            visited.append(path)
+            return b"unreviewed dependency input"
+        with mock.patch.object(Path, "read_bytes", reject_read):
+            with self.assertRaisesRegex(ValueError, "Unreviewed native input"):
+                generator.input_native_audit(shared)
+        first = next(iter(generator.INPUT_NATIVE_HASH))
+        self.assertEqual(visited, [generator.audited_input_path(first, shared)])
 
 
 class InstrumentationTests(unittest.TestCase):
@@ -55,10 +84,10 @@ class InstrumentationTests(unittest.TestCase):
     def test_menu_indirect_callbacks_are_exact_and_pinned(self):
         for revision,address in ((77,0x8008F618),(80,0x8008FAD0)):
             bodies=self.reviewed_bodies(revision)
-            self.assertEqual(generator.menu_dispatch(bodies,revision),{address:"func_8008F618"})
+            self.assertEqual(generator.menu_dispatch(bodies,revision,DEPENDENCIES_DIR),{address:"func_8008F618"})
             for name in generator.MENU_INDIRECT_HASH[revision]:
                 altered=dict(bodies);altered[name]+='\n'
-                with self.assertRaises(ValueError):generator.menu_dispatch(altered,revision)
+                with self.assertRaises(ValueError):generator.menu_dispatch(altered,revision,DEPENDENCIES_DIR)
 
     def test_indirect_owners_are_separate_and_unknown_targets_stay_blocked(self):
         emitted=generator.indirect_stub({1:"audio_target"},{2:"menu_target"})
@@ -67,8 +96,22 @@ class InstrumentationTests(unittest.TestCase):
         self.assertIn('default: dkr_probe_block("unreviewed-indirect-callback")',emitted)
         with self.assertRaises(ValueError):generator.indirect_stub({1:"audio_target"},{1:"menu_target"})
 
+    def test_stock_menu_body_admission_is_exact(self):
+        hook = "extern void dkr_water_private_scene(uint8_t*, recomp_context*); dkr_water_private_scene(rdram, ctx); "
+        for revision in (77, 80):
+            body = self.reviewed_bodies(revision)["load_level_for_menu"]
+            stock = body.replace(hook, "")
+            profiled = stock.replace("extern int dkr_legacy_track_menu", hook + "extern int dkr_legacy_track_menu")
+            self.assertEqual(hashlib.sha256(stock.encode()).hexdigest(), generator.MENU_STOCK_LEVEL_HASH[revision])
+            self.assertEqual(hashlib.sha256(profiled.encode()).hexdigest(), generator.MENU_CPU_HASH[revision]["load_level_for_menu"])
+            for reviewed in (stock, profiled):
+                self.assertTrue(generator.menu_cpu_body_reviewed("load_level_for_menu", reviewed, revision))
+                self.assertFalse(generator.menu_cpu_body_reviewed("load_level_for_menu", reviewed + "\n", revision))
+                self.assertFalse(generator.menu_cpu_body_reviewed("load_level_menu", reviewed, revision))
+            generator.owned_menu_cpu(self.reviewed_bodies(revision), revision)
+
     def test_full_scene_native_participants_are_pinned(self):
-        generator.full_scene_native_audit()
+        generator.full_scene_native_audit(DEPENDENCIES_DIR)
         for name in ("intro_tail_policy.hpp", "online_roster_policy.hpp",
                      "character_select_animation_policy.hpp", "character_select_music_policy.hpp"):
             self.assertIn("runtime-recomp/src/game/"+name,generator.FULL_SCENE_NATIVE_HASH)
@@ -81,7 +124,9 @@ class InstrumentationTests(unittest.TestCase):
 
     def reviewed_bodies(self, revision):
         root=Path("G:/DiddykongWorkFolder" if os.name=="nt" else "/mnt/g/DiddykongWorkFolder")
-        directory=root/f"water-performance-20260926/pipeline/generated-v{revision}"
+        directory=(Path(os.environ["DKR_TEST_GENERATED_ROOT"])/f"v{revision}/RecompiledFuncs"
+                   if os.environ.get("DKR_TEST_GENERATED_ROOT") else
+                   root/f"water-performance-20260926/pipeline/generated-v{revision}")
         if not directory.exists():self.skipTest("Reviewed scene inputs unavailable")
         bodies={}
         for path in directory.glob("*.c"):
@@ -342,7 +387,19 @@ class InstrumentationTests(unittest.TestCase):
                     generator.native_stub(name, bad)
 
     def test_native_input_boundary_source_pins(self):
-        generator.input_native_audit()
+        generator.input_native_audit(DEPENDENCIES_DIR)
+
+    def test_authored_vehicle_guest_write_policy_rejects_drift(self):
+        source = generator.audited_input_path("runtime-recomp/src/game/runtime_legacy_mods.cpp")
+        read_bytes = Path.read_bytes
+        original = read_bytes(source)
+        changed = original.replace(b"RaceCleared=2;", b"RaceCleared=4;", 1)
+        self.assertNotEqual(original, changed)
+        def read_with_drift(path):
+            return changed if path == source else read_bytes(path)
+        with mock.patch.object(Path, "read_bytes", read_with_drift):
+            with self.assertRaisesRegex(ValueError, "Unreviewed native input/Pak/rumble boundary: .*runtime_legacy_mods.cpp"):
+                generator.input_native_audit(DEPENDENCIES_DIR)
 
     def test_conditional_return_remains_one_statement(self):
         emitted = generator.instrument_function("sample", "void sample(void) {\nif (hook()) return;\nwork();\n}")
@@ -469,17 +526,17 @@ class InstrumentationTests(unittest.TestCase):
                 for i,match in enumerate(matches):
                     if match[1] in generator.AUDIO_CALLBACKS:
                         bodies[match[1]]=source[match.start():matches[i+1].start() if i+1<len(matches) else len(source)]
-            dispatch=generator.audio_dispatch(bodies,revision)
+            dispatch=generator.audio_dispatch(bodies,revision,DEPENDENCIES_DIR)
             self.assertEqual(set(dispatch.values()),set(generator.AUDIO_CALLBACKS))
             self.assertEqual(len(dispatch),19)
             self.assertEqual(dispatch[0x80002E38],"__amDMA")
             corrupt=dict(bodies); corrupt["__amDMA"]=corrupt["__amDMA"].replace("0x80002E38:","0x80002E39:",1)
-            with self.assertRaises(ValueError): generator.audio_dispatch(corrupt,revision)
+            with self.assertRaises(ValueError): generator.audio_dispatch(corrupt,revision,DEPENDENCIES_DIR)
             del corrupt["alSavePull"]
-            with self.assertRaises(ValueError): generator.audio_dispatch(corrupt,revision)
+            with self.assertRaises(ValueError): generator.audio_dispatch(corrupt,revision,DEPENDENCIES_DIR)
 
     def test_private_rsp_copy_is_checked_and_budgeted(self):
-        headers,source=generator.audio_rsp_payload()
+        headers,source=generator.audio_rsp_payload(RSP_SOURCE, DEPENDENCIES_DIR)
         self.assertIn("static_assert(std::is_trivially_destructible_v<RSP>)",source)
         self.assertIn("do_indirect_jump: dkr_probe_checkpoint();",source)
         for name,write in (("rd_len",0),("wr_len",1)):
@@ -494,10 +551,10 @@ class InstrumentationTests(unittest.TestCase):
     def test_audited_native_source_contracts_do_not_drift(self):
         root=Path(__file__).resolve().parents[3]
         pins={
-            "runtime-recomp/src/game/runtime_stubs.cpp":"7ab0b1f43932ea68be360212b2082930b0daf1b79add714412b8e341307b988a",
+            "runtime-recomp/src/game/runtime_stubs.cpp":"b7abf26bf6209ac1fa42e16c3bf2913fc608d4ae4a69a277d25b8d7255aa15d4",
             "runtime-recomp/src/game/audio_event_queue.h":"efb6c0cdadbc5a1fbab30ee7ff524f558ea54523a43a3424727bba4a997535c2",
             "runtime-recomp/src/game/audio_event_queue_state.h":"ca400d843e9018f5d69c2aa75ec40889a303574c7789a7297185369dcde79b18",
-            "runtime-recomp/src/game/runtime_enhancements.cpp":"7a868375b1a8e4e0f3e5e1c60036795fa2630e7d4b3cd6e954308495743918de",
+            "runtime-recomp/src/game/runtime_enhancements.cpp":"fe0d3653eb692b20708de52c2aa916aff5b30394a5e016dfa6e8794040e3a56a",
             "runtime-recomp/src/game/runtime_hud_layout.cpp":"9ec1d648e835dfb6b61495f888a6685d10ce75daf3137c7308e368709ab4d7ad",
             # Audited camera-clearance metadata: read-only guest observations
             # and local matrix bindings; no simulation/checkpoint writes.
@@ -506,7 +563,7 @@ class InstrumentationTests(unittest.TestCase):
             # The local Modern camera's look-back adds a one-shot camera epoch
             # cut here; it is never set in owned or replayed frames.
             "runtime-recomp/src/game/presentation_identity.cpp":"bcfa277012ccca66123351a50a97ca77c3123f3011a97cd4d02b483bcd77e29a",
-            "runtime-recomp/src/game/widescreen_policy.hpp":"b926703163fa542f8fbd7af1aee297595c1a58a74c61a82d457c8fbae4ccbb62",
+            "runtime-recomp/src/game/widescreen_policy.hpp":"0d6080326b9794cf468e5c54f2b93bfbb01f43f39b6c6eaf04cbd9f1e53df0dd",
             "extern/dkr-decomp/src/save_data.c":"898df1a185c17e1d6ba11302fc5c140a1d7bd10ff3d8b86ff937c834bb13a607",
             "extern/dkr-decomp/src/thread3_main.c":"437434837706ee88e91578ce9e1aa2cd960e65e1e3a6f1aa47ae3b6289892d8e",
             "extern/dkr-decomp/src/audiomgr.c":"ba7b39838f59ede6eceb7406ce6f92518175458398bddd52cdef55b62a2d8055",
@@ -522,7 +579,7 @@ class InstrumentationTests(unittest.TestCase):
             "extern/n64-modern-runtime/ultramodern/src/timer.cpp":"07bec0f6617c0d9965a263ae6f41d8785cd380f5d584df8a844bc83b2cc89211",
         }
         for path,expected in pins.items():
-            self.assertEqual(hashlib.sha256((root/path).read_bytes()).hexdigest(),expected,
+            self.assertEqual(hashlib.sha256(generator.audited_input_path(path, DEPENDENCIES_DIR).read_bytes()).hexdigest(),expected,
                              f"Re-audit the private native contract after source changes: {path}")
 
 

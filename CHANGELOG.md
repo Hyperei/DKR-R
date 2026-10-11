@@ -6,6 +6,10 @@ and limitations of the build they describe.
 
 ## Unreleased developer tooling
 
+- Repeatable regression/performance harness with private retail CPU routes,
+  ROM-free checkpoint benchmarks, same-machine baselines, deterministic
+  fingerprints and HTML/JSON/JUnit reports with retained attempt logs.
+
 - Fast ROM-free contributor checks, Debug policy presets, editor compilation
   databases and the same preset commands in CI.
 - Worktree-safe source/dependency paths and incremental generation that keeps

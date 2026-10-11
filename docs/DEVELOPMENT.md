@@ -54,6 +54,33 @@ Failure details are in `build/policy/Testing/Temporary/LastTest.log`.
 These checks do not compile the complete game or validate gameplay; follow
 [Building](BUILDING.md) for that path.
 
+For repeated regression runs and performance comparisons, use the
+[regression harness](REGRESSION.md). From the repository root,
+`python3 scripts/regression.py --output build/regression/baseline` produces
+HTML, JSON and JUnit reports with logs, deterministic fingerprints and native
+checkpoint timing. A separate private suite covers actual retail CPU replay.
+Policy CI retains a one-pass harness report without enforcing cross-host timing
+baselines; performance gates belong on a consistent machine and configuration.
+
+For actual-ROM checks, follow the [capture and replay workflow](REGRESSION.md#prepare-actual-rom-fixtures)
+once, then keep the local executable, ROM and fixture paths in
+`build/retail/replay-paths.json`. Subsequent runs start with a quick preflight:
+
+```sh
+python3 scripts/regression.py --suite regression/replay.json \
+  --build-dir build/retail/capture \
+  --vars-file build/retail/replay-paths.json --check-inputs
+python3 scripts/regression.py --suite regression/replay.json \
+  --build-dir build/retail/capture \
+  --vars-file build/retail/replay-paths.json --repeat 1 --warmup 0 \
+  --output build/regression/retail-check
+```
+
+Use a fresh output directory each time. Add `--scenario 'v77-owned-race'` for a
+focused correction check; omit it for both revisions and all scene routes.
+These checks compare actual CPU state and audio samples, without validating
+rendered frames or physical audio output.
+
 ## Worktrees and incremental builds
 
 First-party sources, policies and tests always come from the configured

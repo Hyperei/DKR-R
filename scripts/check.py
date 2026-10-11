@@ -16,6 +16,9 @@ TOOLING_TESTS = (
     "source_packaging_tests.py",
     "developer_entrypoint_tests.py",
     "asset_scan_tests.py",
+    "regression_harness_tests.py",
+    "harness_report_tests.py",
+    "replay_capture_tests.py",
 )
 
 
