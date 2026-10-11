@@ -248,6 +248,7 @@ class RepositoryContractTests(unittest.TestCase):
             root = Path(temporary)
             (root / "scripts").mkdir()
             (root / "bin").mkdir()
+            (root / "scripts/macos_build_lock.py").write_text((ROOT / "scripts/macos_build_lock.py").read_text())
             build = root / "Build-macOS.sh"
             build.write_text((ROOT / "Build-macOS.sh").read_text())
             prepare = root / "scripts" / "Prepare-DKR-Runtime-macOS.sh"
@@ -267,14 +268,20 @@ class RepositoryContractTests(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "macOS shell scripts; Windows has no guaranteed bash")
     def test_macos_option_errors_are_actionable(self):
-        for script in ("Build-macOS.sh", "scripts/Prepare-DKR-Runtime-macOS.sh"):
-            for option in ("--rom-v77", "--rom-v80", "--jobs"):
-                with self.subTest(script=script, option=option):
-                    result = subprocess.run(["bash", str(ROOT / script), option],
-                                            capture_output=True, text=True)
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertIn("requires", result.stdout + result.stderr)
-                    self.assertNotIn("unbound variable", result.stdout + result.stderr)
+        # Argument probes must not contend with the real build running CTest.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "scripts").mkdir()
+            (root / "scripts/macos_build_lock.py").write_text((ROOT / "scripts/macos_build_lock.py").read_text())
+            for script in ("Build-macOS.sh", "scripts/Prepare-DKR-Runtime-macOS.sh"):
+                (root / script).write_text((ROOT / script).read_text())
+                for option in ("--rom-v77", "--rom-v80", "--jobs"):
+                    with self.subTest(script=script, option=option):
+                        result = subprocess.run(["bash", str(root / script), option],
+                                                capture_output=True, text=True)
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn("requires", result.stdout + result.stderr)
+                        self.assertNotIn("unbound variable", result.stdout + result.stderr)
 
     @unittest.skipIf(os.name == "nt", "stage-tool checks require Bash")
     def test_macos_decomp_ready_requires_all_stage_tools(self):
@@ -340,6 +347,77 @@ class RepositoryContractTests(unittest.TestCase):
                 if ref not in names and ref.lower() in lower:
                     wrong.append(f"{script.name}: {ref} -> {lower[ref.lower()]}")
         self.assertEqual(wrong, [])
+
+@unittest.skipIf(os.name == "nt", "macOS packaging and POSIX build lock")
+class MacOSDevexTests(unittest.TestCase):
+    def test_package_versions_are_distinct_and_overridable(self):
+        import package_macos as package
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(package.time, "time", return_value=1800000000):
+                first = package.bundle_version(root, 1)
+                second = package.bundle_version(root, 1)
+            self.assertLess(tuple(map(int, first.split('.'))), tuple(map(int, second.split('.'))))
+            self.assertEqual(package.bundle_version(root, 1, '42.3.2'), '42.3.2')
+            for invalid in ('0', '10000', '1.100.1', '1.2.100', 'beta', '-1'):
+                with self.assertRaises(ValueError):
+                    package.bundle_version(root, 1, invalid)
+            (root / 'bin/Release').mkdir(parents=True)
+            (root / 'bin/Release/dkr-release.json').write_text('{"version":"1.0.5-old","build_number":1}')
+            with self.assertRaisesRegex(RuntimeError, 'differs from configured'):
+                package.package(root, '1.0.5-new')
+
+    def test_lock_rejects_concurrent_builds_and_allows_nested_prepare(self):
+        import fcntl
+        helper = ROOT / 'scripts/macos_build_lock.py'
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            child = root / 'child.sh'
+            child.write_text('echo nested-ok\n')
+            parent = root / 'parent.sh'
+            parent.write_text(f'"{sys.executable}" "{helper}" "{root}" "{child}"\n')
+            cmd = [sys.executable, str(helper), str(root), str(parent)]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('nested-ok', result.stdout)
+            with (root / 'build/.macos-build.lock').open('r+') as held:
+                fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Another macOS build/prepare', result.stderr)
+            parent.write_text('exit 42\n')
+            self.assertEqual(subprocess.run(cmd).returncode, 42)
+            parent.write_text('exit 0\n')
+            self.assertEqual(subprocess.run(cmd).returncode, 0)
+
+    def test_host_check_rejects_missing_sha1sum_and_old_gmake(self):
+        helper = ROOT / 'scripts/macos-host-tools.sh'
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            def executable(name, body='exit 0'):
+                p = root / name
+                p.write_text('#!/bin/sh\n' + body + '\n')
+                p.chmod(0o755)
+            for name in ('xcodebuild', 'git', 'python3', 'cmake', 'ninja', 'c++', 'shasum', 'pcre2-config', 'sdl2-config'):
+                executable(name)
+            executable('uname', 'echo Darwin')
+            executable('gmake', 'echo "GNU Make 3.81"')
+            cmd = ['/bin/bash', '-c', f'source "{helper}"; dkr_macos_host_tools 1']
+            env = dict(os.environ, PATH=str(root))
+            missing = subprocess.run(cmd, env=env, capture_output=True, text=True)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn('Missing sha1sum', missing.stderr)
+            executable('sha1sum')
+            old_make = subprocess.run(cmd, env=env, capture_output=True, text=True)
+            self.assertNotEqual(old_make.returncode, 0)
+            self.assertIn('GNU Make 4', old_make.stderr)
+            executable('gmake', 'echo "GNU Make 4.4"')
+            executable('sha1sum', 'exit 1')
+            for name in ('mktemp', 'rm'):
+                (root / name).symlink_to('/usr/bin/' + name if Path('/usr/bin/' + name).exists() else '/bin/' + name)
+            incompatible = subprocess.run(cmd, env=env, capture_output=True, text=True)
+            self.assertNotEqual(incompatible.returncode, 0)
+            self.assertIn('sha1sum must support -c --quiet', incompatible.stderr)
 
 
 if __name__ == "__main__":

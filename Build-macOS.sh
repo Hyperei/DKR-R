@@ -8,6 +8,11 @@
 set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Inherit the same lock when Build invokes preparation; release on process exit.
+if [[ "${DKR_MACOS_LOCK_ENTRY:-}" != "${BASH_SOURCE[0]}" ]]; then
+  exec python3 "${project_root}/scripts/macos_build_lock.py" "${project_root}" "${BASH_SOURCE[0]}" "$@"
+fi
+unset DKR_MACOS_LOCK_ENTRY
 prepare_args=()
 jobs="${CMAKE_BUILD_PARALLEL_LEVEL:-}"
 package=0
