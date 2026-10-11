@@ -1,9 +1,13 @@
 {
   "version": 5,
-  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
   "configurePresets": [
     {
-      "name": "policy-base",
+      "name": "host-base",
       "hidden": true,
       "binaryDir": "${sourceDir}/../build/${presetName}",
       "cacheVariables": {
@@ -14,40 +18,129 @@
       }
     },
     {
-      "name": "policy",
-      "displayName": "ROM-free policy tests (Ninja)",
-      "inherits": "policy-base",
-      "generator": "Ninja"
+      "name": "host",
+      "displayName": "ROM-free host tests (Ninja)",
+      "inherits": "host-base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
     },
     {
-      "name": "policy-windows",
-      "displayName": "ROM-free policy tests (Visual Studio 2022)",
-      "inherits": "policy-base",
+      "name": "host-windows",
+      "displayName": "ROM-free host tests (Visual Studio 2022)",
+      "inherits": "host-base",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
-      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "host-debug",
+      "displayName": "Debug host tests",
+      "inherits": "host",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "host-windows-debug",
+      "displayName": "Debug host-windows tests",
+      "inherits": "host-windows",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "policy", "configurePreset": "policy", "configuration": "Release" },
-    { "name": "policy-windows", "configurePreset": "policy-windows", "configuration": "Release" }
+    {
+      "name": "host",
+      "configurePreset": "host",
+      "configuration": "Release"
+    },
+    {
+      "name": "host-windows",
+      "configurePreset": "host-windows",
+      "configuration": "Release"
+    },
+    {
+      "name": "host-debug",
+      "configurePreset": "host-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "host-windows-debug",
+      "configurePreset": "host-windows-debug",
+      "configuration": "Debug"
+    }
   ],
   "testPresets": [
     {
-      "name": "policy",
-      "configurePreset": "policy",
+      "name": "host",
+      "configurePreset": "host",
       "configuration": "Release",
-      "filter": { "include": { "name": "^DKR" } },
-      "output": { "outputOnFailure": true },
-      "execution": { "noTestsAction": "error" }
+      "filter": {
+        "include": {
+          "name": "^DKR"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
     },
     {
-      "name": "policy-windows",
-      "configurePreset": "policy-windows",
+      "name": "host-windows",
+      "configurePreset": "host-windows",
       "configuration": "Release",
-      "filter": { "include": { "name": "^DKR" } },
-      "output": { "outputOnFailure": true },
-      "execution": { "noTestsAction": "error" }
+      "filter": {
+        "include": {
+          "name": "^DKR"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "host-debug",
+      "configurePreset": "host-debug",
+      "configuration": "Debug",
+      "filter": {
+        "include": {
+          "name": "^DKR"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "host-windows-debug",
+      "configurePreset": "host-windows-debug",
+      "configuration": "Debug",
+      "filter": {
+        "include": {
+          "name": "^DKR"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
     }
   ]
 }

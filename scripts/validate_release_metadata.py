@@ -55,8 +55,12 @@ def main() -> int:
         r"\bmilestone\b|\brelease candidate\b|\brc\d+\b",
         re.IGNORECASE,
     )
-    for path in [ROOT / "README.md", ROOT / "THIRD_PARTY.md", *sorted((ROOT / "docs").glob("*.md")),
-                 *sorted((ROOT / "packaging").glob("*.md"))]:
+    # Historical engineering notes may describe earlier release stages. Only
+    # current release-facing documents must avoid stale release wording.
+    for relative in ("README.md", "THIRD_PARTY.md", "docs/README.md",
+                     "docs/BUILDING.md", "docs/PLATFORMS.md",
+                     "packaging/RELEASE-README.md", "packaging/MACOS-BUILD-README.md"):
+        path = ROOT / relative
         match = forbidden.search(path.read_text(encoding="utf-8"))
         if match:
             fail(f"Historical release wording in {path.relative_to(ROOT)}: {match.group(0)}")

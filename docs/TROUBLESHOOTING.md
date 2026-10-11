@@ -126,3 +126,28 @@ A crash dump and its matching runtime log are more useful than a later clean log
 A compile-only rebuild does not regenerate game hooks. Recompose/regenerate
 both revision payloads, and owned payloads when relevant.
 Follow [Building](BUILDING.md); never edit generated C to bypass the pipeline.
+
+## Source dependency preparation fails
+
+Keep the checkout and read the dependency name/path in the error. Inspect
+`git -C <dependency-path> status` and `git -C <dependency-path> diff` before
+retrying. Commit or stash developer changes you need to retain; do not delete
+an entire `extern/` tree as the first recovery step.
+
+`python3 scripts/apply_dependency_patches.py --check` validates complete
+ordered patch stacks without changing checkout files or the real index.
+It accepts pristine or exact intermediate states that normal application can
+finish. Add `--require-all` to require every manifest checkout. Checksum or
+pinned-commit errors require correcting the source inputs, not bypassing checks.
+
+Normal application refuses unrecognised managed edits. `--repair` explicitly
+discards working-tree edits on managed patch paths, while preserving unrelated
+tracked edits and the real index. Use it only after preserving work you need.
+Bootstrap's separate `--force` can discard a dependency's local work, but
+refuses unreviewed dirty submodules; inspect and resolve each child first.
+
+If CMake reports an old `DKRPORT_ROOT` override, migrate to
+`DKR_DEPENDENCIES_DIR` following the [worktree guide](DEVELOPMENT.md#worktrees-and-incremental-builds).
+A configure failure lists missing dependencies together. The platform setup
+scripts check compiler/SDK prerequisites; the ROM-free checks do not require
+full runtime SDKs.

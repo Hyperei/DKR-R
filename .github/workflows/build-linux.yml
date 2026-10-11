@@ -1,18 +1,69 @@
-name: Linux policy tests
-on: [push, pull_request]
+name: Linux host tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
       - name: Prepare pinned runtime dependencies
-        run: |
-          python3 scripts/bootstrap_dependencies.py --only n64-modern-runtime --only rt64 --only gekkonet --only monocypher --only libdatachannel --only mbedtls --only sdl3
-          bash scripts/apply-dependency-patches.sh
-      - name: Configure, build and test
-        run: |
-          cmake -S runtime-recomp -B build/policy-linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DDKRPORT_ROOT="$PWD" -DDKR_RUNTIME_BUILD_GENERATED=OFF -DDKR_RUNTIME_BUILD_RT64=OFF
-          cmake --build build/policy-linux --parallel
-          ctest --test-dir build/policy-linux --output-on-failure -R '^DKR'
+        uses: ./.github/actions/prepare-dependencies # zizmor: ignore[self-repository] -- actionlint 1.7.12 compatibility; checkout uses this workflow revision.
+      - name: Configure
+        working-directory: runtime-recomp
+        run: cmake --preset host
+      - name: Build
+        working-directory: runtime-recomp
+        run: cmake --build --preset host --parallel
+      - name: Test
+        working-directory: runtime-recomp
+        run: ctest --preset host --parallel 2 --output-junit junit.xml
+      - name: Capture regression and benchmark report
+        run: python3 scripts/regression.py --build-dir build/host --repeat 1 --warmup 0 --output build/regression/ci
+      - name: Summarize host checks
+        if: ${{ always() }}
+        run: python3 scripts/ci_summary.py --label "Linux host tests" --junit build/host/junit.xml --regression build/regression/ci/report.json --output "$GITHUB_STEP_SUMMARY"
+      - name: Preserve regression report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: regression-linux
+          retention-days: 7
+          if-no-files-found: ignore
+          path: build/regression/ci/
+      - name: Preserve test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-results-linux
+          retention-days: 7
+          if-no-files-found: ignore
+          path: build/host/junit.xml
+      - name: Preserve failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: host-linux
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            build/host/CMakeFiles/CMakeConfigureLog.yaml
+            build/host/CMakeFiles/CMakeError.log
+            build/host/CMakeFiles/CMakeOutput.log
+            build/host/Testing/Temporary/LastTest.log
+            build/host/Testing/Temporary/LastTestsFailed.log

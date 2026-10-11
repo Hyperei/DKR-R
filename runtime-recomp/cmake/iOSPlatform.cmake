@@ -12,7 +12,8 @@ set(DKR_RUNTIME_BUILD_SDL3_INPUT_HOST OFF CACHE BOOL "iOS uses in-process SDL2 i
 
 set(DKR_HOST_FILE_TO_C "" CACHE FILEPATH "Native host RT64 file_to_c executable")
 set(DKR_HOST_SPIRV_CROSS_MSL "" CACHE FILEPATH "Native host RT64 spirv_cross_msl executable")
-if(NOT EXISTS "${DKR_HOST_FILE_TO_C}" OR NOT EXISTS "${DKR_HOST_SPIRV_CROSS_MSL}")
+if(DKR_RUNTIME_BUILD_RT64 AND
+   (NOT EXISTS "${DKR_HOST_FILE_TO_C}" OR NOT EXISTS "${DKR_HOST_SPIRV_CROSS_MSL}"))
     message(FATAL_ERROR "iOS requires DKR_HOST_FILE_TO_C and DKR_HOST_SPIRV_CROSS_MSL.")
 endif()
 
@@ -20,10 +21,10 @@ set(SDL_SHARED OFF CACHE BOOL "Static SDL2 in the IPA" FORCE)
 set(SDL_STATIC ON CACHE BOOL "Static SDL2 in the IPA" FORCE)
 set(SDL_TEST OFF CACHE BOOL "No SDL tests in the IPA" FORCE)
 set(SDL_TESTS OFF CACHE BOOL "No SDL tests in the IPA" FORCE)
-if(NOT EXISTS "${DKRPORT_ROOT}/extern/sdl2/CMakeLists.txt")
+if(NOT EXISTS "${DKR_DEPENDENCIES_DIR}/sdl2/CMakeLists.txt")
     message(FATAL_ERROR "iOS requires the pinned SDL2 checkout. Run scripts/bootstrap_dependencies.py --only sdl2.")
 endif()
-add_subdirectory("${DKRPORT_ROOT}/extern/sdl2" "${CMAKE_BINARY_DIR}/sdl2" EXCLUDE_FROM_ALL)
+add_subdirectory("${DKR_DEPENDENCIES_DIR}/sdl2" "${CMAKE_BINARY_DIR}/sdl2" EXCLUDE_FROM_ALL)
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/ios")
 
 set(DKR_IOS_NFD_SOURCE "${CMAKE_CURRENT_LIST_DIR}/../src/ios/ios_file_dialog.mm"

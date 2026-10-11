@@ -4,6 +4,23 @@ This is the player-facing release history. Current instructions live in the
 [documentation index](docs/README.md); dated investigations retain the findings
 and limitations of the build they describe.
 
+## Unreleased developer tooling
+
+- Repeatable regression/performance harness with private retail CPU routes,
+  ROM-free checkpoint benchmarks, same-machine baselines, deterministic
+  fingerprints and HTML/JSON/JUnit reports with retained attempt logs.
+
+- Fast ROM-free contributor checks, Debug host presets, editor compilation
+  databases and the same preset commands in CI.
+- Worktree-safe source/dependency paths and incremental generation that keeps
+  unchanged output timestamps.
+- One checked dependency patch implementation across platforms, non-mutating
+  validation, explicit repair, and safer nested dependency preparation.
+- More discoverable tests, isolated temporary fixtures, accurate Blender skips
+  and failure reporting, and retained CI diagnostics.
+- Opt-in Linux packaging, automation-friendly Windows launchers, and source/
+  Track Lab archives published only after successful creation and validation.
+
 ## 1.0.5 Public Build — 10 October 2026
 
 There's been a lot added since the earlier releases! This update brings the
