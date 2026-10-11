@@ -88,7 +88,6 @@ struct Player {
     float fov = 0.0F;
     unsigned trace_ticks = 0U;
     dkr_cam::BumpGuard bump{};
-    dkr_cam::HitHold hit{};
     std::uint32_t hits = 0U; // seen since this camera started, for the panel
     bool view_cut = false;   // look back toggled since the last step
 };
@@ -234,7 +233,7 @@ void publish_readout(std::size_t port, const Player& player, const MCInput& in, 
     readout.drifting = in.drifting != 0;
     readout.boosting = in.boost > 0.0F;
     readout.look_back = in.lookBack != 0;
-    readout.steadying = player.bump.blend > 0.0F || player.hit.blend > 0.0F;
+    readout.steadying = player.bump.blend > 0.0F;
     readout.hits = player.hits;
     std::scoped_lock lock(g_readout_mutex);
     g_readouts[port] = Published{readout, Clock::now()};
@@ -387,6 +386,10 @@ bool step_modern(std::uint8_t* rdram, recomp_context* context, std::uint32_t obj
                 dkr_cam_add(position, dkr_cam_v(0.0, kClearanceHeight, 0.0))};
     MCOutput out{};
     const float trauma_before = player.state.trauma;
+    // While a hit is being steadied the yaw spring is not to keep up with
+    // the nose, and a hop off a wall is not a landing: no dip, no shake.
+    params = dkr_cam::hit_step_params(params, player.bump);
+    if (player.state.initialized && player.bump.blend > 0.0F) player.state.prevGrounded = in.grounded;
     const bool landing = player.state.initialized && in.grounded && !player.state.prevGrounded;
     // modern_cam starts over on its first step and after a teleport.
     const MCVec3 anchor = player.state.anchor;
@@ -418,19 +421,8 @@ bool step_modern(std::uint8_t* rdram, recomp_context* context, std::uint32_t obj
         !std::isfinite(out.fovDeg)) {
         return false;
     }
-    // On a hit, the eye keeps its distance from the racer and then eases in.
-    const bool orbiting = mouse_moved || mouse_held || std::fabs(in.stickX) > 0.15F ||
-        std::fabs(in.stickY) > 0.15F;
-    const dkr_cam::ViewPose shown = dkr_cam::hit_steady_pose(
-        dkr_cam::ViewPose{out.eye.x, out.eye.y, out.eye.z, out.target.x, out.target.y, out.target.z, out.yaw,
-                          out.pitch},
-        in.pos, player.bump.hit, orbiting, reset || player.view_cut, dt, hit_timing.hold, hit_timing.release,
-        player.hit);
     player.view_cut = false;
-    out.eye = MCVec3{static_cast<float>(shown.x), static_cast<float>(shown.y), static_cast<float>(shown.z)};
-    out.yaw = static_cast<float>(shown.yaw);
-    out.pitch = static_cast<float>(shown.pitch);
-    const dkr_cam_vec eye = dkr_cam_v(shown.x, shown.y, shown.z);
+    const dkr_cam_vec eye = dkr_cam_v(out.eye.x, out.eye.y, out.eye.z);
     player.pose.x = eye.x;
     player.pose.y = eye.y;
     player.pose.z = eye.z;
@@ -444,13 +436,13 @@ bool step_modern(std::uint8_t* rdram, recomp_context* context, std::uint32_t obj
                      "[modern-camera][step] port=%zu dt=%.4f speed=%.0f vy=%.0f grounded=%d landing=%d "
                      "retail-shake=%.2f trauma=%.3f->%.3f dip=%.1f kick=%.1f roll=%.2f nose=%.3f heading=%.3f "
                      "view=%.3f pitch=%.3f eye=(%.0f,%.0f,%.0f) racer=(%.0f,%.0f,%.0f) clear=%.2f "
-                     "bump-hold=%.2f bump-blend=%.2f hit=%d hit-blend=%.2f drift=%d boost=%.0f fov=%.1f\n",
+                     "bump-hold=%.2f bump-blend=%.2f hit=%d recovered=%.2f drift=%d boost=%.0f fov=%.1f\n",
                      port, dt, std::hypot(player.velocity.x, player.velocity.z), player.velocity.y,
                      in.grounded, landing ? 1 : 0, shake, trauma_before, player.state.trauma,
                      player.state.dipY, player.state.kick, degrees(out.roll), nose, in.yaw, out.yaw, out.pitch,
                      eye.x, eye.y, eye.z, position.x, position.y, position.z, player.state.collisionDist,
-                     player.bump.hold, player.bump.blend, player.bump.hit ? 1 : 0, player.hit.blend, in.drifting,
-                     in.boost, player.fov);
+                     player.bump.hold, player.bump.blend, player.bump.hit ? 1 : 0, player.bump.recovered,
+                     in.drifting, in.boost, player.fov);
     } else if (trace_level() == 1 && (++player.trace_ticks % 15U) == 0U) {
         const double speed = std::hypot(player.velocity.x, player.velocity.z);
         const double motion = speed > 1.0 ? std::atan2(player.velocity.x, player.velocity.z) : 0.0;

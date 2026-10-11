@@ -31,6 +31,18 @@ The optional **Modern camera** is for local races. Enable it and use
 changing a local follow camera inside shared simulation is not treated as a
 safe renderer-only setting.
 
+The camera keeps up with the kart through a steady corner and sits at the
+tuned distance at speed; the kart turns on screen only while a turn starts or
+ends, and when a drift starts or ends the view realigns over about half a
+second. It does not roll, and its field of view breathes only a little with
+speed. On a wall or kart hit the camera moves back with the bounce, as the
+original camera does, and its aim, zoom and FOV ignore the stop until the
+kart has its speed back; the **Hits** slider in the panel sets how long it
+waits for a kart that stays slow. A `modern-camera.ini` saved by an earlier
+build is updated on the first launch: values you had not changed follow the
+new defaults, and a changed **Distance at top speed** grows by the lag the
+old position spring used to add.
+
 ## Vehicles and scenery
 
 Maximum vehicle detail, keep-scenery switches, the ultrawide guard, view

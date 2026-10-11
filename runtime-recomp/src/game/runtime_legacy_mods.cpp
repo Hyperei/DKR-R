@@ -109,6 +109,53 @@ std::vector<custom_tracks::TrackSelectEntry> authored_courses() {
         (world.authored?world.authored->courses:std::vector<custom_tracks::TrackSelectEntry>{}):custom_tracks::track_select_entries();
 }
 bool frozen_courses(){return current_world().private_owner || current_world().frozen_online;}
+// Retail Tracks mode only lets a player change vehicle on a course already
+// cleared in Adventure: func_80092188 tests courseFlags & RACE_CLEARED before
+// it reads the stick, and trackmenu_setup_render greys the other vehicles out
+// without it. No Adventure door leads to an authored course, so the vehicles
+// its header allows were unreachable and only the default one could be raced.
+// The flag is lent while the vehicle screen is open - from
+// trackmenu_assets(TRACKMENU_TYPE_FREE) until trackmenu_assets with any other
+// type - and taken back before load_level_game marks the save, so the EEPROM
+// and the course grid never see it. An authored course has no Adventure
+// progress to keep, so taking it back clears the flag unconditionally.
+void lend_course_clear(std::uint8_t* rdram,const recomp_context& ctx,unsigned event,const std::uint32_t* fields) {
+    constexpr std::int32_t RaceCleared=2;
+    constexpr std::uint32_t TrackmenuFree=1,SettingsCourseFlags=4;
+    // trackmenu_assets, and as backstops menu_track_select_init,
+    // load_level_game and menu_init: whichever way the screen is left.
+    if(event!=12 && event!=0 && event!=14 && event!=15)return;
+    const bool lend=event==12 && static_cast<std::uint32_t>(ctx.r4)==TrackmenuFree;
+    const auto courses=authored_courses();
+    if(courses.empty())return;
+    const auto payload=guest_payload();
+    if(!payload || !payload->get_settings)return;
+    const auto valid=[](std::uint32_t address) {
+        return address>=0x80000000U && address%4==0 && address-0x80000000U<=guest_memory_size()-4;
+    };
+    const auto word=[&](std::uint32_t address)->std::int32_t& {
+        return MEM_W(0,static_cast<gpr>(static_cast<std::int32_t>(address)));
+    };
+    auto call=ctx;payload->get_settings(rdram,&call);
+    const auto settings=static_cast<std::uint32_t>(call.r2);
+    if(!valid(settings+SettingsCourseFlags))return;
+    const auto flags=static_cast<std::uint32_t>(word(settings+SettingsCourseFlags));
+    if(lend) {
+        const auto preview=fields?fields[static_cast<unsigned>(dkr::mods::MenuField::PreviewCarrier)]:0U;
+        if(!valid(preview))return;
+        const auto level=word(preview);
+        const bool authored=std::ranges::any_of(courses,[&](const auto& course){return course.level_id==level;});
+        if(authored && valid(flags+4U*static_cast<std::uint32_t>(level))) {
+            word(flags+4U*static_cast<std::uint32_t>(level))|=RaceCleared;
+            std::fprintf(stderr,"[custom-tracks] level %d: Track Select vehicle choice opened\n",static_cast<int>(level));
+        }
+        return;
+    }
+    for(const auto& course:courses) {
+        const auto at=flags+4U*static_cast<std::uint32_t>(course.level_id);
+        if(course.level_id>=0 && valid(at))word(at)&=~RaceCleared;
+    }
+}
 std::vector<mods::Root> frozen_roots(const mods::RuntimeSession& assets,
     const custom_tracks::PreparedTracks* courses) {
     auto roots=assets.tracks();
@@ -678,6 +725,8 @@ extern "C" int dkr_legacy_track_menu(std::uint8_t* rdram,recomp_context* ctx,uns
         custom_tracks::arm_track_override({});
     auto state=legacy::menu.load();
     try {
+        // Online peers keep the reviewed retail vehicle gate untouched.
+        if(!netplay::session().active())legacy::lend_course_clear(rdram,*ctx,event,fields);
         // Level IDs are assigned at game initialization, after launcher setup.
         // Build the combined catalogue on the first Track Select entry, also
         // when there are no legacy mods enabled for this session.
