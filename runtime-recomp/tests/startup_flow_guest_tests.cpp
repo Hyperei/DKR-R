@@ -8,6 +8,7 @@
 
 extern "C" void dkr_skip_intro_logos(std::uint8_t*, recomp_context*);
 extern "C" void dkr_skip_intro_title(std::uint8_t*, recomp_context*);
+extern "C" void dkr_skip_intro_character_select(std::uint8_t*, recomp_context*);
 
 int main() {
     using namespace dkr::runtime;
@@ -22,6 +23,7 @@ int main() {
         const gpr index = static_cast<std::int32_t>(revision_addresses::TitleDemoIndex);
         const gpr reveal = static_cast<std::int32_t>(revision_addresses::TitleRevealTimer);
         const gpr base = static_cast<std::int32_t>(0x80010000U);
+        for (const auto destination : {startup::Destination::StartMenu, startup::Destination::CharacterSelect})
         for (const bool online : {false, true}) {
             MEM_W(0, timer) = 0x41800000; // retail 16 seconds
             MEM_W(0, index) = 0;
@@ -32,15 +34,30 @@ int main() {
             ctx->r2 = base;
             ctx->r4 = 0x1234;
             const auto table_before = MEM_W(0, base);
-            startup::prepare_launch(true, online, false);
+            MEM_W(0, static_cast<std::int32_t>(revision_addresses::MenuDelay)) = 0;
+            startup::prepare_launch(true, online, false, destination);
             dkr_skip_intro_logos(rdram, ctx);
             assert(MEM_W(0, timer) == (online ? 0x41800000 : 0));
             dkr_skip_intro_title(rdram, ctx);
-            assert(ctx->r2 == (online ? base : base + 3));
+            assert(ctx->r2 == base); // FIRST sequence, never the first racing demo
             assert(ctx->r4 == 0x1234);
-            assert(MEM_W(0, index) == (online ? 0 : 3));
-            assert(MEM_W(0, reveal) == (online ? 0 : 32));
+            assert(MEM_W(0, index) == 0);
+            assert(MEM_W(0, reveal) == 0); // normal cinematic/reveal
             assert(MEM_W(0, base) == table_before); // never rewrite the retail table
+            dkr_skip_intro_character_select(rdram, ctx);
+            const bool selected = !online && destination == startup::Destination::CharacterSelect;
+            const auto delay = static_cast<std::int32_t>(revision_addresses::MenuDelay);
+            assert(MEM_W(0, delay) == (selected ? 31 : 0));
+            if (selected) {
+                assert(MEM_W(0, static_cast<std::int32_t>(revision_addresses::NumberOfActivePlayers)) == 1);
+                for (int i = 0; i < 4; ++i) {
+                    assert(MEM_B(i, static_cast<std::int32_t>(revision_addresses::PlayersCharacterArray)) == (i == 0 ? 1 : -1));
+                    assert(MEM_B(i, static_cast<std::int32_t>(revision_addresses::ActivePlayersArray)) == (i == 0 ? 1 : 0));
+                }
+                MEM_W(0, delay) = 0;
+                dkr_skip_intro_character_select(rdram, ctx);
+                assert(MEM_W(0, delay) == 0); // one shot
+            }
             ctx->r2 = base;
             dkr_skip_intro_title(rdram, ctx);
             assert(ctx->r2 == base); // one shot per offline launch

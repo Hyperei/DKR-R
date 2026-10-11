@@ -1,12 +1,24 @@
-# DKR-R 1.0.5 Public Build
+# DKR-R 1.0.6
 
 There's been a lot added! This release includes custom tracks and characters,
 Track Lab integration, texture-pack priorities, online mod sharing, enhanced
 water and the updated launcher/overlay.
 
-The current Public Build delivery is Windows x64 and Linux x64 AppImage.
-Android/ARM previews and macOS source support have separate qualification.
+Packages cover Windows x64, Linux x86_64/ARM64 AppImages, Steam Deck and
+Android ARM64. Steam Deck uses the Linux x86_64 payload. ARM, Android and
+SteamOS still need physical-device qualification; Apple binaries are not supplied.
 Experimental Rollback and hardware ray tracing remain experimental.
+
+In Play, Skip intro logos offers Start menu or Character select. Start menu
+keeps its original first sequence. The setting does not change online startup.
+RTX lava lighting adds optional pulsating light to nearby geometry, with
+intensity, pulse strength/speed and range settings. Unsupported devices keep
+the emissive lava surface. This is ray-tested diffuse lighting, not a full
+multi-bounce path tracer; dynamic racers are not hardware occluders.
+
+Android build 1060001 keeps the previous application ID and signing identity
+to preserve upgrades. Its release Java wrapper is not debuggable; it retains
+the existing development signing key, not a newly provisioned production key.
 
 ## Start playing
 

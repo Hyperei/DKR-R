@@ -1,0 +1,30 @@
+#include "WaterProjection.hlsli"
+[[vk::push_constant]] ConstantBuffer<WaterPushConstants> gConstants : register(b0);
+StructuredBuffer<WaterDrawParams> waterDraws : register(t1);
+Texture2D<float4> sceneColor : register(t2);
+Texture2D<float> sceneDepth : register(t3);
+#include "LavaLighting.hlsli"
+
+float4 PSMain(float4 position : SV_Position) : SV_Target {
+    WaterDrawParams p=waterDraws[gConstants.drawIndex];
+    int2 pixel=int2(position.xy);
+    if(any(position.xy<p.viewBounds.xy+1) || any(position.xy>=p.viewBounds.zw-1))discard;
+    float depth=sceneDepth.Load(int3(pixel,0));
+    if(depth>=0.9999)discard;
+    float3 world=waterWorldFromPixel(position.xy,depth,p);
+    // Reconstruct only coherent receivers; never smear light across sky or
+    // silhouettes. The final raster/aspect-adjusted inverse is shared with water.
+    float3 dx=waterWorldFromPixel(position.xy+float2(1,0),sceneDepth.Load(int3(pixel+int2(1,0),0)),p)-world;
+    float3 dy=waterWorldFromPixel(position.xy+float2(0,1),sceneDepth.Load(int3(pixel+int2(0,1),0)),p)-world;
+    if(any(!isfinite(world)) || length(dx)>150 || length(dy)>150)discard;
+    float3 n=cross(dx,dy);float n2=dot(n,n);
+    if(n2<0.000001)discard;
+    n*=rsqrt(n2);if(dot(n,p.camera.xyz-world)<0)n=-n;
+    float3 irradiance=lavaIrradiance(world,n,p.material,p.camera.w);
+    if(max(irradiance.r,max(irradiance.g,irradiance.b))<0.001)discard;
+    float3 base=sceneColor.Load(int3(pixel,0)).rgb;
+    // Scene capture is already linear. Apply a bounded one-bounce diffuse
+    // response then encode once. No postprocess feedback, depth write or HUD tint.
+    float3 lit=base+max(base,0.08)*irradiance;
+    return float4(pow(max(lit,0),1.0/2.2),1);
+}

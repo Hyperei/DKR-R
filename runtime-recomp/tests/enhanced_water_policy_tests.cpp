@@ -110,6 +110,22 @@ int audit_stock_model(const char* path) {
 int main(int argc,char** argv) {
     using namespace RT64::water_policy;
     {
+        std::vector<LavaEmitter> emitters;
+        for(unsigned i=0;i<4000;++i)add_lava_emitter(emitters,{float(i),0,0,20});
+        require(emitters.size()==16,"lava emitters remain bounded without dropping an entire river end");
+        double area=0;
+        for(const auto& e:emitters){area+=e[3]*e[3];for(float v:e)require(std::isfinite(v),"merged lava lights finite");}
+        require(std::abs(area-1600000)<10,"area-weighted emitter merge retains emission area within radius budget");
+        add_lava_emitter(emitters,{0,0,0,0});add_lava_emitter(emitters,{NAN,0,0,1});
+        require(emitters.size()==16,"invalid emitters cannot enter lighting buffer");
+        for(unsigned i=0;i<10000;++i){const auto p=lava_pulse(i*0.01f,0.35f,1);require(p>=0.65f && p<=1,"smooth lava pulse is bounded");}
+        require(lava_pulse(100,0,1)==1,"zero pulse strength preserves steady lighting");
+        reset_appearance();load_tuning("rtx_lava_lighting_intensity",999);
+        require(lava_lighting==300,"persisted light intensity is clamped");
+        load_tuning("rtx_lava_lighting_intensity",-1);require(lava_lighting==0,"zero light intensity disables pass");
+        reset_appearance();require(lava_lighting==100 && lava_pulse_strength==35 && lava_light_range==100,"lighting defaults restored with appearance");
+    }
+    {
         const std::array<Vec3,3> river{{{0,20,0},{100,20,0},{0,0,100}}};
         const std::array<std::array<float,2>,3> uv{{{0,0},{32,0},{0,32}}};
         const std::array<float,2> period{32,32};

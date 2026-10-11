@@ -4,11 +4,20 @@ This is the player-facing release history. Current instructions live in the
 [documentation index](docs/README.md); dated investigations retain the findings
 and limitations of the build they describe.
 
-## Unreleased
+## 1.0.6 — 11 October 2026
 
-- Play now has a **Skip intro** tickbox! Go straight to the normal Start Game
-  title screen when launching offline. The choice is remembered; online startup
-  and Track Lab's direct-track launch stay as they were.
+- Play has a **Skip intro logos** tickbox with Start menu and Character select
+  destinations. Start menu keeps its original first sequence, music and reveal
+  timing. Both choices are offline-only; online and direct-track startup stay intact.
+- Enhanced lava now casts optional ray-tested, pulsating diffuse light onto nearby
+  geometry. RTX lava lighting settings control intensity, pulse strength, speed
+  and range. Zero intensity disables the pass; unsupported GPUs retain emissive lava.
+- All changes merged into main through PRs #52–#57 are integrated, including HLE
+  bounds protection, setup/test improvements, session fixture safety, Blender work
+  and the iOS source port. Apple binaries are not supplied in this build pass.
+- Windows, Linux x86_64, Linux ARM64, Steam Deck and Android use version 1.0.6.
+  Android build code is 1060001; it retains the existing app ID and signing identity
+  for upgrades. ARM, Android and SteamOS still need physical-device qualification.
 
 ## 1.0.5 Public Build — 10 October 2026
 

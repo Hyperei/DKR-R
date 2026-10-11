@@ -15,18 +15,27 @@ extern "C" void dkr_skip_intro_logos(std::uint8_t* rdram, recomp_context* ctx) {
 
 extern "C" void dkr_skip_intro_title(std::uint8_t* rdram, recomp_context* ctx) {
     if (!rdram || !ctx || !dkr::runtime::startup::consume_title_skip()) return;
-    const auto base = static_cast<std::uint32_t>(ctx->r2);
-    if (base < 0x80000000U || base > 0x807FFFFAU) return;
-    const auto pointer = static_cast<gpr>(static_cast<std::int32_t>(base));
-    if (!dkr::runtime::startup::valid_title_demo(
-            base, MEM_B(3, pointer), MEM_B(4, pointer))) return;
-    // The constructor has ALREADY stored the original table pointer, but has
-    // not yet read its first entry. Select the second retail demo, not an
-    // invented scene or a synthetic Start button. Input/music stay retail.
-    ctx->r2 = static_cast<gpr>(static_cast<std::int32_t>(base + 3U));
-    MEM_W(0, static_cast<gpr>(static_cast<std::int32_t>(
-        dkr::runtime::revision_addresses::TitleDemoIndex))) = 3;
-    MEM_W(0, static_cast<gpr>(static_cast<std::int32_t>(
-        dkr::runtime::revision_addresses::TitleRevealTimer))) = 32;
-    std::fprintf(stderr, "[boot][startup] skipped intro; normal Start Game title ready\n");
+    // Preserve the FIRST retail cinematic, reveal timing, table and music.
+    // Skipping the publisher logos must not advance to a racing demo.
+    const bool characters = dkr::runtime::startup::launch_destination.load() ==
+        dkr::runtime::startup::Destination::CharacterSelect;
+    dkr::runtime::startup::character_select_pending.store(characters);
+    std::fprintf(stderr, "[boot][startup] skipped logos; destination=%s\n",
+        characters ? "character-select" : "original-start-menu");
+}
+
+extern "C" void dkr_skip_intro_character_select(std::uint8_t* rdram, recomp_context* ctx) {
+    if (!rdram || !ctx || !dkr::runtime::startup::consume_character_select()) return;
+    using namespace dkr::runtime::revision_addresses;
+    // The initialized title's normal exit owns asset/font cleanup, unlock
+    // variants, charselect_prev and loading the selection scene. Request that
+    // path, rather than changing a menu ID or injecting a held Start button.
+    // Equivalent to titlescreen_controller_assign(0), which has only these
+    // writes. Keep launcher player-1 input ownership and allow others to join.
+    MEM_W(0, static_cast<gpr>(static_cast<std::int32_t>(NumberOfActivePlayers))) = 1;
+    for (int i = 0; i < 4; ++i) {
+        MEM_B(i, static_cast<gpr>(static_cast<std::int32_t>(PlayersCharacterArray))) = i == 0 ? 1 : -1;
+        MEM_B(i, static_cast<gpr>(static_cast<std::int32_t>(ActivePlayersArray))) = i == 0 ? 1 : 0;
+    }
+    MEM_W(0, static_cast<gpr>(static_cast<std::int32_t>(MenuDelay))) = 31;
 }

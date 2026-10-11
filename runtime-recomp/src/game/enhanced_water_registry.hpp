@@ -1,6 +1,7 @@
 #pragma once
 #include "enhanced_water_policy.hpp"
 #include "enhanced_water_ray_geometry.hpp"
+#include "lava_lighting_policy.hpp"
 #include "flowing_water_mapping.hpp"
 #include <bit>
 #include <memory>
@@ -138,7 +139,9 @@ class Registry {
     std::optional<Surface> procedural_;
     std::optional<Metadata> metadata_;
     std::shared_ptr<const RayGeometry> ray_geometry_;
+    std::vector<LavaEmitter> lava_emitters_;
 public:
+    std::span<const LavaEmitter> lava_emitters() const { return lava_emitters_; }
     const FlowTriangle* flow_triangle(std::uint32_t source) const {
         source &= 0x1FFFFFFFU;
         const auto it=std::lower_bound(flow_triangles_.begin(),flow_triangles_.end(),source,
@@ -234,6 +237,7 @@ public:
         const auto previous_flows=preserve_flow_phase ? std::move(flow_triangles_) : std::vector<FlowTriangle>{};
         flow_triangles_.clear();
         surfaces_.clear(); wet_triangles_.clear(); vertical_images_.clear(); procedural_.reset();
+        lava_emitters_.clear();
         const auto previous_rays=std::move(ray_geometry_);
         auto rays=collect_rays ? std::make_shared<RayGeometry>() : nullptr;
         std::vector<RayVertex> falling_vertices;
@@ -347,12 +351,23 @@ public:
                 const auto wet_begin=wet_triangles_.size();
                 const auto falling_begin=falling_vertices.size();
                 const auto flow_begin=flow_triangles_.size();
+                std::vector<LavaEmitter> batch_lava;
                 for(std::uint32_t i=f;i<fe && e.geometry_valid;++i) {
                     const auto tri=tris+i*16;
                     const auto a=m.u8(tri+1),bb=m.u8(tri+2),c=m.u8(tri+3);
                     if(a>=ve-v || bb>=ve-v || c>=ve-v) {e.geometry_valid=false;break;}
                     const auto pa=m.vertex(verts+(v+a)*10),pb=m.vertex(verts+(v+bb)*10),pc=m.vertex(verts+(v+c)*10);
                     if(!valid_triangle(pa,pb,pc)) continue; // Zero-area separators carry no surface.
+                    if(kind==Kind::Lava) {
+                        const float ux=pb.x-pa.x,uy=pb.y-pa.y,uz=pb.z-pa.z;
+                        const float vx=pc.x-pa.x,vy=pc.y-pa.y,vz=pc.z-pa.z;
+                        const float nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;
+                        // Only upward/molten beds emit area lighting. Existing
+                        // vertical lava artwork remains its original material.
+                        if(std::abs(ny)>std::sqrt(nx*nx+ny*ny+nz*nz)*0.5F)
+                            add_lava_emitter(batch_lava,{(pa.x+pb.x+pc.x)/3,(pa.y+pb.y+pc.y)/3+4,
+                                (pa.z+pb.z+pc.z)/3,std::min(600.0F,std::sqrt(std::abs(ny)*0.5F/3.14159265F))});
+                    }
                     FlowTriangle flow_triangle{};
                     if(flowing) {
                         std::array<std::array<float,2>,3> uv{};
@@ -399,6 +414,7 @@ public:
                 }
                 Surface surface{(tris+f*16)&0x1FFFFFFFU,(tris+fe*16)&0x1FFFFFFFU,
                     batch&0x1FFFFFFFU,kind,static_cast<float>(height/points)};
+                for(const auto& emitter:batch_lava)add_lava_emitter(lava_emitters_,emitter);
                 if(texture<nt && e.texture_valid) {
                     const auto header=m.u32(textures+texture*8);
                     surface.scroll_period={float(m.u8(header)),float(m.u8(header+1))};

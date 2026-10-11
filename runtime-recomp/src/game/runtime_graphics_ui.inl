@@ -656,6 +656,29 @@ void DrawGraphicsPage(float available_width, bool live) {
             water::spray_enabled.store(spray); SaveSettings();
         }
         PaddockGap(16.0F);
+        static bool lava_advanced=false;
+        if(SettingsDisclosure("##lava-lighting", "RTX lava lighting", lava_advanced, inner)) {
+            ImGui::BeginDisabled(reflections!=int(water::Reflection::Hardware));
+            const auto lava_percent=[&](const char* id,const char* label,std::atomic<int>& setting,int low,int high,const char* help) {
+                int value=setting.load();
+                if(SettingsRange(id,label,&value,low,high,inner,
+                    [](int v){return SettingsRangeValue{std::to_string(v),"%"};},help)) {
+                    setting.store(value);SaveSettings();
+                }
+                PaddockGap(12.0F);
+            };
+            lava_percent("##lava-intensity","Lighting intensity",water::lava_lighting,0,300,
+                "Zero disables the lighting pass. Higher values brighten nearby walls and ground without changing the lava surface brightness.");
+            lava_percent("##lava-pulse","Pulse strength",water::lava_pulse_strength,0,100,
+                "Zero gives a steady glow. Higher values deepen the smooth brightness pulse.");
+            lava_percent("##lava-speed","Pulse speed",water::lava_pulse_speed,25,200,
+                "Controls how quickly the underglow pulses. Animation stays local in online play.");
+            lava_percent("##lava-range","Light range",water::lava_light_range,25,200,
+                "Changes the reach of the glow. Occlusion is ray-tested against static level geometry; this is not a full multi-bounce renderer.");
+            ImGui::EndDisabled();
+            SettingsHelp("Requires enhanced water and Hardware ray tracing. Unsupported devices keep the emissive lava surface without this lighting pass. At most two shadow rays are traced per affected pixel.",inner);
+        }
+        PaddockGap(16.0F);
         static bool water_advanced=false;
         if(SettingsDisclosure("##water-advanced", "Advanced water settings", water_advanced, inner)) {
             const auto detail=[&](const char* id,const char* label,std::atomic<int>& setting) {

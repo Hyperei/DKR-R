@@ -2,6 +2,8 @@
 #define WATER_RAY_OPACITY_ONLY
 #include "WaterRays.hlsli"
 #include "LavaFlow.hlsli"
+#include "shared/rt64_water_params.h"
+#include "LavaLighting.hlsli"
 RWStructuredBuffer<uint4> results : register(u1,space0);
 [numthreads(4,1,1)]
 void CSMain(uint3 id : SV_DispatchThreadID) {
@@ -14,9 +16,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         float4 now=lavaSurface(world,4,4*LAVA_WORLD_SCALE);
         float4 next=lavaSurface(world,4+1.0/120,4*LAVA_WORLD_SCALE);
         float4 evolved=lavaSurface(world,6,4*LAVA_WORLD_SCALE);
-        results[15+sample*3]=asuint(float4(lavaDisplayColor(now.rgb,0,0),now.a));
-        results[16+sample*3]=asuint(float4(lavaDisplayColor(next.rgb,0,0),next.a));
-        results[17+sample*3]=asuint(float4(lavaDisplayColor(evolved.rgb,0,0),evolved.a));
+        results[19+sample*3]=asuint(float4(lavaDisplayColor(now.rgb,0,0),now.a));
+        results[20+sample*3]=asuint(float4(lavaDisplayColor(next.rgb,0,0),next.a));
+        results[21+sample*3]=asuint(float4(lavaDisplayColor(evolved.rgb,0,0),evolved.a));
         return;
     }
     RayDesc ray;
@@ -47,5 +49,15 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         results[12]=asuint(lavaSurface(float2(37,91),4+1.0/120,0));
         results[13]=asuint(lavaSurface(float2(37,91)+LAVA_FLOW/120,4+1.0/120,0));
         results[14]=asuint(lavaSurface(float2(37,91),4,10));
+        WaterMaterial light=(WaterMaterial)0;
+        light.sunDirection.w=1;light.skyColor.w=1;light.optics.y=1;
+        light.shoreSegments[0]=float4(0,0,20,100);
+        results[15]=asuint(float4(lavaIrradiance(0,float3(0,0,1),light,0),1));
+        light.shoreSegments[0].x=20;
+        results[16]=asuint(float4(lavaIrradiance(float3(20,0,0),float3(0,0,1),light,0),1));
+        light.sunColor.w=0.6;
+        results[17]=asuint(float4(lavaIrradiance(float3(20,0,0),float3(0,0,1),light,6.28318530718/1.7),1));
+        light.sunDirection.w=0;
+        results[18]=asuint(float4(lavaIrradiance(float3(20,0,0),float3(0,0,1),light,0),1));
     }
 }

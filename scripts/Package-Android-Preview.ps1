@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory)][string]$NdkDirectory,
     [Parameter(Mandatory)][string]$StageDirectory,
     [Parameter(Mandatory)][string]$Gradle,
-    [Parameter(Mandatory)][string]$OutputDirectory
+    [Parameter(Mandatory)][string]$OutputDirectory,
+    [switch]$ReleaseBuild
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
@@ -57,6 +58,10 @@ if ((Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw).Trim() -e
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/PUBLIC-1.0.5-NOTES.txt') -Destination $notices
     Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging/RELEASE-README.md') -Destination (Join-Path $notices 'README.md')
 }
+if ((Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw).Trim() -eq '1.0.6') {
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/PUBLIC-1.0.6-NOTES.txt') -Destination $notices
+    Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging/RELEASE-README.md') -Destination (Join-Path $notices 'README.md')
+}
 if (Test-Path -LiteralPath (Join-Path $projectRoot 'docs/ENHANCED-WATER-BETA15.txt')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/ENHANCED-WATER-BETA15.txt') -Destination $notices
 }
@@ -95,10 +100,13 @@ foreach ($file in Get-ChildItem -LiteralPath $StageDirectory -Recurse -File) {
 # Incremental APK assembly can retain the previous compressed native-library
 # entry as unused ZIP space. Clean only Gradle's app outputs before distribution;
 # staged inputs, native build products, signing identity and user data are kept.
-& $Gradle -p (Join-Path $projectRoot 'packaging/android') "-PdkrSdlSource=$SdlSource" "-PdkrNativeStage=$StageDirectory" :app:clean :app:assembleDebug --no-daemon
+$variant = if ($ReleaseBuild) { 'release' } else { 'debug' }
+$assembleTask = if ($ReleaseBuild) { ':app:assembleRelease' } else { ':app:assembleDebug' }
+& $Gradle -p (Join-Path $projectRoot 'packaging/android') "-PdkrSdlSource=$SdlSource" "-PdkrNativeStage=$StageDirectory" :app:clean $assembleTask --no-daemon
 if ($LASTEXITCODE -ne 0) { throw 'Android APK assembly failed.' }
 $version = (Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw).Trim()
-$output = Join-Path $OutputDirectory "DKR-R-$version-Android-arm64-preview.apk"
+$suffix = if ($ReleaseBuild) { '' } else { '-preview' }
+$output = Join-Path $OutputDirectory "DKR-R-$version-Android-arm64$suffix.apk"
 if (Test-Path -LiteralPath $output) { throw 'Refusing to replace an existing APK.' }
-Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging/android/app/build/outputs/apk/debug/app-debug.apk') -Destination $output
+Copy-Item -LiteralPath (Join-Path $projectRoot "packaging/android/app/build/outputs/apk/$variant/app-$variant.apk") -Destination $output
 Get-FileHash -LiteralPath $output -Algorithm SHA256

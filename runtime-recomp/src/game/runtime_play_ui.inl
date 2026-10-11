@@ -660,12 +660,17 @@ void DrawPlayPage(float available_width, const PlayPageContext& play) {
     }
     // START.
     PaddockGap(16.0F);
-    if (PaddockCheckbox("##skip-intro", "Skip intro", &g_skip_intro, width)) {
+    if (PaddockCheckbox("##skip-intro", "Skip intro logos", &g_skip_intro, width)) {
         SaveSettings();
+    }
+    if (g_skip_intro) {
+        PaddockGap(12.0F);
+        if (SettingsDropdown("skip-intro-destination", "Start at", &g_skip_intro_destination,
+            {"Start menu", "Character select"}, width, false, {})) SaveSettings();
     }
     PaddockGap(8.0F);
     PaddockText(PaddockReading(14.0F, false, 1.5F), PaddockRgb(0xB0C9CC),
-        "Go straight to the Start Game title screen when launching offline. Online startup is unchanged. Track Lab's direct-track launch takes priority.", width);
+        "Skip the publisher logos when launching offline. Start menu keeps the original opening sequence; Character select goes straight to choosing a racer. Online startup is unchanged. Track Lab's direct-track launch takes priority.", width);
     PaddockGap(16.0F);
     if (dkr::runtime::portable::supported()) {
         // Inspect only on page entry or an explicit click, never per-frame I/O.

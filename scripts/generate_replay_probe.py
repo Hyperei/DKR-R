@@ -840,7 +840,7 @@ def native_stub(name, signature, full_scenes=False):
         raise ValueError(f"Unreviewed owned-asset ABI: {name}")
     # The Play checkbox is offline-only. Private checkpoint replay must not
     # consult launcher state, even if a stale request exists during handoff.
-    if name in ("dkr_skip_intro_logos", "dkr_skip_intro_title"):
+    if name in ("dkr_skip_intro_logos", "dkr_skip_intro_title", "dkr_skip_intro_character_select"):
         if signature != ("void", ["uint8_t*", "recomp_context*"]):
             raise ValueError("Unreviewed startup-skip ABI")
         return f'void {name}({params}) {{ /* Offline preference: disabled in owned replay. */ }}'

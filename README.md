@@ -8,7 +8,7 @@
   </a>
 </p>
 
-DKR-R 1.0.5 is here! There's been a lot going on since the last update.
+DKR-R 1.0.6 is here! There's been a lot going on since the last update.
 We've now got custom tracks and characters, Track Lab integration, texture-pack
 priorities and online mod sharing built into the launcher.
 
@@ -16,7 +16,16 @@ DKR-R is a native static recompilation of Diddy Kong Racing. Bring your own
 legally obtained US v1.0 or US Rev A/v1.1 ROM; no game ROM or extracted
 Nintendo/Rare assets are included.
 
-## What's new in 1.0.5
+## What's new in 1.0.6
+
+- Skip intro logos in Play, then choose Start menu or Character select. The
+  Start menu keeps its normal opening sequence instead of jumping into a race.
+- RTX lava lighting adds a pulsating glow to nearby geometry, with intensity,
+  pulse and range controls. It needs hardware ray queries and stays optional.
+- The latest merged contributor work is included, without losing our mods,
+  online improvements, Track Lab or Blender additions.
+
+The features carried forward from 1.0.5 include:
 
 - Custom tracks sit below the original worlds in Track Select, with the wooden
   frames and previews intact. Your original tracks stay where they belong.
@@ -123,13 +132,17 @@ review them before sharing. See [troubleshooting](docs/TROUBLESHOOTING.md).
 
 The current Public Build packages are:
 
-- `DKR-R-1.0.5-Windows-x64.zip`
-- `DKR-R-1.0.5-Linux-x86_64.AppImage`
+- `DKR-R-1.0.6-Windows-x64.zip`
+- `DKR-R-1.0.6-Linux-x86_64.AppImage`
+- `DKR-R-1.0.6-Linux-aarch64.AppImage`
+- `DKR-R-1.0.6-SteamDeck-x86_64.AppImage` (same Linux payload)
+- `DKR-R-1.0.6-Android-arm64.apk` (Android 9+, ARM64)
 - `track_lab.zip` for Blender.
 
-Android ARM64 and Linux ARM64 have separate preview ports. macOS has source
-and build-kit support; a newly qualified macOS binary is not part of this
-Windows/Linux delivery. See [platform support](docs/PLATFORMS.md).
+ARM, Android and Steam Deck still need physical-device checks. Release numbering
+is not a promise that every device is qualified. No macOS/iOS binary is included
+in this build pass; their source support is preserved.
+See [platform support](docs/PLATFORMS.md) for the platform-specific requirements.
 
 For a source build, follow [Building DKR-R](docs/BUILDING.md). Both ROM
 revisions and the appropriate Patch Pipeline outputs are required for a

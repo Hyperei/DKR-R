@@ -419,6 +419,7 @@ using ultramodern::renderer::WindowMode;
 
 std::filesystem::path g_config_directory;
 bool g_skip_intro = false;
+int g_skip_intro_destination = 0;
 dkr::mods::ModLibrary g_legacy_imports;
 dkr::mods::ModLaunch g_mod_launch;
 std::unique_ptr<dkr::runtime::netplay::DirectModSyncLink> g_online_mod_link;
@@ -1607,6 +1608,7 @@ void SaveSettings() {
         output << "settings_version="
                << dkr::runtime::enhancements::kCurrentSettingsVersion << '\n';
         output << "skip_intro=" << (g_skip_intro ? 1 : 0) << '\n';
+        output << "skip_intro_destination=" << g_skip_intro_destination << '\n';
         output << "presentation_profile="
                << static_cast<int>(dkr::runtime::enhancements::presentation_profile()) << '\n';
         output << "window_mode=" << static_cast<int>(config.wm_option) << '\n';
@@ -2005,6 +2007,7 @@ bool LoadLegacyBindingSetting(const std::string& key, int number) {
 
 void LoadSettings() {
     g_skip_intro = false;
+    g_skip_intro_destination = 0;
     GraphicsConfig config = ultramodern::renderer::get_graphics_config();
     int settings_version = 0;
     bool settings_complete = false;
@@ -2046,6 +2049,10 @@ void LoadSettings() {
         const std::string value = line.substr(separator + 1);
         if (key == "skip_intro") {
             g_skip_intro = dkr::runtime::startup::parse_skip_intro(value);
+            continue;
+        }
+        if (key == "skip_intro_destination") {
+            g_skip_intro_destination = static_cast<int>(dkr::runtime::startup::parse_destination(value));
             continue;
         }
         bool controller_key = false;
@@ -7870,6 +7877,8 @@ void DrawModsHacks(float available_width, bool game_running = false) {
 bool BeginSettingsDialog(const char*, std::string_view, float, unsigned);
 float SettingsDialogInner();
 void EndSettingsDialog();
+bool SettingsDropdown(const char*, std::string_view, int*,
+                      std::initializer_list<const char*>, float, bool, std::string_view);
 #include "runtime_play_ui.inl"
 #include "runtime_online_ui.inl"
 
@@ -8879,7 +8888,8 @@ dkr::runtime::ui::StartupResult dkr::runtime::ui::run_startup_screen(
                 result.start_game=true;result.rom_path=mod_launch_rom;result.mods=prepared.prepared;
                 dkr::runtime::startup::prepare_launch(g_skip_intro, false,
                     dkr::runtime::custom_tracks::auto_boot_enabled() &&
-                    !dkr::runtime::custom_tracks::armed_track_id().empty());
+                    !dkr::runtime::custom_tracks::armed_track_id().empty(),
+                    static_cast<dkr::runtime::startup::Destination>(g_skip_intro_destination));
                 g_mod_launch.dismiss();running=false;continue;
             }
         }

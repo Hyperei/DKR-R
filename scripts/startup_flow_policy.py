@@ -9,9 +9,11 @@ from legacy_character_presentation_policy import reviewed_revision
 # is after storing the unmodified demo-table base and before reading its entry.
 SITES = {
     'us.v77': [('menu_logo_screen_loop', 0x80082B84, 0x3C0E8000, 'dkr_skip_intro_logos'),
-               ('menu_title_screen_init', 0x80083704, 0x80450001, 'dkr_skip_intro_title')],
+               ('menu_title_screen_init', 0x80083704, 0x80450001, 'dkr_skip_intro_title'),
+               ('menu_title_screen_loop', 0x800839E4, 0x27BDFFD0, 'dkr_skip_intro_character_select')],
     'us.v80': [('menu_logo_screen_loop', 0x80082FD4, 0x3C0E8000, 'dkr_skip_intro_logos'),
-               ('menu_title_screen_init', 0x80083B3C, 0x80450001, 'dkr_skip_intro_title')],
+               ('menu_title_screen_init', 0x80083B3C, 0x80450001, 'dkr_skip_intro_title'),
+               ('menu_title_screen_loop', 0x80083E1C, 0x27BDFFD0, 'dkr_skip_intro_character_select')],
 }
 
 

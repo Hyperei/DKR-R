@@ -23,14 +23,13 @@ int main() {
     assert(!consume_title_skip());
     assert(parse_skip_intro("1"));
     assert(parse_skip_intro("1\r"));
+    assert(parse_destination("1\r") == Destination::CharacterSelect);
+    assert(parse_destination("0") == Destination::StartMenu);
+    assert(parse_destination("2") == Destination::StartMenu);
+    character_select_pending = true;
+    prepare_launch(true, true, false, Destination::CharacterSelect);
+    assert(!consume_character_select());
     for (const auto text : {"", "0", "true", "2", "-1", "1junk"})
         assert(!parse_skip_intro(text));
-    assert(valid_title_demo(0x80000000, 5, -2));
-    assert(valid_title_demo(0x807FFFFA, 5, 4));
-    assert(!valid_title_demo(0x807FFFFB, 5, 1));
-    assert(!valid_title_demo(0x7FFFFFFF, 5, 1));
-    assert(!valid_title_demo(0x80000000, -1, 1));
-    assert(!valid_title_demo(0x80000000, 5, -3));
-    assert(!valid_title_demo(0x80000000, 5, 5));
     std::puts("Offline title skip, settings parsing, one-shot and online isolation passed.");
 }

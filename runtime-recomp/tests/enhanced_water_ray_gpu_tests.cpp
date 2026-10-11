@@ -574,6 +574,7 @@ void resourceProbe(RT64::RenderWorker& worker,plume::RenderShaderFormat format,c
     for(uint32_t samples:{1u,4u}) {
         if(!(worker.device->getSampleCountsSupported(RenderTarget::colorBufferFormat(false))&samples))continue;
         RenderMultisampling ms;ms.sampleCount=samples;
+        if(hardware)requireNativeGraphicsPipeline(water.lavaLightingPipeline(worker.device,format,ms),format);
         for(bool compare:{false,true})for(bool write:{false,true}) {
             requireNativeGraphicsPipeline(water.pipeline(worker.device,ms,compare,write,false,false,false,false,false),format);
             if(hardware)requireNativeGraphicsPipeline(water.pipeline(worker.device,ms,compare,write,false,false,false,false,true),format);
@@ -746,6 +747,88 @@ void captureProbe(RT64::RenderWorker& worker,plume::RenderShaderFormat format,co
         std::printf("PASS: actual %ux GPU optical reuse and private depth sample readback; error=%g.\n",samples,error);
     }
 }
+void lavaDrawProbe(RT64::RenderWorker& worker,plume::RenderShaderFormat format,const RT64::ShaderLibrary* library) {
+    using namespace RT64;
+    if(!worker.device->getCapabilities().rayQuery)return;
+    for(uint32_t samples:{1u,4u}) {
+        if(!(worker.device->getSampleCountsSupported(RenderTarget::colorBufferFormat(false))&samples))continue;
+        RenderMultisampling ms;ms.sampleCount=samples;
+        RenderTarget color(0,Framebuffer::Type::Color,ms,false),depth(0,Framebuffer::Type::Depth,ms,false);
+        color.resize(&worker,16,16);depth.resize(&worker,16,16);
+        WaterRenderer water(worker.device,format,false,library);
+        auto geometry=std::make_shared<dkr::runtime::water::enhanced::RayGeometry>();
+        geometry->vertices={{{1000,0,10,1},{1,1,1,1}},{{1010,0,10,1},{1,1,1,1}},{{1000,10,10,1},{1,1,1,1}}};
+        geometry->opaque_vertices=3;
+        if(!water.prepareRays(&worker,format,geometry))throw std::runtime_error("No lava draw ray scene");
+        requireNativeGraphicsPipeline(water.lavaLightingPipeline(worker.device,format,ms),format);
+        const auto scene=water.prepareScene(&worker,&color,&depth,1,false,false);
+        if(scene==water_policy::invalidScene)throw std::runtime_error("No lava draw capture");
+        interop::WaterDrawParams draw{};
+        draw.material.effects={0,0,5,1};draw.material.sunDirection.w=1;draw.material.skyColor.w=1;draw.material.optics.y=1;
+        draw.material.shoreSegments[0]={0,0,20,100};draw.camera={0,0,5,0};
+        draw.screen={16,16,16,16};draw.screenTransform={1,1,0,0};draw.viewBounds={0,0,16,16};
+        draw.viewportScale={8,8,1,16};draw.viewportTranslate={8,8,0,16};
+        draw.inverseViewProjection=hlslpp::float4x4::identity();
+        water.draws={draw};water.drawScenes={scene};
+        auto upload=required(worker.device->createBuffer(RenderBufferDesc::UploadBuffer(sizeof(draw),RenderBufferFlag::STORAGE)));
+        const RenderRange none(0,0),written(0,sizeof(draw));
+        auto* mapped=upload->map(0,&none);if(!mapped)throw std::runtime_error("No lava draw upload");
+        std::memcpy(mapped,&draw,sizeof(draw));upload->unmap(0,&written);
+        auto& set=*water.scenes[scene].materialSet;
+        set.setBuffer(set.draws,upload.get(),RenderBufferStructuredView(sizeof(draw)));
+        for(auto index:{set.currentField,set.previousField,set.originalColor})
+            set.setTexture(index,water.scenes[scene].color.get(),RenderTextureLayout::SHADER_READ,water.scenes[scene].colorView.get());
+        const RenderTexture* target=color.texture.get();
+        auto framebuffer=required(worker.device->createFramebuffer(RenderFramebufferDesc(&target,1,depth.texture.get())));
+        auto resolved=required(worker.device->createTexture(RenderTextureDesc::Texture2D(16,16,1,RenderTarget::colorBufferFormat(false))));
+        auto readback=required(worker.device->createBuffer(RenderBufferDesc::ReadbackBuffer(4096)));
+        worker.commandList->begin();water.rays.record(&worker);
+        worker.commandList->barriers(RenderBarrierStage::GRAPHICS,{
+            RenderTextureBarrier(color.texture.get(),RenderTextureLayout::COLOR_WRITE),
+            RenderTextureBarrier(depth.texture.get(),RenderTextureLayout::DEPTH_WRITE)});
+        worker.commandList->setFramebuffer(framebuffer.get());worker.commandList->clearColor(0,RenderColor(0.2f,0.2f,0.2f,1));
+        worker.commandList->clearDepth(true,0.25f);
+        if(!water.drawLavaLighting(&worker,0,false,RenderViewport(0,0,16,16)))throw std::runtime_error("Lava draw was not submitted");
+        worker.commandList->setFramebuffer(framebuffer.get());worker.commandList->drawInstanced(3,1,0,0);
+        worker.commandList->setFramebuffer(nullptr);
+        auto* source=color.texture.get();
+        if(samples>1) {
+            worker.commandList->barriers(RenderBarrierStage::COPY,RenderTextureBarrier(source,RenderTextureLayout::RESOLVE_SOURCE));
+            worker.commandList->barriers(RenderBarrierStage::COPY,RenderTextureBarrier(resolved.get(),RenderTextureLayout::RESOLVE_DEST));
+            worker.commandList->resolveTexture(resolved.get(),source);source=resolved.get();
+        }
+        worker.commandList->barriers(RenderBarrierStage::COPY,RenderTextureBarrier(source,RenderTextureLayout::COPY_SOURCE));
+        worker.commandList->barriers(RenderBarrierStage::COPY,RenderBufferBarrier(readback.get(),RenderBufferAccess::WRITE));
+#ifdef _WIN32
+        if(format==RenderShaderFormat::DXIL) {
+            D3D12_TEXTURE_COPY_LOCATION destination{},origin{};
+            destination.pResource=static_cast<plume::D3D12Buffer*>(readback.get())->d3d;
+            destination.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+            destination.PlacedFootprint.Footprint={DXGI_FORMAT_R8G8B8A8_UNORM,16,16,1,256};
+            origin.pResource=static_cast<plume::D3D12Texture*>(source)->d3d;
+            origin.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+            static_cast<plume::D3D12CommandList*>(worker.commandList.get())->d3d->CopyTextureRegion(&destination,0,0,0,&origin,nullptr);
+        } else
+#endif
+        {
+            VkBufferImageCopy region{};region.bufferRowLength=64;region.bufferImageHeight=16;
+            region.imageSubresource.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;
+            region.imageSubresource.layerCount=1;region.imageExtent={16,16,1};
+            vkCmdCopyImageToBuffer(static_cast<plume::VulkanCommandList*>(worker.commandList.get())->vk,
+                static_cast<plume::VulkanTexture*>(source)->vk,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                static_cast<plume::VulkanBuffer*>(readback.get())->vk,1,&region);
+        }
+        worker.commandList->end();worker.execute();worker.wait();
+        requireNoD3D12Errors(worker.device,format);
+        const RenderRange all(0,4096);
+        const auto* pixels=static_cast<const unsigned char*>(readback->map(0,&all));
+        if(!pixels)throw std::runtime_error("No lava lighting raster readback");
+        const auto red=pixels[8*256+8*4],green=pixels[8*256+8*4+1];
+        readback->unmap(0,&none);
+        if(red<=green+20 || red<=140)throw std::runtime_error("Lava lighting did not illuminate the receiver pixels");
+        std::printf("PASS: actual %ux lava lighting submission/capture/ray bindings and warm receiver readback (%u,%u).\n",samples,unsigned(red),unsigned(green));
+    }
+}
 }
 int main(int argc,char** argv) {
     using namespace RT64;
@@ -777,6 +860,7 @@ int main(int argc,char** argv) {
         ShaderLibrary library(false,false);library.setupCommonShaders(api.get(),device.get());
         resourceProbe(worker,format,&library);
         captureProbe(worker,format,&library);
+        lavaDrawProbe(worker,format,&library);
         fieldProbe(worker,format);
         // Validate the actual wake shader/pipeline with the portable constant
         // range even when this device cannot execute hardware ray queries.
@@ -810,7 +894,7 @@ int main(int argc,char** argv) {
         shader=required(device->createShader(WaterRayProbeCSBlobSPIRV,sizeof(WaterRayProbeCSBlobSPIRV),"CSMain",format));
         auto pipeline=required(device->createComputePipeline(RenderComputePipelineDesc(layout.get(),shader.get(),4,1,1)));
         constexpr uint32_t lavaSamples=128*128;
-        constexpr uint32_t bytes=(15+lavaSamples*3)*4*sizeof(uint32_t);
+        constexpr uint32_t bytes=(19+lavaSamples*3)*4*sizeof(uint32_t);
         auto gpu=required(device->createBuffer(RenderBufferDesc::DefaultBuffer(bytes,RenderBufferFlag::STORAGE|RenderBufferFlag::UNORDERED_ACCESS)));
         auto cpu=required(device->createBuffer(RenderBufferDesc::ReadbackBuffer(bytes)));
         output.setBuffer(output.output,gpu.get(),RenderBufferStructuredView(16));
@@ -873,6 +957,10 @@ int main(int argc,char** argv) {
             if(std::bit_cast<float>(values[44])<=std::bit_cast<float>(values[45]) ||
                std::bit_cast<float>(values[45])<=std::bit_cast<float>(values[46]))
                 throw std::runtime_error("Molten lava lost its emissive warm spectrum");
+            const float blocked=std::bit_cast<float>(values[60]),open=std::bit_cast<float>(values[64]);
+            const float pulsed=std::bit_cast<float>(values[68]),off=std::bit_cast<float>(values[72]);
+            if(blocked!=0 || off!=0 || !std::isfinite(open) || open<0.5f || std::abs(pulsed/open-0.7f)>0.001f)
+                throw std::runtime_error("Lava light occlusion, pulse or zero-intensity regression");
             float meanLight=0,meanEvolution=0,maxStep=0,minGreen=1,maxGreen=0;
             unsigned bright=0,hot=0,dark=0,worstSample=0,worstComponent=0;
             std::ofstream preview;
@@ -882,7 +970,7 @@ int main(int argc,char** argv) {
                 preview<<"P6\n128 128\n255\n";
             }
             for(unsigned sample=0;sample<lavaSamples;sample++) {
-                const auto offset=(15+sample*3)*4;
+                const auto offset=(19+sample*3)*4;
                 std::array<float,3> color{};
                 for(unsigned i=0;i<3;i++) {
                     const float now=std::bit_cast<float>(values[offset+i]);
@@ -906,13 +994,14 @@ int main(int argc,char** argv) {
             if(pass==0)std::printf("Lava pool: mean brightness=%.3f bright=%.1f%% white-hot=%.1f%% dark=%.1f%% max-frame-step=%.4f evolution=%.4f\n",
                 meanLight,100.0f*bright/lavaSamples,100.0f*hot/lavaSamples,100.0f*dark/lavaSamples,maxStep,meanEvolution);
             if(maxStep>0.06f)std::fprintf(stderr,"Lava worst step at grid %u,%u component=%u: now=%g next=%g\n",
-                worstSample%128,worstSample/128,worstComponent,std::bit_cast<float>(values[(15+worstSample*3)*4+worstComponent]),
-                std::bit_cast<float>(values[(16+worstSample*3)*4+worstComponent]));
+                worstSample%128,worstSample/128,worstComponent,std::bit_cast<float>(values[(19+worstSample*3)*4+worstComponent]),
+                std::bit_cast<float>(values[(20+worstSample*3)*4+worstComponent]));
             if(meanLight<0.78f || bright<lavaSamples*0.80f || hot<lavaSamples*0.02f || dark>lavaSamples*0.02f ||
                 maxGreen-minGreen<0.12f || maxStep>0.06f || meanEvolution<0.015f)
                 throw std::runtime_error("Lava pool brightness, molten coverage, detail or continuous convection regression");
         }
         std::puts("PASS: real GPU molten lava shading: bright pool coverage, white-hot cores, spatial detail, smooth convection and distant filtering.");
+        std::puts("PASS: real GPU lava lighting: static occlusion, unblocked illumination, bounded smooth pulse and zero-intensity off.");
         std::puts("PASS: real GPU ray hit/miss, transparent waterfall rejection, opaque-liquid hit, continuous film, static reuse and scene replacement; no gameplay or FPS claim.");return 0;
     } catch(const std::exception& error) {std::fprintf(stderr,"FAIL: %s\n",error.what());return 1;}
 }

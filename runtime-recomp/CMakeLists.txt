@@ -609,6 +609,7 @@ if(DKR_RUNTIME_BUILD_RT64)
             TARGET_DIRECTORY rt64 APPEND PROPERTY COMPILE_OPTIONS -include render_resource_policy.hpp)
     endif()
     include("${CMAKE_CURRENT_LIST_DIR}/cmake/EnhancedWater.cmake")
+    include("${CMAKE_CURRENT_LIST_DIR}/cmake/HleCommandGuard.cmake")
     if(MSVC AND TARGET rt64)
         # RT64 enables /MP internally. Ensure all compiler workers serialize
         # writes to the target PDB so clean RelWithDebInfo builds are reliable.

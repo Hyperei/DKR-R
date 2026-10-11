@@ -27,7 +27,7 @@ class StartupPipelineTests(unittest.TestCase):
     def test_both_revisions_and_idempotence(self):
         for revision in pipeline.SITES:
             result = self.compose(revision)
-            self.assertEqual(len(result['functionHooks']), 2)
+            self.assertEqual(len(result['functionHooks']), 3)
             self.assertEqual(result, self.compose(revision, policy=result))
 
     def test_opcode_and_function_bounds_fail_closed(self):

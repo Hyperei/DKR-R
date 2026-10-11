@@ -167,6 +167,21 @@ inline void apply_material(RT64::State& state, const Registry& registry,
                 material.craftCurrent[i].w=-1;
             }
         }
+        if(lava) {
+            // Lava has no shoreline/wake field. Reuse its unused shoreline
+            // vectors without changing the full 2048-byte shader ABI. Keep
+            // craft W negative so emitters cannot accidentally generate wakes.
+            const auto emitters=registry.lava_emitters();
+            for(unsigned i=0;i<16;++i) {
+                const auto e=i<emitters.size() ? emitters[i] : LavaEmitter{};
+                const interop::float4 light{e[0],e[1],e[2],e[3]};
+                material.shoreSegments[i]=light;
+            }
+            material.sunDirection.w=scale(lava_lighting);
+            material.sunColor.w=scale(lava_pulse_strength);
+            material.skyColor.w=scale(lava_light_range);
+            material.optics.y=scale(lava_pulse_speed);
+        }
     }
     if(dynamic) {
         // One bounded diagnostic per scene/outcome, not per wave tile/frame.

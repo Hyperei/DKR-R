@@ -81,7 +81,7 @@ class InstrumentationTests(unittest.TestCase):
             with self.assertRaises(ValueError):generator.native_stub(name,('int',['uint8_t*','recomp_context*']),True)
 
     def test_offline_intro_skip_never_enters_owned_replay(self):
-        for name in ("dkr_skip_intro_logos", "dkr_skip_intro_title"):
+        for name in ("dkr_skip_intro_logos", "dkr_skip_intro_title", "dkr_skip_intro_character_select"):
             emitted = generator.native_stub(name, ('void', ['uint8_t*', 'recomp_context*']), True)
             self.assertIn("disabled in owned replay", emitted)
             self.assertNotIn("dkr_probe_native", emitted)
