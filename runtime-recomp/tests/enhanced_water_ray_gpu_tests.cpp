@@ -1,6 +1,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <cstdint>
 #include "gbi/rt64_f3d.h"
 #include "xxHash/xxh3.h"
 #include "common/rt64_load_types.h"
