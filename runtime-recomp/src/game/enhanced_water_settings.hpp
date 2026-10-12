@@ -16,6 +16,7 @@ inline std::atomic<int> roughness_scale{100}, ripple_scale{100}, foam_scale{100}
 inline std::atomic<int> wake_strength{100}, clarity_scale{100}, refraction_scale{100};
 inline std::atomic<int> waterfall_detail{100};
 inline std::atomic<int> lava_lighting{100}, lava_pulse_strength{35}, lava_pulse_speed{100}, lava_light_range{100};
+inline std::atomic<int> lava_lighting_enabled{1}, lava_lighting_quality{1};
 inline std::atomic<bool> use_track_colours{true};
 inline std::atomic<int> tint_red{100}, tint_green{100}, tint_blue{100};
 struct Setting { const char* key; std::atomic<int>* value; int low,high; };
@@ -33,6 +34,8 @@ inline const Setting tuning_settings[] = {
     {"enhanced_water_refraction",&refraction_scale,0,200},
     {"enhanced_water_waterfall_detail",&waterfall_detail,0,200},
     {"rtx_lava_lighting_intensity",&lava_lighting,0,300},
+    {"rtx_lava_lighting_enabled",&lava_lighting_enabled,0,1},
+    {"rtx_lava_lighting_quality",&lava_lighting_quality,0,2},
     {"rtx_lava_pulse_strength",&lava_pulse_strength,0,100},
     {"rtx_lava_pulse_speed",&lava_pulse_speed,25,200},
     {"rtx_lava_light_range",&lava_light_range,25,200},
@@ -52,6 +55,7 @@ inline void reset_appearance() {
     wake_strength=100;clarity_scale=100;refraction_scale=100;waterfall_detail=100;
     use_track_colours=true;tint_red=100;tint_green=100;tint_blue=100;
     lava_lighting=100;lava_pulse_strength=35;lava_pulse_speed=100;lava_light_range=100;
+    lava_lighting_enabled=1;lava_lighting_quality=1;
 }
 inline void reset_tuning() {
     reflection_detail=-1;wake_detail=-1;spray_detail=-1;reflection_distance=100;
@@ -75,7 +79,8 @@ inline int preset() {
        reflection_distance!=100 || reflection_strength!=100 || roughness_scale!=100 ||
        ripple_scale!=100 || foam_scale!=100 || wake_strength!=100 || clarity_scale!=100 ||
        refraction_scale!=100 || waterfall_detail!=100 || lava_lighting!=100 ||
-       lava_pulse_strength!=35 || lava_pulse_speed!=100 || lava_light_range!=100 || !use_track_colours ||
+       lava_pulse_strength!=35 || lava_pulse_speed!=100 || lava_light_range!=100 ||
+       lava_lighting_enabled!=1 || lava_lighting_quality!=1 || !use_track_colours ||
        (d==2)!=(quality==Quality::High))return 4;
     return d+1;
 }

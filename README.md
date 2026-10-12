@@ -21,7 +21,11 @@ Nintendo/Rare assets are included.
 - Skip intro logos in Play, then choose Start menu or Character select. The
   Start menu keeps its normal opening sequence instead of jumping into a race.
 - RTX lava lighting adds a pulsating glow to nearby geometry, with intensity,
-  pulse and range controls. It needs hardware ray queries and stays optional.
+  pulse and range controls. Its own tickbox leaves the glowing, rough lava
+  surface and other water effects enabled when the surrounding light is off.
+  Balanced and Performance lighting options reduce the ray workload.
+- Custom Track Select rows cycle through six backgrounds and each row has
+  its own header. Returning to Future Fun Land restores its original background.
 - The latest merged contributor work is included, without losing our mods,
   online improvements, Track Lab or Blender additions.
 

@@ -20,6 +20,7 @@
 #include "revision_addresses.hpp"
 #include "runtime_enhancements.hpp"
 #include "widescreen_policy.hpp"
+#include "track_select_draw_policy.hpp"
 #include "interpolation_state_policy.hpp"
 #include "runtime_hud_layout.hpp"
 #include "hud_reference_layout.hpp"
@@ -1179,6 +1180,17 @@ void dkr::runtime::RT64Renderer::present_owned(
         }
         presentation::PresentationMarker marker{};marker.token=std::uint16_t(event.token);
         switch(event.kind) {
+        case DKR_OWNED_TRACK_UI_BEGIN:case DKR_OWNED_TRACK_UI_END:
+            marker.kind=presentation::PresentationMarkerKind::TrackSelectUi;
+            marker.mode=event.kind==DKR_OWNED_TRACK_UI_BEGIN?1:0;
+            marker.token=std::uint16_t(presentation::track_select_cover_token(cover));break;
+        case DKR_OWNED_TRACK_PREVIEW:
+            marker.kind=presentation::PresentationMarkerKind::TrackSelectPreview;
+            marker.token=std::uint16_t(presentation::track_select_cover_token(cover));
+            marker.hud_transform.x=float(std::int32_t(event.parameters[0])*4);
+            marker.hud_transform.clip_top=float(std::int32_t(event.parameters[1])*4);
+            marker.hud_transform.y=float(std::int32_t(event.parameters[2])*4);
+            marker.hud_transform.clip_bottom=float(std::int32_t(event.parameters[3])*4);break;
         case DKR_OWNED_GEOMETRY:
             if(!modern)continue;
             marker.mode=std::uint8_t(event.parameters[0]);marker.variant=std::uint8_t(event.parameters[1]);break;

@@ -17,6 +17,7 @@
 #include "water_uv_rt64.hpp"
 #include "water_performance.hpp"
 #include "water_scroll_policy.hpp"
+#include "track_select_draw_policy.hpp"
 #if defined(DKR_ENHANCED_WATER)
 #include "enhanced_water_rt64.hpp"
 #endif
@@ -343,6 +344,10 @@ struct dkr::runtime::F3DDKRRT64Bridge::StateData {
         std::uint8_t previous_matrix_aspect_override = G_EX_ASPECT_AUTO;
         std::uint8_t previous_rect_aspect = G_EX_ASPECT_AUTO;
         std::uint8_t previous_background_fill_stretch = 0U;
+        bool track_scissor = false;
+        unsigned previous_track_ui_cover = 0U;
+        RT64::ExtendedAlignment previous_scissor_alignment{};
+        std::array<std::int16_t,4> previous_clip_ratios{};
     };
 
     struct PendingShadowBatch {
@@ -415,6 +420,11 @@ struct dkr::runtime::F3DDKRRT64Bridge::StateData {
     presentation::RejectedMarkerScopes rejected_hud_widgets{};
     dkr::runtime::presentation::RejectedMarkerScopes rejected_hud_scopes{};
     std::array<AspectScope, 16> aspect_scopes{};
+    unsigned track_ui_cover = 0U;
+    presentation::TrackSelectFramebufferImages track_color_images{};
+    bool track_preview_pending = false;
+    unsigned track_preview_cover = 0U;
+    std::array<int,4> track_preview_bounds{};
     std::size_t aspect_scope_depth = 0U;
     dkr::runtime::presentation::RejectedMarkerScopes rejected_aspect_scopes{};
     PendingShadowBatch pending_shadow_batch{};
@@ -452,6 +462,7 @@ dkr::runtime::F3DDKRRT64Bridge::F3DDKRRT64Bridge()
     gbi_->map[kFillRectOpcode] = &FillRect;
     gbi_->map[G_TEXRECT] = &HudTextureRect;
     gbi_->map[G_TEXRECTFLIP] = &HudTextureRect;
+    gbi_->map[0xD5U] = &TrackTextureRect;
     // Interpolation scopes are recorded out-of-band at the address of the
     // next authored command. Route every opcode through one bounded dispatcher
     // so the renderer can apply that metadata without appending bytes to DKR's
@@ -1898,6 +1909,12 @@ void dkr::runtime::F3DDKRRT64Bridge::process(RT64::Application& application,
     }
     while (data_->aspect_scope_depth > 0U) {
         const auto scope = data_->aspect_scopes[--data_->aspect_scope_depth];
+        if(scope.track_scissor) {
+            state->rdp->popScissor();
+            state->rdp->setScissorAlign(scope.previous_scissor_alignment);
+            for(unsigned edge=0;edge<4;++edge)state->rsp->setClipRatioEdge(edge,scope.previous_clip_ratios[edge]);
+            data_->track_ui_cover=scope.previous_track_ui_cover;
+        }
         state->flush();
         state->rdp->setRectAspect(scope.previous_rect_aspect);
         data_->rect_aspect_mode = scope.previous_rect_aspect;
@@ -1948,7 +1965,7 @@ bool dkr::runtime::F3DDKRRT64Bridge::ValidateCommand(
         reinterpret_cast<std::uintptr_t>(command), kRDRAMSize,
         [command] { return static_cast<std::uint8_t>(command->w0 >> 24U); },
         [command](std::uint8_t opcode) -> std::size_t {
-            if (opcode == G_TEXRECT || opcode == G_TEXRECTFLIP) return 3U;
+            if (opcode == G_TEXRECT || opcode == G_TEXRECTFLIP || opcode==0xD5U) return 3U;
             if (opcode == kMoveMemOpcode &&
                 command->p0(16, 8) == F3D_G_MV_MATRIX_1) return 4U;
             return 1U;
@@ -1998,7 +2015,8 @@ void dkr::runtime::F3DDKRRT64Bridge::Dispatch(
         return;
     }
     if (opcode == kFullSyncOpcode && (active_->data_->split_color_image_count != 0U ||
-                                     active_->data_->hud_color_image_count != 0U)) {
+                                     active_->data_->hud_color_image_count != 0U ||
+                                     active_->data_->track_color_images.count != 0U)) {
         // Finish pending calls before normalising the producer-owned aggregate;
         // never access or mutate a workload after fullSync hands it to RT64.
         state->flush();
@@ -2016,9 +2034,13 @@ void dkr::runtime::F3DDKRRT64Bridge::Dispatch(
             if (std::find(data.split_color_images.begin(), end,
                           pair.colorImage.address) != end ||
                 std::find(data.hud_color_images.begin(), hud_end,
-                          pair.colorImage.address) != hud_end) {
+                          pair.colorImage.address) != hud_end ||
+                data.track_color_images.contains(pair.colorImage.address)) {
                 const auto authored_union = pair.scissorRect;
-                dkr::runtime::presentation::normalise_split_framebuffer_extent(pair);
+                if(data.track_color_images.contains(pair.colorImage.address))
+                    presentation::normalise_track_select_framebuffer_extent(pair);
+                else
+                    presentation::normalise_split_framebuffer_extent(pair);
                 if (trace) {
                     unsigned adjusted = 0U;
                     unsigned rectangles = 0U;
@@ -2065,6 +2087,16 @@ void dkr::runtime::F3DDKRRT64Bridge::Dispatch(
         profile::event(profile::Event::DecodedDrawCalls,calls);
     }
     handler(state, display_list);
+    auto& data=*active_->data_;
+    if(opcode==kSetScissorOpcode && data.track_preview_pending) {
+        const auto clip=presentation::track_select_preview_clip(data.track_preview_bounds,data.track_preview_cover);
+        auto& rect=state->rdp->scissorRectStack[state->rdp->scissorStackSize-1];
+        rect.ulx=clip.left;rect.uly=clip.top;rect.lrx=clip.right;rect.lry=clip.bottom;
+        state->rdp->extended.scissorLeftOriginStack[state->rdp->scissorStackSize-1]=G_EX_ORIGIN_NONE;
+        state->rdp->extended.scissorRightOriginStack[state->rdp->scissorStackSize-1]=G_EX_ORIGIN_NONE;
+        state->updateDrawStatusAttribute(RT64::DrawAttribute::Scissor);
+        data.track_preview_pending=false;
+    }
     AdjustSplitViewportCommand(state, command, opcode);
 }
 
@@ -2158,6 +2190,24 @@ void dkr::runtime::F3DDKRRT64Bridge::ApplyPresentationMarkers(
             static_cast<std::uint32_t>(command - rdram_begin));
     for (std::size_t index = 0U; index < markers.count; ++index) {
         const auto& marker = markers.markers[index];
+        if(marker.kind==PresentationMarkerKind::TrackSelectPreview) {
+            auto& data=*active_->data_;
+            const auto& b=marker.hud_transform;
+            if((display_list->w0>>24U)!=kSetScissorOpcode ||
+               !std::isfinite(b.x) || !std::isfinite(b.y) || !std::isfinite(b.clip_top) || !std::isfinite(b.clip_bottom) ||
+               std::abs(b.x)>16384.F || std::abs(b.y)>16384.F ||
+               std::abs(b.clip_top)>16384.F || std::abs(b.clip_bottom)>16384.F || b.x>=b.y || b.clip_top>=b.clip_bottom) {
+                active_->ReportPresentationError(2U,"invalid Track Select preview observation",marker.kind,marker.mode,marker.variant);
+                continue;
+            }
+            data.track_preview_bounds={int(b.x),int(b.clip_top),int(b.y),int(b.clip_bottom)};
+            data.track_color_images.remember(state->rdp->colorImage.address,state->rdp->colorImage.width);
+            // Clip against the CURRENT renderer viewport, including resizes
+            // while this immutable task was waiting in the presentation queue.
+            data.track_preview_cover=presentation::track_select_cover_token(data.world_window_aspect/(4.F/3.F));
+            data.track_preview_pending=true;
+            continue;
+        }
         if (marker.kind == PresentationMarkerKind::HudRect) {
             state->flush();
             active_->data_->hud_rect_bias=marker.mode!=0 ? (marker.variant&3U) : 0U;
@@ -2282,8 +2332,16 @@ void dkr::runtime::F3DDKRRT64Bridge::ApplyPresentationGroup(
     }
 
     if (dkr::runtime::presentation::is_aspect_marker(kind)) {
+        if(kind==PresentationMarkerKind::TrackSelectUi)
+            presentation_token=std::uint16_t(presentation::track_select_cover_token(data.world_window_aspect/(4.F/3.F)));
         state->flush();
         if (mode == kHudPassMarkerBeginMode) {
+            if(kind==PresentationMarkerKind::TrackSelectUi &&
+               state->rdp->scissorStackSize>=RDP_EXTENDED_STACK_SIZE) {
+                ++data.rejected_aspect_scopes.depth;
+                active_->ReportPresentationError(1U,"Track Select scissor scope overflow",kind,mode,presentation_variant);
+                return;
+            }
             if (data.rejected_aspect_scopes.reject_begin(
                     data.aspect_scope_depth, data.aspect_scopes.size())) {
                 active_->ReportPresentationError(1U, "aspect scope overflow",
@@ -2299,6 +2357,32 @@ void dkr::runtime::F3DDKRRT64Bridge::ApplyPresentationGroup(
             scope.previous_rect_aspect = data.rect_aspect_mode;
             scope.previous_background_fill_stretch =
                 data.background_fill_stretch_active;
+            scope.track_scissor=kind==PresentationMarkerKind::TrackSelectUi;
+            if(scope.track_scissor) {
+                // Keep overscan on each draw, but tag this native screen so its
+                // aggregate is normalised before submission. Otherwise RT64's
+                // rectangle heuristic can stretch text/images but not the RSP
+                // wooden frame whenever preview framebuffer pairs change.
+                if(!data.track_color_images.remember(state->rdp->colorImage.address,state->rdp->colorImage.width) &&
+                   state->rdp->colorImage.width==320U)
+                    active_->ReportPresentationError(1U,"Track Select framebuffer identity overflow",kind,mode,presentation_variant);
+                scope.previous_track_ui_cover=data.track_ui_cover;
+                scope.previous_scissor_alignment=state->rdp->extended.global.scissor;
+                scope.previous_clip_ratios=state->rsp->clipRatios;
+                state->rdp->pushScissor();
+                const auto clip=presentation::track_select_window_clip(presentation_token);
+                auto& rect=state->rdp->scissorRectStack[state->rdp->scissorStackSize-1];
+                rect.ulx=clip.left;rect.uly=clip.top;rect.lrx=clip.right;rect.lry=clip.bottom;
+                state->rdp->extended.scissorLeftOriginStack[state->rdp->scissorStackSize-1]=G_EX_ORIGIN_NONE;
+                state->rdp->extended.scissorRightOriginStack[state->rdp->scissorStackSize-1]=G_EX_ORIGIN_NONE;
+                auto alignment=scope.previous_scissor_alignment;
+                alignment.leftOrigin=alignment.rightOrigin=G_EX_ORIGIN_NONE;
+                state->rdp->setScissorAlign(alignment);
+                const auto ratio=std::int16_t(std::clamp((presentation_token+1023U)/1024U,1U,8U));
+                state->rsp->setClipRatioEdge(0,ratio);state->rsp->setClipRatioEdge(2,-ratio);
+                state->updateDrawStatusAttribute(RT64::DrawAttribute::Scissor);
+                data.track_ui_cover=presentation_token;
+            }
 
             if (kind == PresentationMarkerKind::BackgroundAspect) {
                 // Background-only rectangles may cover the host width. They do
@@ -2319,6 +2403,12 @@ void dkr::runtime::F3DDKRRT64Bridge::ApplyPresentationGroup(
         } else if (data.aspect_scope_depth > 0U &&
                    data.aspect_scopes[data.aspect_scope_depth - 1U].kind == kind) {
             const auto scope = data.aspect_scopes[--data.aspect_scope_depth];
+            if(scope.track_scissor) {
+                state->rdp->popScissor();
+                state->rdp->setScissorAlign(scope.previous_scissor_alignment);
+                for(unsigned edge=0;edge<4;++edge)state->rsp->setClipRatioEdge(edge,scope.previous_clip_ratios[edge]);
+                data.track_ui_cover=scope.previous_track_ui_cover;
+            }
             data.matrix_aspect_override_active =
                 scope.previous_matrix_aspect_override_active;
             data.matrix_aspect_override =
@@ -2722,6 +2812,24 @@ void dkr::runtime::F3DDKRRT64Bridge::HudTextureRect(
     const auto rect=hud::groups::transform_rectangle(t,ulx,uly,lrx,lry,
         static_cast<std::int16_t>(command->p1(16,16)),static_cast<std::int16_t>(command->p1(0,16)),data.hud_rect_bias);
     state->rdp->drawTexRect(rect.ulx,rect.uly,rect.lrx,rect.lry,tile,s,uv,rect.dsdx,rect.dtdy,flip);
+    *display_list=command;
+}
+
+void dkr::runtime::F3DDKRRT64Bridge::TrackTextureRect(
+    RT64::State* state, RT64::DisplayList** display_list) {
+    auto* command=*display_list;
+    if(!active_->data_->track_ui_cover || command->w0!=0xD5000001U || command->w1!=0x54524354U) {
+        RejectTask(display_list);return;
+    }
+    ++command;
+    const auto ulx=std::int16_t(command->p0(16,16)),uly=std::int16_t(command->p0(0,16));
+    const auto lrx=std::int16_t(command->p1(16,16)),lry=std::int16_t(command->p1(0,16));
+    ++command;
+    RT64::ExtendedAlignment alignment{};
+    alignment.leftOrigin=alignment.rightOrigin=G_EX_ORIGIN_NONE;
+    state->rdp->drawTexRect(ulx,uly,lrx,lry,0,std::int16_t(command->p0(16,16)),
+        std::int16_t(command->p0(0,16)),std::int16_t(command->p1(16,16)),
+        std::int16_t(command->p1(0,16)),false,alignment);
     *display_list=command;
 }
 

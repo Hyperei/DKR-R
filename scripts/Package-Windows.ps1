@@ -207,6 +207,8 @@ $backgroundDirectory = Join-Path $stage 'assets\ui\Backgrounds'
 New-Item -ItemType Directory -Path $backgroundDirectory -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot 'assets\ui\Backgrounds\DKR-R-Launcher-Background.png') `
     -Destination (Join-Path $backgroundDirectory 'DKR-R-Launcher-Background.png')
+$customBackgroundDirectory = Join-Path $stage 'assets\ui\CustomTrackBackgrounds'
+Copy-Item -LiteralPath (Join-Path $projectRoot 'assets\ui\CustomTrackBackgrounds') -Destination $customBackgroundDirectory -Recurse
 $filterDirectory = Join-Path $stage 'assets\filters'
 New-Item -ItemType Directory -Path $filterDirectory -Force | Out-Null
 Copy-Item -Path (Join-Path $projectRoot 'assets\filters\*.png') `

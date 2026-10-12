@@ -179,6 +179,10 @@ set_tests_properties(RealGuestProbeClosure PROPERTIES TIMEOUT 20)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(NAME ReplayProbePipelineControlFlow COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/test_generator.py")
 set_tests_properties(ReplayProbePipelineControlFlow PROPERTIES TIMEOUT 20)
+if(DKR_GENERATED_SOURCE_V77 AND DKR_GENERATED_SOURCE_V80)
+    set_tests_properties(ReplayProbePipelineControlFlow PROPERTIES ENVIRONMENT
+        "DKR_REVIEWED_GENERATED_V77=${DKR_GENERATED_SOURCE_V77};DKR_REVIEWED_GENERATED_V80=${DKR_GENERATED_SOURCE_V80}")
+endif()
 
 add_executable(DKRExperimentalProbeDriverTests
     "${CMAKE_CURRENT_LIST_DIR}/../experimental_rollback_tests.cpp"

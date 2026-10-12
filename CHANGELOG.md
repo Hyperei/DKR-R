@@ -11,7 +11,26 @@ and limitations of the build they describe.
   timing. Both choices are offline-only; online and direct-track startup stay intact.
 - Enhanced lava now casts optional ray-tested, pulsating diffuse light onto nearby
   geometry. RTX lava lighting settings control intensity, pulse strength, speed
-  and range. Zero intensity disables the pass; unsupported GPUs retain emissive lava.
+  and range. A separate tickbox disables only surrounding lighting. Performance,
+  Balanced and High lighting quality use quarter-, half- and full-resolution
+  lighting buffers; the final game image stays at the selected resolution.
+  The surface has rough hot-rock islands, raised-looking ridges and molten cracks
+  without adding tessellation or extra ray queries. Unsupported GPUs retain emissive lava.
+- Skip intro restores the title music-change/fade boundary before the original
+  Start menu initializes. Character select and online startup remain unchanged.
+- Every custom track row has a header and cycles through six supplied backgrounds.
+  Scrolling back to Future Fun Land restores its own original art.
+  The Windows correction routes these draws through the current background
+  callback, avoiding the stale menu list that could cover or erase the previews.
+- Track Select previews, names and arrows now stay attached to their frames
+  when scrolling on wider screens. Signed drawing and a separate bounded cell
+  table remove the old 4:3 cut-off without stretching frames or loading extra
+  cinematic scenes. The Windows follow-up keeps widened drawing clips separate
+  from native framebuffer sizing, preventing the brief horizontal stretching
+  of images, arrows and text during scrolling. Full-screen confirmation zoom
+  remains unchanged.
+- Golden Balloon and Wave Race credits now share the compact name-and-link
+  layout used by the other technology credits, with their acknowledgements retained.
 - All changes merged into main through PRs #52–#57 are integrated, including HLE
   bounds protection, setup/test improvements, session fixture safety, Blender work
   and the iOS source port. Apple binaries are not supplied in this build pass.

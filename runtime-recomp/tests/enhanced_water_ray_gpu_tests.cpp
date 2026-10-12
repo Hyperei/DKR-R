@@ -1,6 +1,10 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include "gbi/rt64_f3d.h"
+#include "xxHash/xxh3.h"
+#include "common/rt64_load_types.h"
+#include "common/rt64_tmem_hasher.h"
 #include "render/WaterRayScene.h"
 #include "render/WaterProjection.h"
 #include "render/WaterBounds.h"
@@ -592,6 +596,17 @@ void resourceProbe(RT64::RenderWorker& worker,plume::RenderShaderFormat format,c
             throw std::runtime_error("Scratch key/framebuffer reuse failed");
         if(water.scenes[modern].sourceColorRevision!=color.textureRevision || water.scenes[modern].sourceDepthRevision!=depth.textureRevision)
             throw std::runtime_error("Recreated source attachment revision was not adopted");
+        if(hardware) {
+            moltenDraw.material.shoreCounts[0].x=4;
+            if(!water.prepareLavaLighting(&worker,modern,moltenDraw) ||
+               water.scenes[modern].lavaWidth!=640 || water.scenes[modern].lavaHeight!=360)
+                throw std::runtime_error("1440p bounded lava lighting preparation failed");
+            auto* prepared=water.scenes[modern].lavaLight.get();
+            moltenDraw.material.shoreCounts[0].x=1;
+            if(water.prepareLavaLighting(&worker,modern,moltenDraw) ||
+               water.scenes[modern].lavaLight.get()!=prepared)
+                throw std::runtime_error("Live lava quality change invalidated an earlier prepared batch");
+        }
         if(pass%3!=2) {
             const auto classic=water.prepareScene(&worker,&color,&depth,1,true,false,{0,0,1024,768});
             if(classic==water_policy::invalidScene)throw std::runtime_error("1440p original-colour overlay rejected");
@@ -611,7 +626,7 @@ void resourceProbe(RT64::RenderWorker& worker,plume::RenderShaderFormat format,c
     if(!water.scenes.empty())throw std::runtime_error("Unused scene pool retained");
     if(water.prepareScene(&worker,&color,&depth,1,false,true)==water_policy::invalidScene)
         throw std::runtime_error("Water failed to recover after budget fallback");
-    std::puts("PASS: real 1440p water allocations, mixed modes, target-local budget rejection, pool reuse/reclaim and recovery.");
+    std::puts("PASS: real 1440p water/lava allocations, prepared-light ownership, mixed modes, target-local budget rejection, pool reuse/reclaim and recovery.");
     if(worker.device->getSampleCountsSupported(RenderFormat::R32_FLOAT)&4) {
         RenderMultisampling ms;ms.sampleCount=4;
         RenderTarget msColor(0,Framebuffer::Type::Color,ms,false),msDepth(0,Framebuffer::Type::Depth,ms,false);
@@ -750,7 +765,7 @@ void captureProbe(RT64::RenderWorker& worker,plume::RenderShaderFormat format,co
 void lavaDrawProbe(RT64::RenderWorker& worker,plume::RenderShaderFormat format,const RT64::ShaderLibrary* library) {
     using namespace RT64;
     if(!worker.device->getCapabilities().rayQuery)return;
-    for(uint32_t samples:{1u,4u}) {
+    for(uint32_t samples:{1u,4u}) for(uint32_t divisor:{1u,2u,4u}) for(float receiverDepth:{0.25f,0.99985f}) {
         if(!(worker.device->getSampleCountsSupported(RenderTarget::colorBufferFormat(false))&samples))continue;
         RenderMultisampling ms;ms.sampleCount=samples;
         RenderTarget color(0,Framebuffer::Type::Color,ms,false),depth(0,Framebuffer::Type::Depth,ms,false);
@@ -765,11 +780,15 @@ void lavaDrawProbe(RT64::RenderWorker& worker,plume::RenderShaderFormat format,c
         if(scene==water_policy::invalidScene)throw std::runtime_error("No lava draw capture");
         interop::WaterDrawParams draw{};
         draw.material.effects={0,0,5,1};draw.material.sunDirection.w=1;draw.material.skyColor.w=1;draw.material.optics.y=1;
+        draw.material.shoreCounts[0].x=float(divisor);
         draw.material.shoreSegments[0]={0,0,20,100};draw.camera={0,0,5,0};
         draw.screen={16,16,16,16};draw.screenTransform={1,1,0,0};draw.viewBounds={0,0,16,16};
         draw.viewportScale={8,8,1,16};draw.viewportTranslate={8,8,0,16};
         draw.inverseViewProjection=hlslpp::float4x4::identity();
         water.draws={draw};water.drawScenes={scene};
+        if(!water.prepareLavaLighting(&worker,scene,draw))throw std::runtime_error("No bounded lava lighting field");
+        if(water.scenes[scene].lavaWidth!=16/divisor || water.scenes[scene].lavaHeight!=16/divisor)
+            throw std::runtime_error("Lava quality did not reduce the ray field dimensions");
         auto upload=required(worker.device->createBuffer(RenderBufferDesc::UploadBuffer(sizeof(draw),RenderBufferFlag::STORAGE)));
         const RenderRange none(0,0),written(0,sizeof(draw));
         auto* mapped=upload->map(0,&none);if(!mapped)throw std::runtime_error("No lava draw upload");
@@ -787,7 +806,7 @@ void lavaDrawProbe(RT64::RenderWorker& worker,plume::RenderShaderFormat format,c
             RenderTextureBarrier(color.texture.get(),RenderTextureLayout::COLOR_WRITE),
             RenderTextureBarrier(depth.texture.get(),RenderTextureLayout::DEPTH_WRITE)});
         worker.commandList->setFramebuffer(framebuffer.get());worker.commandList->clearColor(0,RenderColor(0.2f,0.2f,0.2f,1));
-        worker.commandList->clearDepth(true,0.25f);
+        worker.commandList->clearDepth(true,receiverDepth);
         if(!water.drawLavaLighting(&worker,0,false,RenderViewport(0,0,16,16)))throw std::runtime_error("Lava draw was not submitted");
         worker.commandList->setFramebuffer(framebuffer.get());worker.commandList->drawInstanced(3,1,0,0);
         worker.commandList->setFramebuffer(nullptr);
@@ -828,13 +847,22 @@ void lavaDrawProbe(RT64::RenderWorker& worker,plume::RenderShaderFormat format,c
         // Capture linearizes the 0.2 grey input. The bounded irradiance should
         // encode back to about 110 red, not the >140 of an unlinearized capture.
         if(red<=green+20 || red<=90)throw std::runtime_error("Lava lighting did not illuminate the receiver pixels");
-        std::printf("PASS: actual %ux lava lighting submission/capture/ray bindings and warm receiver readback (%u,%u).\n",samples,unsigned(red),unsigned(green));
+        std::printf("PASS: actual %ux MSAA, 1/%u lighting pixels, depth=%.5f capture/ray bindings and warm receiver readback (%u,%u).\n",samples,divisor*divisor,receiverDepth,unsigned(red),unsigned(green));
     }
 }
 }
 int main(int argc,char** argv) {
     using namespace RT64;
     try {
+        const std::array<uint64_t,6> expected{0x206d5f44069cbcadULL,0x8cc110a2995e91cbULL,
+            0x5081f4671da18c3bULL,0x75445d2a4046a145ULL,0xddb85956cfa1601dULL,0x8aaec51a5a73156aULL};
+        LoadTile proxy{};proxy.line=4;proxy.siz=G_IM_SIZ_16b;proxy.fmt=G_IM_FMT_RGBA;
+        for(unsigned i=0;i<expected.size();++i) {
+            std::array<uint8_t,4096> tmem{};std::fill_n(tmem.begin(),512,uint8_t(49+i*16));
+            if(TMEMHasher::hash(tmem.data(),proxy,16,16,0,TMEMHasher::CurrentHashVersion)!=expected[i])
+                throw std::runtime_error("Bundled custom-row texture hash differs from the real renderer");
+        }
+        std::puts("PASS: all six custom-row proxies match the actual RT64 TMEM hasher.");
         std::unique_ptr<RenderInterface> api;
         RenderShaderFormat format=RenderShaderFormat::SPIRV;
 #ifdef _WIN32

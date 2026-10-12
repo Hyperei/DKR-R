@@ -30,6 +30,9 @@
 #include <set>
 
 extern "C" void osPiStartDma_recomp(std::uint8_t*,recomp_context*);
+#if DKR_RUNTIME_HAS_RT64
+extern "C" void dkr_track_select_background_cover(std::uint8_t*,recomp_context*);
+#endif
 extern "C" void dkr_character_select_animation_fraction(std::uint8_t*,recomp_context*);
 extern "C" void dkr_custom_tracks_extend_table(std::uint8_t*,recomp_context*,std::uint32_t);
 extern "C" int dkr_custom_tracks_asset_override(std::uint8_t*,recomp_context*);
@@ -778,6 +781,30 @@ extern "C" int dkr_legacy_track_menu(std::uint8_t* rdram,recomp_context* ctx,uns
         if(event==10 && legacy::owns_level(static_cast<std::int32_t>(ctx->r4)))
             effect.override_return=false;
         if(effect.scene)legacy::request_scene(effect.scene->id,effect.scene->carrier);
+        if(!effect.backgrounds.empty()) {
+            const auto payload=legacy::guest_payload();
+            if(!payload || !payload->menu_material_set)throw dkr::mods::Error("Native background material callback is unavailable.");
+            const auto dl_field=effect.background_display_list;
+            for(const auto& background:effect.backgrounds) {
+                auto call=*ctx;call.r4=static_cast<std::int32_t>(dl_field);
+                call.r5=static_cast<std::int32_t>(background.texture);call.r6=0;call.r7=0;
+                call.f_odd=call.mips3_float_mode?&call.f1.u32l:&call.f0.u32h;
+                // Guest callbacks may yield: no adapter lock is held.
+                payload->menu_material_set(rdram,&call);
+                if(payload->menu_background_cover) {
+                    auto cover=*ctx;cover.r8=static_cast<std::int32_t>(background.vertices);
+                    cover.f_odd=cover.mips3_float_mode?&cover.f1.u32l:&cover.f0.u32h;
+                    // The private payload records the existing background-cover
+                    // event. Local aspect settings NEVER mutate shared RAM.
+                    payload->menu_background_cover(rdram,&cover);
+                }
+                // Original F3DDKR vertex/polygon commands, original orthographic
+                // camera and double buffer. Continue the caller-owned CURRENT
+                // list; sMenuCurrDisplayList still belongs to the previous menu
+                // pulse here and must not be written or published early.
+                dkr::mods::append_track_background_quad({rdram,legacy::guest_memory_size()},dl_field,background);
+            }
+        }
         if(effect.navigation_sound) {
             const auto payload=legacy::guest_payload();
             if(!payload || !payload->menu_sound_play)throw dkr::mods::Error("Native menu sound callback is unavailable.");

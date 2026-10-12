@@ -76,6 +76,7 @@ struct SyntheticList {
                 break;
             case 0xe4:
             case 0xe5:
+            case 0xd5:
                 offset += 24;
                 break;
             default:
@@ -100,7 +101,7 @@ void rejected_addresses_are_not_read() {
 }
 
 void texture_rectangles_require_all_three_words() {
-    for (const auto opcode : {0xe4, 0xe5}) {
+    for (const auto opcode : {0xe4, 0xe5, 0xd5}) {
         for (const std::size_t bytes : {8, 16, 23, 24}) {
             SyntheticList list(3, 3);
             list.command(0, static_cast<std::uint8_t>(opcode));

@@ -13,6 +13,8 @@
 #include "widescreen_policy.hpp"
 #include "finish_presentation_policy.hpp"
 #include "audio_event_queue.h"
+#include "track_select_draw_guest.h"
+#include "track_select_draw_policy.hpp"
 
 #include "ultramodern/config.hpp"
 #include "ultramodern/ultramodern.hpp"
@@ -536,6 +538,35 @@ extern "C" void dkr_track_select_fullscreen_preview(
     (void)rdram;
     (void)context;
 #endif
+}
+
+extern "C" unsigned dkr_track_select_draw(std::uint8_t* rdram,recomp_context* context,
+    unsigned event,unsigned parameter) {
+    static thread_local dkr_track_draw_state draw{};
+    if(!rdram || !context)return 0;
+    const auto result=dkr_track_draw_guest(&draw,rdram,context,event);
+#if DKR_RUNTIME_HAS_RT64
+    using namespace dkr::runtime::presentation;
+    if(event==0 || event==1) {
+        const auto cover=static_cast<std::uint16_t>(track_select_cover_token(ExpandedCoverScale()));
+        AppendPresentationGroupCommand(rdram,RdramAddress(parameter),
+            event==0?PresentationGroupMode::StaticAuto:PresentationGroupMode::World,
+            cover,0U,PresentationMarkerKind::TrackSelectUi);
+    } else if(event==9) {
+        const auto cover=static_cast<std::uint16_t>(track_select_cover_token(ExpandedCoverScale()));
+        std::int32_t frame[4];
+        if(dkr_track_preview_bounds(rdram,context,parameter,frame)) {
+            dkr::runtime::hud::groups::Transform bounds{};
+            bounds.x=float(frame[0]*4);bounds.y=float(frame[2]*4);
+            bounds.clip_top=float(frame[1]*4);bounds.clip_bottom=float(frame[3]*4);
+            record_presentation_marker(static_cast<std::uint32_t>(context->r2),
+                0U,cover,0U,PresentationMarkerKind::TrackSelectPreview,bounds);
+        }
+    }
+#else
+    (void)parameter;
+#endif
+    return result;
 }
 
 extern "C" void dkr_track_select_lens_flare_tint_begin(

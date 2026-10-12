@@ -21,7 +21,7 @@ public:
                           std::size_t memory_size, ReadOpcode&& read_opcode) {
         return validate(memory_base, address, memory_size, read_opcode,
             [](std::uint8_t opcode) -> std::size_t {
-                return (opcode == 0xE4U || opcode == 0xE5U) ? 3U : 1U;
+                return (opcode == 0xE4U || opcode == 0xE5U || opcode == 0xD5U) ? 3U : 1U;
             });
     }
 

@@ -12,10 +12,12 @@ import startup_flow_policy as pipeline
 class StartupPipelineTests(unittest.TestCase):
     def compose(self, revision, *, opcode_changed=False, outside=False, bad_store=False, policy=None):
         sites = pipeline.SITES[revision]
-        symbols = {name: {(address, 4 if outside else 16)} for name, address, _, _ in sites}
-        # Give the title function its preceding table-base store as well.
-        name, address, _, _ = sites[1]
-        symbols[name] = {(address + 4 if outside else address - 4, 16)}
+        symbols = {}
+        for name, address, _, _ in sites:
+            if name not in symbols: symbols[name] = {(address+4 if outside else address-4,16)}
+            elif not outside:
+                begin=next(iter(symbols[name]))[0]
+                symbols[name]={(begin,address+16-begin)}
         sections = []
         for name, address, word, _ in sites:
             sections.append((address - 4, struct.pack('>II', 0 if bad_store else 0xAC820000, word ^ int(opcode_changed))))
@@ -27,7 +29,7 @@ class StartupPipelineTests(unittest.TestCase):
     def test_both_revisions_and_idempotence(self):
         for revision in pipeline.SITES:
             result = self.compose(revision)
-            self.assertEqual(len(result['functionHooks']), 3)
+            self.assertEqual(len(result['functionHooks']), 4)
             self.assertEqual(result, self.compose(revision, policy=result))
 
     def test_opcode_and_function_bounds_fail_closed(self):

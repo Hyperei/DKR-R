@@ -64,6 +64,14 @@ The **Ray tracing & water** section has:
 - **Water quality:** Original, Enhanced or High.
 - **Reflections:** Sky, Screen-space or Hardware ray tracing (experimental).
 - **Racer wakes** and **Water spray**.
+- **RTX lava lighting:** its own on/off tickbox, intensity, pulse and range.
+  Turning this off leaves enhanced water, reflections and the hot lava surface on.
+  Performance uses one sixteenth as many lighting pixels as High; Balanced uses
+  one quarter and is the default. These settings do not lower the game resolution.
+
+Enhanced lava has moving molten cracks, rough hot-rock islands and shaded ridges.
+That surface detail does not need the surrounding RTX lighting pass. It is a
+material effect, not extra collision geometry or a full multi-bounce path tracer.
 
 Original keeps the game's water. Enhanced/High add the new water presentation
 to eligible flat and animated water. Waterfalls and fountains retain their

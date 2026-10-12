@@ -319,6 +319,7 @@ mkdir -p "${APPDIR}/usr/bin/assets/ui/Backgrounds"
 install -m 0644 \
   "${PROJECT_ROOT}/assets/ui/Backgrounds/DKR-R-Launcher-Background.png" \
   "${APPDIR}/usr/bin/assets/ui/Backgrounds/DKR-R-Launcher-Background.png"
+cp -R "${PROJECT_ROOT}/assets/ui/CustomTrackBackgrounds" "${APPDIR}/usr/bin/assets/ui/CustomTrackBackgrounds"
 mkdir -p "${APPDIR}/usr/bin/assets/filters"
 install -m 0644 "${PROJECT_ROOT}"/assets/filters/*.png \
   "${APPDIR}/usr/bin/assets/filters/"

@@ -124,6 +124,14 @@ int main(int argc,char** argv) {
         require(lava_lighting==300,"persisted light intensity is clamped");
         load_tuning("rtx_lava_lighting_intensity",-1);require(lava_lighting==0,"zero light intensity disables pass");
         reset_appearance();require(lava_lighting==100 && lava_pulse_strength==35 && lava_light_range==100,"lighting defaults restored with appearance");
+        const auto water_quality=requested_quality.load();const auto water_reflection=requested_reflection.load();
+        load_tuning("rtx_lava_lighting_enabled",0);
+        require(lava_lighting_enabled==0 && lava_lighting==100 && requested_quality==water_quality && requested_reflection==water_reflection,
+            "independent light switch preserves intensity, surface and reflection settings");
+        load_tuning("rtx_lava_lighting_quality",-10);require(lava_lighting_quality==0,"lighting quality lower clamp");
+        load_tuning("rtx_lava_lighting_quality",99);require(lava_lighting_quality==2,"lighting quality upper clamp");
+        load_tuning("rtx_lava_lighting_enabled",99);require(lava_lighting_enabled==1,"lighting enable upper clamp");
+        reset_appearance();require(lava_lighting_enabled==1 && lava_lighting_quality==1,"balanced independent lighting defaults restored");
     }
     {
         const std::array<Vec3,3> river{{{0,20,0},{100,20,0},{0,0,100}}};

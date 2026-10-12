@@ -22,6 +22,7 @@ import apply_dependency_patches as patches  # noqa: E402
 import bootstrap_dependencies as bootstrap  # noqa: E402
 import legacy_character_presentation_policy as presentation  # noqa: E402
 import validate_release_metadata as release_metadata  # noqa: E402
+import package_source  # noqa: E402
 
 
 # Hermetic: the developer's global config (signing, hooks, autocrlf) must not
@@ -39,6 +40,24 @@ def git(repo, *args):
 def write(path, text):
     # Byte-exact: Windows text mode would otherwise turn \n into \r\n.
     path.write_text(text, newline="\n")
+
+
+class SourcePackageTests(unittest.TestCase):
+    def test_new_custom_backgrounds_and_authored_shaders_are_included(self):
+        selected = [Path("assets/ui/CustomTrackBackgrounds/custom-row-1.png"),
+                    Path("assets/ui/CustomTrackBackgrounds/rt64.json"),
+                    Path("patches/enhanced-water/native/LavaLightingCS.hlsl"),
+                    Path("patches/enhanced-water/native/LavaFlow.hlsli")]
+        excluded = [Path("downloads/example.png"), Path("assets/ui/CustomTrackBackgrounds/game.z64"),
+                    Path("patches/private.dkr-probe")]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for path in selected + excluded:
+                (root / path).parent.mkdir(parents=True, exist_ok=True)
+                (root / path).write_bytes(b"fixture")
+            with patch.object(package_source, "ROOT", root), \
+                 patch.object(package_source, "git_paths", side_effect=[[], selected + excluded]):
+                self.assertEqual(package_source.source_files(), sorted(selected))
 
 
 class ReleaseMetadataTests(unittest.TestCase):

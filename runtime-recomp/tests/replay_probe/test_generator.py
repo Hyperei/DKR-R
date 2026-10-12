@@ -25,7 +25,7 @@ class InstrumentationTests(unittest.TestCase):
     def test_owned_mod_callbacks_are_closed_and_fault_contained(self):
         emitted=generator.owned_mod_calls_header()
         self.assertNotIn('active_payload',emitted)
-        for target in set(generator.OWNED_MOD_CALLS.values()) | {'rand_range','dkr_character_select_animation_fraction'}:
+        for target in set(generator.OWNED_MOD_CALLS.values()) | set(generator.OWNED_MOD_NATIVE_CALLS.values()) | {'rand_range','dkr_character_select_animation_fraction'}:
             self.assertIn(f'dkr_probe_run_native({target},ram,ctx)',emitted)
         self.assertIn('throw dkr::mods::Error',emitted)
         self.assertIn('#undef get_settings',emitted)
@@ -81,7 +81,7 @@ class InstrumentationTests(unittest.TestCase):
             with self.assertRaises(ValueError):generator.native_stub(name,('int',['uint8_t*','recomp_context*']),True)
 
     def test_offline_intro_skip_never_enters_owned_replay(self):
-        for name in ("dkr_skip_intro_logos", "dkr_skip_intro_title", "dkr_skip_intro_character_select"):
+        for name in ("dkr_skip_intro_audio", "dkr_skip_intro_logos", "dkr_skip_intro_title", "dkr_skip_intro_character_select"):
             emitted = generator.native_stub(name, ('void', ['uint8_t*', 'recomp_context*']), True)
             self.assertIn("disabled in owned replay", emitted)
             self.assertNotIn("dkr_probe_native", emitted)
@@ -100,7 +100,8 @@ class InstrumentationTests(unittest.TestCase):
 
     def reviewed_bodies(self, revision):
         root=Path("G:/DiddykongWorkFolder" if os.name=="nt" else "/mnt/g/DiddykongWorkFolder")
-        directory=root/f"water-performance-20260926/pipeline/generated-v{revision}"
+        configured=os.environ.get(f"DKR_REVIEWED_GENERATED_V{revision}")
+        directory=Path(configured) if configured else root/f"water-performance-20260926/pipeline/generated-v{revision}"
         if not directory.exists():self.skipTest("Reviewed scene inputs unavailable")
         bodies={}
         for path in directory.glob("*.c"):
@@ -224,16 +225,8 @@ class InstrumentationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):generator.owned_scene_resume(*changed,revision)
 
     def test_load_preserves_retail_constructor_and_owned_reset(self):
-        root=Path("G:/DiddykongWorkFolder" if os.name=="nt" else "/mnt/g/DiddykongWorkFolder")
         for revision in (77,80):
-            directory=root/f"water-performance-20260926/pipeline/generated-v{revision}"
-            if not directory.exists():self.skipTest("Private reviewed scene inputs unavailable")
-            bodies={}
-            for path in directory.glob("*.c"):
-                source=path.read_text();matches=list(generator.DEF.finditer(source))
-                for i,match in enumerate(matches):
-                    if match[1] in ("load_level_game","level_load"):
-                        bodies[match[1]]=source[match.start():matches[i+1].start() if i+1<len(matches) else len(source)]
+            bodies=self.reviewed_bodies(revision)
             game,level=generator.owned_load_cpu(bodies["load_level_game"],bodies["level_load"],revision)
             self.assertLess(game.index('dkr_probe_scene_load_begin('),game.index('ctx->r29 ='))
             self.assertLess(level.index('dkr_probe_scene_load_reset('),level.index('ctx->r29 ='))
@@ -513,7 +506,8 @@ class InstrumentationTests(unittest.TestCase):
     def test_audited_native_source_contracts_do_not_drift(self):
         root=Path(__file__).resolve().parents[3]
         pins={
-            "runtime-recomp/src/game/runtime_stubs.cpp":"b161d8864437403855a5fbe744ee10250eef75418bad94fb05bce7f55514a94d",
+            "runtime-recomp/src/game/runtime_stubs.cpp":"65e44e833003add962b5d2c42b2d0d56af9ceb689bad7d140a274eae01361894",
+            "runtime-recomp/src/game/track_select_draw_guest.h":"6bc51e7168679d32c9602988793cc47e983b116343981db00f3feac6fbc13912",
             "runtime-recomp/src/game/audio_event_queue.h":"efb6c0cdadbc5a1fbab30ee7ff524f558ea54523a43a3424727bba4a997535c2",
             "runtime-recomp/src/game/audio_event_queue_state.h":"ca400d843e9018f5d69c2aa75ec40889a303574c7789a7297185369dcde79b18",
             "runtime-recomp/src/game/runtime_enhancements.cpp":"7a868375b1a8e4e0f3e5e1c60036795fa2630e7d4b3cd6e954308495743918de",

@@ -5,7 +5,7 @@ namespace dkr::mods {
 enum class MenuField : unsigned {
     CursorX,CursorY,X,Y,TargetX,TargetY,SelectedX,SelectedY,Height,HalfHeight,
     PreviewCarrier,LoadedCarrier,Opacity,FutureFunLand,Details,Delay,Buttons,
-    StickX,StickY,World,StockIDs,VoiceDelay,Type,InTracks,LaunchCarrier,BackgroundBusy,TitleLoaded,Count
+    StickX,StickY,World,StockIDs,VoiceDelay,Type,InTracks,LaunchCarrier,BackgroundBusy,TitleLoaded,DisplayList,VertexFlip,Count
 };
 using TrackMenuFields=std::array<std::uint32_t,static_cast<unsigned>(MenuField::Count)>;
 struct TrackSceneChoice {std::string id;unsigned carrier=0;};
@@ -14,7 +14,14 @@ struct TrackMenuEffect {
     bool navigation_sound=false;
     std::uint32_t return_value=0;
     std::optional<TrackSceneChoice> scene;
+    struct Background {std::uint32_t texture,vertices,triangles;};
+    std::vector<Background> backgrounds;
+    std::uint32_t background_display_list=0;
 };
+// Append through the background callback's actual Gfx**, never the later
+// menu_loop global. Shared by the production bridge and headless regressions.
+void append_track_background_quad(std::span<std::uint8_t> guest,
+    std::uint32_t display_list_slot,const TrackMenuEffect::Background& background);
 // Pure guest-data adapter, testable without the renderer or guest scheduler.
 // No guest calls/yields, host I/O, asset mutations or retained RDRAM pointers.
 // The bridge serializes each event and handles scene requests after unlocking.
@@ -32,6 +39,8 @@ private:
     std::vector<Root> tracks_;
     Bytes names_;
     std::vector<std::size_t> name_offsets_;
+    std::vector<std::size_t> header_offsets_;
+    std::size_t background_offset_=0;
     std::uint32_t name_address_=0;
     bool allow_races_=false,in_tracks_=false,masked_=false;
     std::uint16_t saved_x_=0,saved_y_=0;
@@ -40,5 +49,6 @@ private:
     std::optional<TrackSceneChoice> candidate_,pending_,race_;
     std::string preview_id_;
     std::optional<float> background_y_;
+    std::optional<std::uint32_t> background_display_list_;
 };
 }

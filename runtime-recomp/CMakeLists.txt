@@ -995,6 +995,9 @@ if(DKR_RUNTIME_BUILD_GENERATED)
             COMMAND "${CMAKE_COMMAND}" -E copy_if_different
                 "${CMAKE_CURRENT_LIST_DIR}/../assets/controllers/gamecontrollerdb.txt"
                 "$<TARGET_FILE_DIR:DKRPortGame>/assets/controllers/gamecontrollerdb.txt"
+            COMMAND "${CMAKE_COMMAND}" -E copy_directory
+                "${CMAKE_CURRENT_LIST_DIR}/../assets/ui/CustomTrackBackgrounds"
+                "$<TARGET_FILE_DIR:DKRPortGame>/assets/ui/CustomTrackBackgrounds"
             COMMENT "Staging the DKR-R launcher, graphics and controller assets"
             VERBATIM
         )
@@ -1074,7 +1077,7 @@ if(DKR_EXPERIMENTAL_OWNED_GENERATED)
             "${CMAKE_CURRENT_LIST_DIR}/src/game/netplay/*.c" "${CMAKE_CURRENT_LIST_DIR}/src/game/netplay/*.cpp"
             "${CMAKE_CURRENT_LIST_DIR}/src/game/netplay/*.h" "${CMAKE_CURRENT_LIST_DIR}/src/game/netplay/*.hpp")
         dkr_owned_content_identity(owned_content_parts "${CMAKE_CURRENT_LIST_DIR}" "${owned_directory}"
-            "${owned_directory}/manifest.json" ${owned_identity_files})
+            "${owned_directory}/manifest.json" "${CMAKE_CURRENT_LIST_DIR}/src/game/track_select_draw_guest.h" ${owned_identity_files})
         set(owned_identity_parts "owned-revision:${owned_revision}|numeric-policy:separate-fp-rounding-v1|${owned_content_parts}")
         string(SHA256 DKR_OWNED_BUILD_ID_V${owned_revision} "${owned_identity_parts}")
         message(STATUS "Owned v${owned_revision} rollback contract: ${DKR_OWNED_BUILD_ID_V${owned_revision}}")
@@ -1229,6 +1232,7 @@ if(TARGET DKRPortGame AND DKR_RUNTIME_BUILD_RT64 AND NOT APPLE)
                 tests/replay_probe/probe_policies.cpp
                 src/game/camera_clearance_metadata.h src/game/camera_clearance_policy.hpp
                 src/game/camera_obstruction_guest.h src/game/camera_obstruction_math.h
+                src/game/track_select_draw_guest.h
                 tests/replay_probe/probe_audio_rsp.cpp src/game/netplay/runtime_state.hpp
                 src/game/netplay/experimental_rollback.cpp src/game/netplay/experimental_launch.cpp
                 src/game/netplay/experimental_timeline.cpp src/game/netplay/experimental_network.cpp
@@ -1361,6 +1365,8 @@ if(BUILD_TESTING)
     if(Python3_Interpreter_FOUND)
         add_test(NAME DKRStartupFlowPipeline
             COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_LIST_DIR}/tests/test_startup_flow_pipeline.py")
+        add_test(NAME DKRTrackSelectDrawPipeline
+            COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_LIST_DIR}/tests/test_track_select_draw_pipeline.py")
     endif()
     if(APPLE)
         # Compiled directly so the policy-only CI configuration, which has no
@@ -1372,6 +1378,10 @@ if(BUILD_TESTING)
         add_test(NAME DKRLegacyModSandbox COMMAND DKRLegacyModSandboxTests)
     endif()
     add_executable(DKRRenderIdlePolicyTests tests/render_idle_policy_tests.cpp)
+    add_executable(DKRTrackSelectDrawTests tests/track_select_draw_tests.cpp)
+    target_compile_features(DKRTrackSelectDrawTests PRIVATE cxx_std_20)
+    target_include_directories(DKRTrackSelectDrawTests PRIVATE src/game "${CMAKE_CURRENT_LIST_DIR}/../extern/n64-modern-runtime/N64Recomp/include")
+    add_test(NAME DKRTrackSelectDraw COMMAND DKRTrackSelectDrawTests)
     add_executable(DKRRenderPassPolicyTests tests/render_pass_policy_tests.cpp)
     target_compile_features(DKRRenderPassPolicyTests PRIVATE cxx_std_20)
     add_test(NAME DKRRenderPassPolicy COMMAND DKRRenderPassPolicyTests)
@@ -1787,6 +1797,20 @@ if(BUILD_TESTING)
                 target_link_libraries(DKRLegacyMemoryGuest${revision}Tests PRIVATE m)
             endif()
             add_test(NAME DKRLegacyMemoryGuest${revision} COMMAND DKRLegacyMemoryGuest${revision}Tests)
+            add_executable(DKRTrackSelectNative${revision}Tests
+                tests/track_select_native_draw_tests.cpp
+                src/game/mods/legacy_track_menu.cpp src/game/mods/legacy_track_menu_adapter.cpp
+                "${DKR_MEMORY_FIXTURE_ROOT}/fixtures-v${revision}/trackmenu_render_names.c"
+                "${DKR_MEMORY_FIXTURE_ROOT}/fixtures-v${revision}/texrect_draw_scaled.c"
+                "${DKR_MEMORY_FIXTURE_ROOT}/fixtures-v${revision}/texrect_draw.c")
+            target_compile_definitions(DKRTrackSelectNative${revision}Tests PRIVATE DKR_TEST_REVISION=${revision})
+            target_compile_features(DKRTrackSelectNative${revision}Tests PRIVATE cxx_std_20)
+            target_include_directories(DKRTrackSelectNative${revision}Tests PRIVATE src/game
+                "${DKR_MEMORY_FIXTURE_ROOT}/fixtures-v${revision}" "${DKRPORT_ROOT}/extern/n64-modern-runtime/N64Recomp/include")
+            if(NOT MSVC)
+                target_link_libraries(DKRTrackSelectNative${revision}Tests PRIVATE m)
+            endif()
+            add_test(NAME DKRTrackSelectNative${revision} COMMAND DKRTrackSelectNative${revision}Tests)
         endforeach()
     endif()
     if(TARGET DKRLegacyGuestIO)

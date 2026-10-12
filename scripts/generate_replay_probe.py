@@ -20,6 +20,7 @@ CALL = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
 # Project-owned import absent from N64Recomp's emitted funcs.h. ABI checked
 # against runtime-recomp/src/game/virtual_pak.cpp, not inferred from its name.
 PROJECT_IMPORTS = {
+    "dkr_track_select_draw": ("unsigned", ["uint8_t*", "recomp_context*", "unsigned", "unsigned"]),
     "osPfsInit_recomp": ("void", ["uint8_t*", "recomp_context*"]),
     # runtime-recomp/src/game/runtime_stubs.cpp
     "rmonPrintf_recomp": ("void", ["uint8_t*", "recomp_context*"]),
@@ -54,6 +55,7 @@ PROJECT_IMPORTS = {
 OWNED_MOD_CALLS = {
     "get_settings": "get_settings", "asset_allocate": "mempool_alloc_safe",
     "asset_release": "mempool_free", "asset_copy": "dmacopy",
+    "menu_material_set": "material_set",
     "menu_sound_play": "sound_play", "menu_texture_load": "load_texture",
     "menu_texture_free": "tex_free", "menu_texture_draw": "texrect_draw_scaled",
     "menu_font": "set_text_font", "menu_colour": "set_text_colour",
@@ -66,12 +68,14 @@ OWNED_MOD_CALLS = {
     "sound_bank_play": "sndp_play_with_priority", "sound_parameter": "sndp_set_param",
     "sound_spatial_point": "audspat_point_create",
 }
+OWNED_MOD_NATIVE_CALLS = {"menu_background_cover": "dkr_track_select_background_cover"}
 
 def owned_mod_calls_header():
     lines=['// New Patch Pipeline output: private C fault trampolines only.', '#pragma once',
            'extern "C" {', '#include "imports.h"', '}',
            'namespace dkr_owned_mod_calls {']
-    names=set(OWNED_MOD_CALLS.values()) | {"dkr_character_select_animation_fraction", "rand_range", "tex_animate_texture"}
+    calls={**OWNED_MOD_CALLS,**OWNED_MOD_NATIVE_CALLS}
+    names=set(calls.values()) | {"dkr_character_select_animation_fraction", "rand_range", "tex_animate_texture"}
     for name in sorted(names):
         lines.append(f'inline void call_{name}(uint8_t* ram,recomp_context* ctx) {{')
         lines.append('    ctx->f_odd=ctx->mips3_float_mode?&ctx->f1.u32l:&ctx->f0.u32h;')
@@ -80,13 +84,13 @@ def owned_mod_calls_header():
         lines.append('}')
     # Isolated-symbol macros also rename a few names used as C++ field names.
     # Suspend those macros only AFTER the private wrapper bodies are emitted.
-    for field in sorted(OWNED_MOD_CALLS):
+    for field in sorted(calls):
         lines.extend([f'#pragma push_macro("{field}")', f'#undef {field}'])
     lines.extend(['inline dkr::runtime::GamePayload payload() {', '    dkr::runtime::GamePayload out{};'])
-    for field,name in OWNED_MOD_CALLS.items():
+    for field,name in calls.items():
         lines.append(f'    out.{field}=call_{name};')
     lines.extend(['    return out;', '}'])
-    for field in reversed(sorted(OWNED_MOD_CALLS)):
+    for field in reversed(sorted(calls)):
         lines.append(f'#pragma pop_macro("{field}")')
     lines.append('}')
     return '\n'.join(lines)+'\n'
@@ -120,9 +124,11 @@ UNLOAD_CPU_HASH = {
     80: "44e44141c85723579d36ae1a92d0c8d393885b5a5556b2526d082ab843276b25",
 }
 LOAD_CPU_HASH = {
-    77: {"load_level_game": "cbd6dc82a16f60d2758e338893383ac73a89eec02fe487d46b0fd9ced335bd97",
+    # ABI 4 appends DisplayList and VertexFlip to event 14's field table;
+    # the exact retail constructor instructions and ownership cuts are unchanged.
+    77: {"load_level_game": "c435b2bf270048c3a3e0d2825ec788e7642c84453c5139693da945822e64bd9b",
          "level_load": "57dc04a00e938e23f1e48115d7e111f4763a53f92fbf4fd1f9a789d49f71b93c"},
-    80: {"load_level_game": "1810c31061fd27f8dcd4f8981ab445a9b770ad0b8747ff69dd11a9ba69c525f8",
+    80: {"load_level_game": "e84e7259d83a3299058073e0fda5b82c2aa6ec777a50430f22500d4e71555633",
          "level_load": "93236d6aa9579ad4b8c856aca32b70b5be7ec23c12c4c8462495eeeb236890de"},
 }
 
@@ -139,7 +145,7 @@ MENU_CPU_HASH = {
         "load_menu_with_level_background": "4baeff8b295c4d60ff93c7ce7d59398ebb5f4c4798b07e11e40fb0f62b2fb951",
         "load_next_ingame_level": "9089cd9c290d5bc226081d66c32fd4da67876941eebb417c0d4cde5c7626ef39",
         "bgload_tick": "4e2f5486871d6bd5e4b30f5df7017cb29ac0a5de95e173e95c465b1856c260af",
-        "load_level_for_menu": "b045459873096567c26b11c441b3d5c5175ba5de49f567d8e20e0b02d9a0a3ee",
+        "load_level_for_menu": "c2cdf6d9c766c92c2a330cbac34ee1c903390910f2c942c89ca3f63be8b4711b",
     },
     80: {
         "mode_intro": "0cace885025102286a9fb712803468803142f5686903d8b351e1662992e5584c",
@@ -149,7 +155,7 @@ MENU_CPU_HASH = {
         "load_menu_with_level_background": "30bc0a2370422c23046dc6cebaff1b348ffa13b37b486c23fd7cc10c0e53f1ea",
         "load_next_ingame_level": "910752a94b97b748d4fa5149e1605c27b07f40a19748b7a06e687cfc2e66b3f5",
         "bgload_tick": "766014fd850e5be273f7f45d0d7ff32ccada5225d10402d095360c6ce4d7214b",
-        "load_level_for_menu": "f1d68b08f4c2fc1e84bc45dc6ccfdf4976fe28ff4b1d5e134a3401a05d588b8a",
+        "load_level_for_menu": "2ea8b52d7055afd666e9339b89dbf064ca25c5a6a675c0ab135e951491593f5a",
     },
 }
 
@@ -386,16 +392,16 @@ AUDIO_SYMBOL_HASH = {
 MENU_CALLBACKS = ("func_8008F618",)
 MENU_INDIRECT_HASH = {
     77: {
-        "func_8008F618": "4ad1e08242029f24a826f6d1cf3b1db7c95cc38b6bb51067add491312079cd38",
+        "func_8008F618": "43f58bb992dca888bb42da1b5cc4263a8d6e78b86b1fd4b79ee2f9e5abc17a23",
         "bgdraw_render": "f77a294f38a46d586f9d4f9e78a20be559aba6f3f684c8850449323c620f6cd3",
         "bgdraw_set_func": "967c3547f79808adbf71fc38ff41460df768f818d36c020128fe1a6a599f4bce",
-        "menu_track_select_init": "c7105c42d8ba3d4eeb657037a44ff54adb2326ec9e11f3b2ca1940483a70c13e",
+        "menu_track_select_init": "4c0ad49afc4c2cf50a6eaa7794e839c4822dc4efb4a340e120b92d027d5e1b10",
     },
     80: {
-        "func_8008F618": "cb8fdf63bf07af167599b38b9b98ac18c50050568ad1ee6fba0b13c87e8c4cdb",
+        "func_8008F618": "ae64639dee9b1059beb89714a082feb5ad06b36eeaa48864002fa88db18bbd75",
         "bgdraw_render": "e7c1ee0efd3f00e8e8fce620c1aabc7e98d406ee78ac96d3c9d4caf577febe6a",
         "bgdraw_set_func": "c72c4565c29086412f719384ac7a6ceb3c37c582ca4d13f763c1be831b35660c",
-        "menu_track_select_init": "e2715d42b12fc45c0af0c2e2619fab51f16c8925300163f886a839ea01893a58",
+        "menu_track_select_init": "62b9191809bac34c79933c2a0f6685ff2dc293403efff7748ecd78c9459efa9d",
     },
 }
 RSP_INPUT_HASH = {
@@ -462,7 +468,10 @@ FULL_SCENE_NATIVE_HASH = {
     # PR49 ultrawide sky: presentation-only column scaling; no new gameplay,
     # I/O, ownership or checkpoint fields.
     "runtime-recomp/src/game/widescreen_policy.hpp": "0d6080326b9794cf468e5c54f2b93bfbb01f43f39b6c6eaf04cbd9f1e53df0dd",
-    "runtime-recomp/src/game/runtime_stubs.cpp": "b161d8864437403855a5fbe744ee10250eef75418bad94fb05bce7f55514a94d",
+    # Oct 12: scoped signed Track Select drawing and observation-only clips.
+    # CPU coordinates/visible neighbourhood are canonical on every peer.
+    "runtime-recomp/src/game/runtime_stubs.cpp": "65e44e833003add962b5d2c42b2d0d56af9ceb689bad7d140a274eae01361894",
+    "runtime-recomp/src/game/track_select_draw_guest.h": "6bc51e7168679d32c9602988793cc47e983b116343981db00f3feac6fbc13912",
     "runtime-recomp/src/game/audio_event_queue.h": "efb6c0cdadbc5a1fbab30ee7ff524f558ea54523a43a3424727bba4a997535c2",
     "runtime-recomp/src/game/audio_event_queue_state.h": "ca400d843e9018f5d69c2aa75ec40889a303574c7789a7297185369dcde79b18",
     "runtime-recomp/src/game/intro_tail_policy.hpp": "5f5362ff5de40f5f9aa3a653c6e3849b8f27997b9db4592abd833022b9d47a36",
@@ -486,12 +495,18 @@ def full_scene_native_audit():
             raise ValueError(f"Unreviewed full-scene native participant: {name}")
 
 
-# Exact alternate source resulting from integrating origin/main d089593.
+# Exact reviewed source integrating origin/main d089593 and ABI-4 menu art.
 # Its Track Lab vehicle-selection loan is explicitly offline-only and revoked
 # before gameplay/save writes. Online asset routing retains the same fixes.
+# The new material callback is routed through the private guest payload;
+# local background widening runs only in a disposable presentation image.
+# Background drawing now retains the actual caller's Gfx** for this invocation
+# only. It never writes the previous menu task; checkpoints reject/clear that
+# transient slot just as they already do the matching background-scroll scope.
 # Accept only these two reviewed images, not arbitrary edits after a merge.
 REVIEWED_MAIN_MERGE_HASH = {
-    "runtime-recomp/src/game/runtime_legacy_mods.cpp": "bd7f4834046ce3f5b310d3d560974dabcba1b0758424ff06139ec8db9b0de650",
+    "runtime-recomp/src/game/runtime_legacy_mods.cpp": "3a5da9c927c6c210f6d94f2f2e6c321959d7c5adef1f8997523aa20d173b8bbe",
+    "runtime-recomp/src/game/mods/legacy_guest_checkpoint.cpp": "00cef2c340fc0521a6fe360aef889ad4010e19537c9b85a7d1a023a652e682f6",
 }
 
 
@@ -792,6 +807,7 @@ def native_stub(name, signature, full_scenes=False):
         # adapter uses its own fenced wrapper, not this raw function pointer.
         return f'void {name}({params}) {{ if(p3!=rand_range) dkr_probe_block("unowned-character-rng"); uint64_t args[]={{p2}},result=0; if(!dkr_probe_mod_dispatch("{name}",p0,p1,args,1,0,0,&result)) {{ dkr_probe_profile_disabled("{name}"); }} }}'
     audited_assets = {
+        "dkr_track_select_draw": ("unsigned", ["uint8_t*", "recomp_context*", "unsigned", "unsigned"]),
         "dkr_legacy_asset_api": ("int", ["uint8_t*", "recomp_context*", "unsigned"]),
         **{n: ("void", ["uint8_t*", "recomp_context*"]) for n in (
             "dkr_legacy_pi_start_dma", "osPiStartDma_recomp", "osRecvMesg_recomp",
@@ -840,7 +856,7 @@ def native_stub(name, signature, full_scenes=False):
         raise ValueError(f"Unreviewed owned-asset ABI: {name}")
     # The Play checkbox is offline-only. Private checkpoint replay must not
     # consult launcher state, even if a stale request exists during handoff.
-    if name in ("dkr_skip_intro_logos", "dkr_skip_intro_title", "dkr_skip_intro_character_select"):
+    if name in ("dkr_skip_intro_audio", "dkr_skip_intro_logos", "dkr_skip_intro_title", "dkr_skip_intro_character_select"):
         if signature != ("void", ["uint8_t*", "recomp_context*"]):
             raise ValueError("Unreviewed startup-skip ABI")
         return f'void {name}({params}) {{ /* Offline preference: disabled in owned replay. */ }}'

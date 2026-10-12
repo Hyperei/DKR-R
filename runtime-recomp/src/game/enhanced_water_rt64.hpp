@@ -177,10 +177,13 @@ inline void apply_material(RT64::State& state, const Registry& registry,
                 const interop::float4 light{e[0],e[1],e[2],e[3]};
                 material.shoreSegments[i]=light;
             }
-            material.sunDirection.w=scale(lava_lighting);
+            material.sunDirection.w=lava_lighting_enabled.load() ? scale(lava_lighting) : 0.0F;
             material.sunColor.w=scale(lava_pulse_strength);
             material.skyColor.w=scale(lava_light_range);
             material.optics.y=scale(lava_pulse_speed);
+            // Lava has no shoreline field. Carry the immutable per-draw
+            // lighting sample divisor in an otherwise unused field.
+            material.shoreCounts[0].x=float(4U >> std::clamp(lava_lighting_quality.load(),0,2));
         }
     }
     if(dynamic) {

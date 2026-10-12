@@ -658,7 +658,19 @@ void DrawGraphicsPage(float available_width, bool live) {
         PaddockGap(16.0F);
         static bool lava_advanced=false;
         if(SettingsDisclosure("##lava-lighting", "RTX lava lighting", lava_advanced, inner)) {
+            bool lava_enabled=water::lava_lighting_enabled.load()!=0;
+            if(SettingsCheck("##lava-lighting-enabled","RTX lava lighting",&lava_enabled,inner)) {
+                water::lava_lighting_enabled.store(lava_enabled?1:0);SaveSettings();
+            }
+            SettingsHelp("Switches surrounding lava light on or off independently. Enhanced water, reflections and the glowing lava surface are unchanged.",inner);
+            PaddockGap(12.0F);
             ImGui::BeginDisabled(reflections!=int(water::Reflection::Hardware));
+            int lava_quality=water::lava_lighting_quality.load();
+            if(SettingsDropdown("lava-lighting-quality","Lighting quality",&lava_quality,
+                {"Performance (quarter resolution)","Balanced (half resolution)","High (full resolution)"},inner)) {
+                water::lava_lighting_quality.store(lava_quality);SaveSettings();
+            }
+            PaddockGap(12.0F);
             const auto lava_percent=[&](const char* id,const char* label,std::atomic<int>& setting,int low,int high,const char* help) {
                 int value=setting.load();
                 if(SettingsRange(id,label,&value,low,high,inner,
@@ -676,7 +688,7 @@ void DrawGraphicsPage(float available_width, bool live) {
             lava_percent("##lava-range","Light range",water::lava_light_range,25,200,
                 "Changes the reach of the glow. Occlusion is ray-tested against static level geometry; this is not a full multi-bounce renderer.");
             ImGui::EndDisabled();
-            SettingsHelp("Requires enhanced water and Hardware ray tracing. Unsupported devices keep the emissive lava surface without this lighting pass. At most two shadow rays are traced per affected pixel.",inner);
+            SettingsHelp("Requires enhanced water and Hardware ray tracing. Balanced traces at one quarter of the full-resolution pixel count; Performance at one sixteenth. Depth-aware upsampling keeps the game image at its selected resolution. Unsupported devices keep the emissive lava surface.",inner);
         }
         PaddockGap(16.0F);
         static bool water_advanced=false;

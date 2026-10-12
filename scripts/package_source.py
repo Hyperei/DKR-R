@@ -50,6 +50,7 @@ def source_files() -> list[pathlib.Path]:
         pathlib.PurePosixPath("assets/controllers"),
         pathlib.PurePosixPath("assets/ui/Icons"),
         pathlib.PurePosixPath("assets/ui/Backgrounds"),
+        pathlib.PurePosixPath("assets/ui/CustomTrackBackgrounds"),
         pathlib.PurePosixPath("docs"),
         pathlib.PurePosixPath("packaging"),
         pathlib.PurePosixPath("runtime-recomp/cmake"),
@@ -61,7 +62,7 @@ def source_files() -> list[pathlib.Path]:
     )
     allowed_untracked_suffixes = {
         ".c", ".cc", ".cpp", ".h", ".hpp", ".json", ".md", ".png",
-        ".ps1", ".py", ".sh", ".txt", ".patch", ".yaml", ".yml", ".cmake",
+        ".ps1", ".py", ".sh", ".txt", ".patch", ".yaml", ".yml", ".cmake", ".hlsl", ".hlsli",
     }
     selected = set(tracked)
     allowed_exact_untracked = {

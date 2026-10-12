@@ -49,16 +49,39 @@ TrackMenuAdapter::TrackMenuAdapter(std::vector<Root> tracks,bool allow_races)
     std::set<std::string> identities;
     auto add_name=[&](std::string_view name) {
         if(name.empty() || name.size()>255)throw Error("Custom track name exceeds the native text budget.");
+        // Fixed-size retail display-list heaps must also hold the live scene.
+        // More visible cells cannot turn a 255-byte mod title into thousands
+        // of glyph commands per frame. This limits ONLY the in-game caption;
+        // the installed mod/catalogue retains its complete original name.
+        const bool abbreviated=name.size()>32;
+        if(abbreviated)name=name.substr(0,29);
         for(unsigned char c:name)names_.push_back(c>=32 && c<127?c:'?');
+        if(abbreviated)names_.insert(names_.end(),{'.','.','.'});
         names_.push_back(0);
     };
-    add_name("CUSTOM TRACKS");
+    // Retail deduplicates headers by POINTER, not by text. One pointer per
+    // logical row keeps every row labelled without changing stock behaviour.
+    for(std::size_t i=0;i<(tracks_.size()+3)/4;++i) {
+        header_offsets_.push_back(names_.size());add_name("CUSTOM TRACKS");
+    }
     for(const auto& root:tracks_) {
         if(root.content_id.size()!=64 || !identities.insert(root.content_id).second || root.carrier>=128 ||
            !root.vehicles || (root.vehicles&~7U))throw Error("Invalid custom-track menu identity/capabilities.");
         name_offsets_.push_back(names_.size());add_name(root.name);
     }
     while(names_.size()%8)names_.push_back(0);
+    background_offset_=names_.size();
+    // Six tiny, distinct RGBA16 proxy textures. RT64 supplies the original
+    // full-quality PNGs; only 4608 bytes of extra guest storage are required.
+    constexpr std::size_t stride=768;
+    names_.resize(names_.size()+6*stride,0);
+    for(unsigned i=0;i<6;++i) {
+        const auto base=background_offset_+i*stride;
+        names_[base]=16;names_[base+1]=16;names_[base+2]=0x11;
+        names_[base+5]=1;names_[base+7]=0xC0;
+        names_[base+11]=7;names_[base+19]=1;
+        std::fill_n(names_.begin()+base+32,512,static_cast<std::uint8_t>(49+i*16));
+    }
 }
 void TrackMenuAdapter::install_names(std::span<std::uint8_t> guest,std::uint32_t address) {
     if(name_address_)throw Error("Custom menu names are already installed for this guest.");
@@ -66,6 +89,20 @@ void TrackMenuAdapter::install_names(std::span<std::uint8_t> guest,std::uint32_t
     if((address&0xe0000000U)!=0x80000000U || address%8 || guest.size()%4 || p>guest.size() || names_.size()>guest.size()-p)
         throw Error("Native custom-track names have no valid guest allocation.");
     for(std::size_t i=0;i<names_.size();++i)guest[(p+i)^3]=names_[i];name_address_=address;
+    auto word=[&](std::uint32_t at,std::uint32_t value) {
+        const auto offset=std::size_t(at&0x1fffffffU);
+        if(offset>guest.size()-4)throw Error("Custom background allocation overflow.");
+        for(unsigned k=0;k<4;++k)guest[(offset+k)^3]=static_cast<std::uint8_t>(value>>((3-k)*8));
+    };
+    for(unsigned i=0;i<6;++i) {
+        const auto tex=address+static_cast<std::uint32_t>(background_offset_+i*768);
+        const auto commands=tex+544;
+        word(tex+12,commands);
+        constexpr std::uint32_t words[]{0xFD10000F,0,0xF5100000,0x07000000,
+            0xE6000000,0,0xF3000000,0x070FF200,0xE7000000,0,
+            0xF5100800,0x00090240,0xF2000000,0x0003C03C};
+        for(unsigned k=0;k<14;++k)word(commands+4*k,k==1?(tex+32)&0x1fffffffU:words[k]);
+    }
 }
 TrackMenuEffect TrackMenuAdapter::apply(unsigned event,std::span<std::uint8_t> memory,
     const TrackMenuFields& fields,std::uint32_t arg,std::uint32_t returned) {
@@ -165,12 +202,13 @@ TrackMenuEffect TrackMenuAdapter::apply(unsigned event,std::span<std::uint8_t> m
         if(height<120 || height>1024)throw Error("Invalid native menu viewport height.");
         const auto x=guest.real(MenuField::X),y=guest.real(MenuField::Y);
         const int cx=static_cast<int>(x/320),cy=static_cast<int>(y/-height);
-        for(int row=-1,k=0;row<2;++row)for(int col=-1;col<2;++col,++k) {
+        const int radius=returned==5?2:1;
+        for(int row=-1,k=0;row<2;++row)for(int col=-radius;col<=radius;++col,++k) {
             const TrackCursor p{cy+row,cx+col};const auto cell=layout.cell(p);if(!cell)continue;
             const auto offset=k*16U;
             if(cell->custom_index) {
                 const auto index=*cell->custom_index;
-                guest.write(MenuField::Details,name_address_,offset);
+                guest.write(MenuField::Details,name_address_+static_cast<std::uint32_t>(header_offsets_.at(p.row-stock_rows)),offset);
                 guest.write(MenuField::Details,name_address_+static_cast<std::uint32_t>(name_offsets_[index]),offset+4);
                 guest.write(MenuField::Details,static_cast<std::uint16_t>(static_cast<int>(p.column*320-x)),offset+8,2);
                 guest.write(MenuField::Details,static_cast<std::uint16_t>(static_cast<int>(-p.row*height-y)),offset+10,2);
@@ -220,19 +258,76 @@ TrackMenuEffect TrackMenuAdapter::apply(unsigned event,std::span<std::uint8_t> m
     } else if(event==13) {
         if(root_at(cursor()))guest.write(MenuField::VoiceDelay,0);
     } else if(event==16) {
-        if(background_y_)throw Error("Nested custom track-menu background draw.");
+        if(background_y_ || background_display_list_)throw Error("Nested custom track-menu background draw.");
+        // thread3_main draws backgrounds through &gCurrDisplayList BEFORE
+        // menu_loop adopts that list into sMenuCurrDisplayList. Preserve the
+        // real callback argument across its retail register-clobbering body.
+        guest.check(arg,4);
+        if(arg%4)throw Error("Unaligned native background display-list slot.");
+        background_display_list_=arg;
         const auto y=guest.real(MenuField::Y);
         const auto height=guest.integer(MenuField::Height);
         if(height<120 || height>1024)throw Error("Invalid native menu viewport height.");
         if(y<-(static_cast<int>(stock_rows)-1)*height) {
             background_y_=y;
-            // Reuse the first world's authored background, not invalid world
-            // texture indices. This scope never changes the live viewport.
-            guest.real(MenuField::Y,0);
+            // Clamp to the LAST stock world, not Dino Domain. In particular
+            // restoring Future Fun Land must never reuse the first world's art.
+            guest.real(MenuField::Y,-(static_cast<int>(stock_rows)-1)*height);
         }
-    } else if(event==17 && background_y_) {
-        guest.real(MenuField::Y,*background_y_);background_y_.reset();
+    } else if(event==17) {
+        if(!background_display_list_)throw Error("Native background draw has no matching entry.");
+        effect.background_display_list=*background_display_list_;
+        background_display_list_.reset();
+        if(background_y_) {guest.real(MenuField::Y,*background_y_);background_y_.reset();}
+        const auto height=guest.integer(MenuField::Height);
+        if(height<120 || height>1024)throw Error("Invalid native menu viewport height.");
+        const auto y=guest.real(MenuField::Y);
+        const int row=static_cast<int>(std::floor(-y/height));
+        for(int r=std::max(static_cast<int>(stock_rows),row);r<=row+1 && r<static_cast<int>(layout.rows());++r) {
+            const float top=r*height+y;
+            if(top>=height || top+height<=0)continue;
+            const auto texture=name_address_+static_cast<std::uint32_t>(background_offset_+((r-stock_rows)%6)*768);
+            const auto flip=guest.read(MenuField::VertexFlip);
+            if(flip>1)throw Error("Invalid native menu background buffer.");
+            const auto vertices=texture+600+flip*72,triangles=vertices+40;
+            auto write_at=[&](std::uint32_t at,std::uint32_t value,unsigned size) {
+                const auto offset=guest.check(at,size);
+                for(unsigned k=0;k<size;++k)memory[(offset+k)^3]=static_cast<std::uint8_t>(value>>((size-1-k)*8));
+            };
+            for(unsigned v=0;v<4;++v) {
+                write_at(vertices+v*10,static_cast<std::uint16_t>(v&1?160:-160),2);
+                write_at(vertices+v*10+2,static_cast<std::uint16_t>(static_cast<int>(height/2-top-(v>=2?height:0))),2);
+                write_at(vertices+v*10+4,static_cast<std::uint16_t>(-1024),2);write_at(vertices+v*10+6,0xffffffffU,4);
+            }
+            constexpr std::uint32_t tris[]{0x40000201,0,0x000001E0,0x01E00000,
+                0x40010203,0x01E00000,0x000001E0,0x01E001E0};
+            for(unsigned t=0;t<8;++t)write_at(triangles+t*4,tris[t],4);
+            effect.backgrounds.push_back({texture,vertices,triangles});
+        }
     }
     return effect;
+}
+
+void append_track_background_quad(std::span<std::uint8_t> memory,
+    std::uint32_t slot,const TrackMenuEffect::Background& background) {
+    if(memory.size()%4)throw Error("Unaligned native background memory.");
+    const auto range=[&](std::uint32_t address,std::size_t size,unsigned alignment) {
+        const auto offset=std::size_t(address&0x1fffffffU);
+        if((address&0xe0000000U)!=0x80000000U || address%alignment ||
+           offset>memory.size() || size>memory.size()-offset)
+            throw Error("Invalid native background display-list range.");
+        return offset;
+    };
+    const auto slot_at=range(slot,4,4);
+    std::uint32_t at=0;
+    for(unsigned i=0;i<4;++i)at=(at<<8)|memory[(slot_at+i)^3];
+    const auto commands=range(at,16,8);
+    range(background.vertices,40,8);range(background.triangles,32,8);
+    const auto word=[&](std::size_t offset,std::uint32_t value) {
+        for(unsigned i=0;i<4;++i)memory[(offset+i)^3]=static_cast<std::uint8_t>(value>>((3-i)*8));
+    };
+    word(commands,0x04180050);word(commands+4,background.vertices&0x1fffffffU);
+    word(commands+8,0x05110020);word(commands+12,background.triangles&0x1fffffffU);
+    word(slot_at,at+16);
 }
 }

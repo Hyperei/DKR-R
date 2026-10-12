@@ -12,8 +12,12 @@ Experimental Rollback and hardware ray tracing remain experimental.
 In Play, Skip intro logos offers Start menu or Character select. Start menu
 keeps its original first sequence. The setting does not change online startup.
 RTX lava lighting adds optional pulsating light to nearby geometry, with
-intensity, pulse strength/speed and range settings. Unsupported devices keep
-the emissive lava surface. This is ray-tested diffuse lighting, not a full
+its own on/off checkbox, Performance/Balanced/High quality and intensity,
+pulse strength/speed and range settings. Balanced uses a half-resolution
+lighting field; Performance uses quarter resolution. Neither changes the
+game's selected image resolution. The molten surface has rough hot-rock
+islands and shaded ridges, and stays enhanced when scene lighting is off.
+Unsupported devices keep the emissive lava surface. This is ray-tested diffuse lighting, not a full
 multi-bounce path tracer; dynamic racers are not hardware occluders.
 
 Android build 1060001 keeps the previous application ID and signing identity
@@ -36,6 +40,7 @@ Escape, F1 or controller Back/View opens settings; Alt+Enter/F11 toggles fullscr
 
 Mods / Hacks imports legacy xdelta/ZIP patches and DKR-R track packages.
 Custom tracks keep the originals and use wooden-frame Track Select previews.
+Each custom row has its own header and cycles through six custom backgrounds.
 Four custom actors share the original Player Select stage; L/R browses the
 remaining enabled roster. Reviewed behaviour adapters are not unrestricted
 ROM-code execution.

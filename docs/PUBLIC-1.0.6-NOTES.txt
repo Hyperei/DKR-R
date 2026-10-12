@@ -6,11 +6,28 @@ is offline-only; online boot and Track Lab's direct track launch stay unchanged.
 
 Enhanced lava can now illuminate nearby geometry with a smooth pulsating glow.
 Select enhanced water and Hardware ray tracing, then open RTX lava lighting
-to adjust intensity, pulse strength, pulse speed and range. Zero intensity
-turns the lighting pass off. This is bounded, ray-tested diffuse lighting,
+for its own on/off tickbox, Performance/Balanced/High quality, intensity,
+pulse strength, pulse speed and range. Turning scene lighting off keeps the
+rough, glowing lava surface and other enhanced-water effects enabled.
+Balanced uses half-resolution lighting; Performance uses quarter resolution,
+without reducing the game's selected image resolution. This is bounded, ray-tested diffuse lighting,
 not a full multi-bounce path tracer. Static level geometry blocks the light;
 dynamic racers are not added to the hardware acceleration structure.
 Devices without ray queries retain the emissive lava surface without this pass.
+
+Custom Track Select rows cycle through six backgrounds and each has its own
+CUSTOM TRACKS heading. The Windows correction keeps these background draws
+behind the previews and text, instead of briefly covering the whole screen.
+Returning to Future Fun Land keeps that world's original artwork.
+Preview images, names and arrows also remain inside their frames while
+scrolling on wide screens. The original 4:3 drawing cut-off is removed;
+frame proportions, the live cinematic and confirmation zoom are preserved.
+The Windows follow-up also prevents brief text/image stretching as previews
+change, without restoring the old wide-screen clipping.
+Golden Balloon and Wave Race credits use the same compact link rows as the
+other core technology credits, with their acknowledgements kept intact.
+Very long track captions are abbreviated in-game to protect its fixed drawing
+buffers. Installed mod names and their launcher details keep the full text.
 
 All contributor changes merged into main through d089593 are included:
 RT64 HLE bounds checks, reproducible setup/test assertions, session fixture
@@ -29,3 +46,8 @@ and Android need physical-device testing, and SteamOS integration needs a
 Steam Deck check. Hardware lighting remains optional and GPU/driver-dependent.
 Use the same 1.0.6 build on every online peer. Preserve a backup of your saves
 and mods before changing versions. No macOS or iOS binary is supplied here.
+
+12 October Windows test refresh: this package includes the latest Track Select
+and credits corrections. Earlier Linux, Steam Deck and Android 1.0.6 binaries
+do not include this refresh. Online peers must use the same exact build, not
+merely the same version number. Other-platform refreshes await Windows testing.

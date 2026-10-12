@@ -565,7 +565,7 @@ void DrawAboutPage(float width, bool support) {
         const char* name;
         const char* repository;
     };
-    constexpr std::array<Credit, 7> kTechnology{{
+    constexpr std::array<Credit, 9> kTechnology{{
         {"N64Recomp", "https://github.com/N64Recomp/N64Recomp"},
         {"N64ModernRuntime", "https://github.com/N64Recomp/N64ModernRuntime"},
         {"RT64", "https://github.com/rt64/rt64"},
@@ -573,6 +573,9 @@ void DrawAboutPage(float width, bool support) {
         {"Mbed TLS", "https://github.com/Mbed-TLS/mbedtls"},
         {"GekkoNet", "https://github.com/HeatXD/GekkoNet"},
         {"Diddy Kong Racing Decomp", "https://github.com/DavidSM64/Diddy-Kong-Racing"},
+        {"Golden Balloon - HUD layout reference", "https://github.com/akratch/goldenballoon"},
+        {"Wave Race 64 Recomp - enhanced-water rendering reference (MIT)",
+         "https://github.com/elliotttate/wave-race-64-recomp"},
     }};
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {0.0F, 0.0F});
     DrawPageHeading("ABOUT DKR-R");
@@ -625,26 +628,22 @@ void DrawAboutPage(float width, bool support) {
                 PaddockGap(8.0F);
                 if (DetailRaceButton("VISIT GITHUB", inner)) SDL_OpenURL(credit.repository);
             } else {
-                PaddockDrawRun(ImGui::GetWindowDrawList(), type, {at.x, std::round(at.y + (44.0F - type.line) * 0.5F)},
-                               PaddockCol(kSetText), credit.name, credit.name + std::strlen(credit.name));
-                ImGui::SetCursorScreenPos({at.x + inner - 190.0F, at.y});
+                // Keep long acknowledgements clear of the fixed-width action.
+                const float label_width = inner - 206.0F;
+                const float label_height = PaddockTextHeight(type, credit.name, label_width);
+                const float row_height = std::max(44.0F, label_height);
+                ImGui::SetCursorScreenPos({at.x, at.y + (row_height - label_height) * 0.5F});
+                PaddockText(type, PaddockRgb(kSetText), credit.name, label_width);
+                ImGui::SetCursorScreenPos({at.x + inner - 190.0F, at.y + (row_height - 44.0F) * 0.5F});
                 if (DetailRaceButton("VISIT GITHUB", 190.0F)) SDL_OpenURL(credit.repository);
+                ImGui::SetCursorScreenPos({at.x, at.y + row_height});
             }
             PaddockGap(12.0F);
             ImGui::PopID();
         }
         DetailText("Thanks to all developers and contributors.", inner, kSetMuted, 0.0F);
-        PaddockGap(26.0F);
-        DetailText("Golden Balloon - HUD layout reference", inner);
-        if (DetailRaceButton("VISIT GOLDEN BALLOON ON GITHUB", inner)) {
-            SDL_OpenURL("https://github.com/akratch/goldenballoon");
-        }
-        PaddockGap(26.0F);
-        DetailText("Wave Race 64 Recomp - enhanced-water rendering reference (MIT)", inner);
+        PaddockGap(12.0F);
         DetailText("Thank you to elliotttate and the Wave Race contributors. DKR-R adapts the renderer to its own water geometry, cameras and presentation pipeline.", inner, kSetMuted, 0.0F);
-        if (DetailRaceButton("VISIT WAVE RACE RECOMP ON GITHUB", inner)) {
-            SDL_OpenURL("https://github.com/elliotttate/wave-race-64-recomp");
-        }
         PaddockGap(26.0F);
         DetailHeading("DKR-R HDR TEXTURE PACK PROJECT", inner, kSetWarm);
         DetailText("A community project re-imagining Diddy Kong Racing in crisp HD while remaining faithful to the "

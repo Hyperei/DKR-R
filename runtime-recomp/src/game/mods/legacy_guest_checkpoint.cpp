@@ -143,7 +143,7 @@ CharacterPresentation CharacterPresentation::stage_checkpoint(View bytes,std::si
     return next;
 }
 Bytes TrackMenuAdapter::checkpoint()const {
-    if(masked_ || background_y_ || candidate_)throw Error("Cannot checkpoint an outstanding custom track input/draw/load invocation.");
+    if(masked_ || background_y_ || background_display_list_ || candidate_)throw Error("Cannot checkpoint an outstanding custom track input/draw/load invocation.");
     CheckpointWriter out;out.u32(1);out.u32(static_cast<std::uint32_t>(tracks_.size()));
     for(const auto& t:tracks_)out.text(t.content_id,64);
     out.u32(name_address_);out.flag(allow_races_);out.flag(in_tracks_);
@@ -174,6 +174,6 @@ TrackMenuAdapter TrackMenuAdapter::stage_checkpoint(View bytes)const {
     next.move_=cursor();next.restore_=cursor();next.pending_=scene(true);next.race_=scene(false);next.preview_id_=in.text(64);in.end();
     if(!next.preview_id_.empty() && std::ranges::none_of(tracks_,[&](const auto& t){return t.content_id==next.preview_id_;}))
         throw Error("Track sidecar preview is not admitted.");
-    next.masked_=false;next.saved_x_=next.saved_y_=0;next.saved_buttons_=0;next.candidate_.reset();next.background_y_.reset();return next;
+    next.masked_=false;next.saved_x_=next.saved_y_=0;next.saved_buttons_=0;next.candidate_.reset();next.background_y_.reset();next.background_display_list_.reset();return next;
 }
 }

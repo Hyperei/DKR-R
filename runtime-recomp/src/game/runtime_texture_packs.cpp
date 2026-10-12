@@ -12,6 +12,7 @@
 
 #include <json/json.hpp>
 #include <miniz/miniz.h>
+#include <SDL.h>
 
 #include <algorithm>
 #include <atomic>
@@ -1510,6 +1511,14 @@ void apply_pending(RT64::Application& application, bool modern_profile) {
                 replacements.emplace_back(pack->path, pack->zip_base_path);
                 replacement_ids.insert(pack->id);
             }
+        }
+        // Native menu art is part of the build, not a user texture pack.
+        // Keep it installed in both presentation styles and after user packs,
+        // without changing their enabled states or priority ordering.
+        if(char* base=SDL_GetBasePath()) {
+            const auto builtin=std::filesystem::path(base)/"assets/ui/CustomTrackBackgrounds";
+            SDL_free(base);std::error_code error;
+            if(std::filesystem::is_regular_file(builtin/"rt64.json",error))replacements.emplace_back(builtin);
         }
         // Only a changed replacement set is worth handing to RT64. The reload
         // is transactional - streaming stops, every mapping is cleared and

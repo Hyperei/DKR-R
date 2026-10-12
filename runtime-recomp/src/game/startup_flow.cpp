@@ -4,6 +4,20 @@
 
 #include <cstdio>
 
+extern "C" void dkr_skip_intro_audio(std::uint8_t* rdram, recomp_context* ctx) {
+    if (!rdram || !ctx || !dkr::runtime::startup::skip_logos()) return;
+    using namespace dkr::runtime::revision_addresses;
+    const bool v80=selected_revision()==dkr::runtime::rom::Revision::UsV80;
+    // The logo animation can leave a music-change lock/fade in flight when
+    // its sixteen-second lifetime is shortened. Reset only that ownership
+    // boundary BEFORE retail queues its title song and loads the cinematic.
+    // Equivalent to music_change_on + music_volume_reset, not a forced song.
+    MEM_W(0, static_cast<gpr>(static_cast<std::int32_t>(BlockMusicChange)))=0;
+    MEM_W(0, static_cast<gpr>(static_cast<std::int32_t>(v80?0x801162B8U:0x80115D38U)))=0;
+    MEM_W(0, static_cast<gpr>(static_cast<std::int32_t>(v80?0x801162BCU:0x80115D3CU)))=0;
+    MEM_W(0, static_cast<gpr>(static_cast<std::int32_t>(v80?0x800DCBC0U:0x800DC650U)))=0x3F800000;
+}
+
 extern "C" void dkr_skip_intro_logos(std::uint8_t* rdram, recomp_context* ctx) {
     if (!rdram || !ctx || !dkr::runtime::startup::skip_logos()) return;
     const auto timer = dkr::runtime::revision_addresses::selected_revision() ==

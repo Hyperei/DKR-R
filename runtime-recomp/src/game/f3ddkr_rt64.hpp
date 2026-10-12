@@ -66,6 +66,7 @@ private:
     static void Matrix(RT64::State* state, RT64::DisplayList** display_list);
     static void FillRect(RT64::State* state, RT64::DisplayList** display_list);
     static void HudTextureRect(RT64::State* state, RT64::DisplayList** display_list);
+    static void TrackTextureRect(RT64::State* state, RT64::DisplayList** display_list);
     static void TextureOffset(RT64::State* state, RT64::DisplayList** display_list);
     static void Vertex(RT64::State* state, RT64::DisplayList** display_list);
     static void Triangle(RT64::State* state, RT64::DisplayList** display_list);

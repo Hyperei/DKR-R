@@ -7,6 +7,7 @@
 #include <vector>
 
 extern "C" void dkr_skip_intro_logos(std::uint8_t*, recomp_context*);
+extern "C" void dkr_skip_intro_audio(std::uint8_t*, recomp_context*);
 extern "C" void dkr_skip_intro_title(std::uint8_t*, recomp_context*);
 extern "C" void dkr_skip_intro_character_select(std::uint8_t*, recomp_context*);
 
@@ -36,9 +37,22 @@ int main() {
             const auto table_before = MEM_W(0, base);
             MEM_W(0, static_cast<std::int32_t>(revision_addresses::MenuDelay)) = 0;
             startup::prepare_launch(true, online, false, destination);
+            const gpr music_lock=static_cast<std::int32_t>(revision_addresses::BlockMusicChange);
+            const gpr fade=static_cast<std::int32_t>(revision==rom::Revision::UsV80?0x800DCBC0U:0x800DC650U);
+            const gpr fade_timer=static_cast<std::int32_t>(revision==rom::Revision::UsV80?0x801162B8U:0x80115D38U);
+            const gpr fade_length=static_cast<std::int32_t>(revision==rom::Revision::UsV80?0x801162BCU:0x80115D3CU);
+            MEM_W(0,music_lock)=1;MEM_W(0,fade)=0;MEM_W(0,fade_timer)=60;MEM_W(0,fade_length)=-120;
+            dkr_skip_intro_audio(rdram,ctx);
+            assert(MEM_W(0,music_lock)==(online?1:0));
+            assert(MEM_W(0,fade)==(online?0:0x3F800000));
+            assert(MEM_W(0,fade_timer)==(online?60:0));
+            assert(MEM_W(0,fade_length)==(online?-120:0));
+            assert(ctx->r4==0x1234 && ctx->r2==base);
             dkr_skip_intro_logos(rdram, ctx);
             assert(MEM_W(0, timer) == (online ? 0x41800000 : 0));
             dkr_skip_intro_title(rdram, ctx);
+            MEM_W(0,music_lock)=1;dkr_skip_intro_audio(rdram,ctx);
+            assert(MEM_W(0,music_lock)==1); // no later title/music interference
             assert(ctx->r2 == base); // FIRST sequence, never the first racing demo
             assert(ctx->r4 == 0x1234);
             assert(MEM_W(0, index) == 0);

@@ -1,5 +1,235 @@
 # Release validation
 
+## 12 October 2026 — 1.0.6 Windows Track Select brief-stretch correction
+
+The follow-up recording shows preview images, arrows and captions briefly
+widening independently of their wooden frames. The widened per-draw scissors
+also entered RT64's aggregate framebuffer extent, which its rectangle renderer
+uses to infer native aspect. That can disable the native-aspect correction
+without changing the separately projected wooden frame.
+
+The authored bridge now remembers only the native screen images observed by
+Track Select's UI/preview markers. Before full-sync submits the producer-owned
+workload, it confines those images' aggregate horizontal extent to the original
+320-pixel framebuffer. Individual draw/projection scissors and color/depth
+write extents retain their wider coverage. The bounded identities reset with
+each task; no GPU wait, extra cinematic, shared guest-state change or dependency
+source edit is introduced. Existing checked guest/replay exports are reused.
+
+- Windows Release suite: 140/140 passed (246.29 seconds).
+- Real RT64 framebuffer/rectangle conversion regression: 9,680 signed image,
+  glyph and arrow-sized placements across five aspects and four clipping unions;
+  widened per-draw scissors and offscreen targets remain unchanged.
+- Signed drawing/window/identity-budget regression: 9,154 checks passed.
+- Both owned revision dispatches: 58 production checks passed. Native callback
+  and guest-helper audit hashes remain unchanged.
+- Version 1.0.6 and 57 patch pins validated; repository asset scan passed.
+- Exact-package importer, controller and Controller Pak checks passed. All 58
+  ZIP files were scanned; the executable matches the tested build and all seven
+  custom-background assets match source. No ROM, save, crash dump or private
+  fixture is included. Source export scan passed (1,283 files).
+
+Windows test ZIP: `G:/DiddykongWorkFolder/release-106-20261011/track-select-regression-0024/release/DKR-R-1.0.6-Windows-x64.zip`.
+SHA-256: `f6f2314312bb6328f0f59b8fc134962ee12260760d5b746906da9d34dbabb758`.
+
+The brief stretching still needs a hands-on visual retest, including rapid
+scrolling, wide-aspect edges and confirmation zoom. No gameplay window was
+opened. This Windows-only refresh supersedes the preceding test ZIP; other
+platforms remain deferred pending the user's test. Nothing was pushed to GitHub.
+
+## 12 October 2026 — 1.0.6 Windows Track Select widescreen refresh
+
+The horizontal-scroll recording showed preview contents being clipped at the
+original 4:3 boundaries while the wooden frames remained visible. Track Select
+now has a scoped signed drawing path for images, glyphs and arrows. The live
+preview uses its original frame bounds intersected with the current renderer
+window; confirmation zoom and frame proportions remain unchanged.
+
+Both reviewed US revisions prepare five columns by three rows in a separate
+240-byte guest stack table. The original nine-entry global is never extended
+or overwritten. Stock unlock/placeholder/arrow logic is retained, custom rows
+use the same bounded table, and no additional cinematic scenes are loaded.
+Local aspect/resize choices stay outside shared rollback memory. Overlong
+in-game track captions are abbreviated to protect the fixed drawing heaps;
+installed mod names and launcher details retain their full text.
+
+Golden Balloon and Wave Race now appear alongside the other compact technology
+credit rows. Long labels wrap clear of the fixed-width buttons, narrow layouts
+stack, and all original acknowledgements and links are retained. The shared
+About implementation applies this to the launcher and overlay.
+
+- Fresh normal, fixture and isolated owned outputs generated through the checked
+  Patch Pipeline for both revisions; no protected generated input or submodule edited.
+- Windows Release suite: 140/140 passed. The signed-draw/window tests passed
+  9,126 checks; actual generated retail table/rectangle functions passed 42,123
+  checks per revision, including unlocked Future Fun Land and 512 custom tracks.
+- Track Select adapter/emitter, bounded command execution, marker policy and
+  mixed local-aspect memory regressions passed. Both owned revisions passed
+  all 58 production dispatch checks. The generator audit passed 49/49 checks.
+- Existing real-GPU water/lava tests passed on DirectX 12 and Vulkan. These are
+  shader regressions, not a claim of visual gameplay or frame-rate qualification.
+- Version 1.0.6 and 57 pinned patch files validated; repository asset scan passed.
+- Exact-package importer/capability, SDL3 controller, Controller Pak and two
+  SDL2/SDL3 ownership round trips passed. The ZIP has 58 files; its executable
+  matches the tested build and all seven custom background files match source.
+  No ROM, save, crash dump or private fixture is bundled. Final source export
+  passed its archive scan (1,283 files).
+
+Windows test ZIP: `G:/DiddykongWorkFolder/release-106-20261011/track-select-widescreen-20261012/release/DKR-R-1.0.6-Windows-x64.zip`.
+SHA-256: `cc64c158c8c758e3efba14047f5fa39640c56b5eb8906b3ee16121acdcb70c21`.
+
+This is a Windows-only test refresh. Wider-screen gameplay/resize/rapid-scroll
+and launch/return checks still need the user's hands-on test. No gameplay window
+was opened. Previous Linux/Steam Deck/Android 1.0.6 binaries do not contain this
+refresh; use this exact build on every online peer until the other platforms
+are rebuilt from the same source and qualified. Nothing was pushed to GitHub.
+
+## 11 October 2026 — 1.0.6 Windows Track Select correction
+
+The supplied recording showed the new background flashing over the entire
+menu, then falling back to the stock Future Fun Land artwork. Source tracing
+confirmed that `thread3_main` calls the background through `&gCurrDisplayList`
+before `menu_loop` updates `sMenuCurrDisplayList`. The earlier custom bridge
+incorrectly wrote through that stale menu pointer.
+
+The correction retains the actual callback argument from entry to exit and
+appends into that current list. The common, bounds-checked command emitter is
+now covered by regressions for stale global pointers, material/quad/UI ordering,
+two adjacent rows, consecutive caller buffers and invalid tails. Transient draw
+ownership is excluded from checkpoints and cleared on restore. Images, row
+cycling, headings and local-only widescreen cover remain unchanged.
+
+Fresh audited Patch Pipeline exports for both US revisions were regenerated
+read-only into new directories. All 44 files per revision are byte-identical
+to the previous exports, so those checked guest outputs are reused. The native
+owned-contract identity includes the corrected adapter and bridge sources.
+No protected generated source or submodule was edited.
+
+- Windows Release runtime suite: 136/136 passed, including 1,126 native Track
+  Select adapter/emitter checks and the stock/custom rollback-preview regressions.
+- Both owned revision dispatches passed all 58 production checks. The fresh
+  generator audit suite passed 49/49; generated exports were verified as above.
+- Existing water/lava real-GPU checks passed on DirectX 12 and Vulkan. The
+  enhanced-water and independent lava-lighting changes are retained unchanged.
+- Version 1.0.6 and 57 pinned patch files validated; source asset scan passed.
+
+- Exact-package importer/capability, SDL3 controller, Controller Pak and two
+  SDL2/SDL3 ownership round trips passed. The ZIP's executable and all seven
+  custom background files match the checked build/source. Package scans exclude
+  ROMs, saves and private fixtures.
+
+Windows correction: `track-background-fix-2233/release/DKR-R-1.0.6-Windows-x64.zip`
+SHA-256: `0c590f0f777feaeaf2f09d1f80480a26f9edf70751eb2c596a539923628a773d`
+
+Gameplay/visual confirmation remains user-led; other platforms stay on hold.
+
+## 11 October 2026 — earlier Windows test refresh (superseded)
+
+This refresh follows the first local 1.0.6 candidate below. Other platform
+rebuilds are on hold until the Windows changes have been tested by the user.
+No gameplay window is opened as part of this build's automated checks.
+
+- Skip intro resets the logo-owned music lock, delay and fade before the
+  normal title-screen constructor queues its music. Both US revisions use
+  the same reviewed startup policy; ordinary and online startup are unchanged.
+- Custom Track Select rows use all six supplied backgrounds in a repeating
+  cycle, with a distinct CUSTOM TRACKS heading for each row. Leaving the
+  custom rows restores the final vanilla world's scrolling background.
+  The owned rollback path applies viewport cover only in disposable draw state.
+- Enhanced lava adds analytically shaded rough hot-rock islands and ridges
+  using its existing noise samples. This is material relief, not tessellated
+  geometry, changed collision or an additional ray pass.
+- RTX lava scene lighting has a separately saved on/off setting. Performance,
+  Balanced and High use quarter-, half- and full-resolution lighting fields;
+  Balanced is the default. The game image stays at its chosen resolution.
+  Full-precision depth and depth-aware reconstruction avoid smearing across
+  silhouettes or treating distant receivers as sky. The existing aggregate
+  scratch budget also accounts for pooled lighting images; allocation failure
+  retains the enhanced lava surface without the optional light pass.
+
+- Windows Release runtime suite: 136/136 passed.
+- Production owned revision dispatch: 58 checks passed across both US revisions.
+- Fresh owned generator suite: 49/49 passed. Build tooling: 31 covered, with
+  seven Windows platform-specific skips. Both startup guest revisions passed.
+- DirectX 12 and Vulkan real-GPU checks passed. Each lighting quality passed
+  near and distant depth receiver readback at 1x and 4x MSAA, alongside actual
+  1440p scratch budgeting, prepared-buffer ownership, reuse and recovery.
+  The sampled lava material retained bright molten coverage, white-hot cores,
+  spatial variation and bounded continuous animation. These synthetic checks
+  do not establish full-game frame rates or visual gameplay correctness.
+- The custom menu adapter passed 1,105 checks. All six bundled images match
+  the supplied originals byte-for-byte; their proxies match the actual RT64
+  texture hasher. Source asset scan: 2,057 files inspected; release metadata
+  validated 1.0.6 and 57 pinned patch files. Protected source trees are unchanged.
+
+- Exact-package ModWorker/import capability, SDL3 controller, Controller Pak
+  and two SDL2/SDL3 ownership round trips passed. The ZIP contains all six
+  backgrounds plus their renderer manifest. Its executable matches the checked
+  Release binary. No gameplay, diagnostic fixture, ROM or save is bundled.
+
+Windows refresh: `windows-refresh/release/DKR-R-1.0.6-Windows-x64.zip`
+SHA-256: `59b7cd3528d9f8d799bfae9223e57061612a1131b1fad49438e27a060b1b282d`
+
+This does not claim a measured RTX 2080 Super frame rate, full-game visual
+qualification or finished real-WAN rollback qualification.
+
+## 11 October 2026 — earlier 1.0.6 candidate (superseded)
+
+Runtime source: `9d0e86a`. GitHub main through `d089593` is included alongside
+the preserved local work. Integration was conflict-free; RT64, N64Recomp,
+N64ModernRuntime, RecompiledFuncs and RecompiledPatches were not edited.
+Dependency changes are composed into isolated build stages by the authored
+Patch Pipeline. Track Lab and the contributor's Blender changes are retained.
+
+- Skip intro keeps the Start menu's original opening sequence. Its optional
+  Character select destination requests the normal retail title-screen exit;
+  online startup and direct Track Lab launches remain unchanged.
+- Lava lighting uses bounded ray-tested diffuse illumination with intensity,
+  pulse strength, pulse speed and range controls. Static geometry occludes it;
+  dynamic racers are not in its acceleration structure. This is not a full
+  multi-bounce path tracer or a gameplay performance measurement.
+- Windows Release suite: 136/136 passed. Linux x86_64: 137/137 passed.
+- Production owned revision dispatch: 58 checks passed on Windows and Linux
+  x86_64, covering both US revision payloads.
+- Real GPU water/lava checks passed on Windows DirectX 12 and Vulkan, and
+  Linux Vulkan under WSL. Lava receiver readback, occlusion, smooth pulse and
+  intensity-off passed at 1x and 4x MSAA. These are headless renderer checks,
+  not full-game visual or frame-rate qualification.
+- Build tooling: 30 tests covered on each desktop platform. Windows had seven
+  platform-specific skips; Linux passed all 30. Startup policy/guest and owned
+  generation checks passed. Four isolated HLE staging cases passed, including
+  fail-closed rejection of a partially prepared guard.
+- All 30 plain Blender addon suites were covered. ROM extraction was checked
+  separately with the required NumPy runtime; six Blender-background suites
+  were not run because Blender is unavailable on this host.
+- Release metadata validated 1.0.6 and 57 pinned patch hashes. The final runtime
+  source export passed the 1,268-file game-data scan. No ROMs, saves or private
+  replay fixtures are shipped.
+- Android package: application ID unchanged, version code `1060001`,
+  non-debuggable, signature verified, AArch64 libraries and APK entries
+  16 KiB-aligned. Native payload checks passed. The existing debug signing
+  identity is retained for in-place upgrades; this is not a newly provisioned
+  production/Play Store signing key. Do not uninstall just to update.
+- Linux ARM64 qualification and packaging were not completed for this
+  candidate. Further cross-platform rebuilds are deferred at the user's request.
+
+Earlier candidate artifact SHA-256 values (not the Windows refresh):
+
+| Artifact | SHA-256 |
+|---|---|
+| DKR-R-1.0.6-Windows-x64.zip | `eb2a607e253737eb219563fc089b3363bac4fdfb84d1707cda74e8a42db9cf90` |
+| DKR-R-1.0.6-Linux-x86_64.AppImage | `563afd538ea4a64a7c73bdfe0a0be8106011c2486adfac1d6747db765b5e65b4` |
+| DKR-R-1.0.6-SteamDeck-x86_64.AppImage | `563afd538ea4a64a7c73bdfe0a0be8106011c2486adfac1d6747db765b5e65b4` |
+| DKR-R-1.0.6-Android-arm64.apk | `b298fafd3fdf6816cce0a7285cadd696ac0f139a7db37989dc043286944643fe` |
+| track_lab.zip | `fb915375dcf19cbd06cecb9b31123f858f9bdba493e4677794e7866bf7bcae51` |
+
+Steam Deck uses the Linux x86_64 payload. Physical Android, Linux ARM64 and
+SteamOS checks, complete visual gameplay and real WAN matches remain user-led.
+No autonomous gameplay windows were opened. Experimental Rollback remains
+experimental. No macOS/iOS binary, GitHub push, release tag or publication is
+implied by this local build and integration. The contributor's existing iOS
+validation below is preserved, not claimed as new 1.0.6 device qualification.
+
 ## 11 October 2026 — iOS sideload validation
 
 Validated on an iPhone 18 Pro Max running iOS 27, built with Xcode 27 and
