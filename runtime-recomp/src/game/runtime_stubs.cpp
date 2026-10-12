@@ -35,6 +35,12 @@
 
 namespace {
 
+// Audio/input policy runs in diagnostic CPU builds as well as rendered builds.
+dkr::runtime::intro::TailGate g_title_intro_tail_gate{};
+gpr RdramAddress(std::uint32_t address) {
+    return static_cast<gpr>(static_cast<std::int32_t>(address));
+}
+
 #if DKR_RUNTIME_HAS_RT64
 const std::uint32_t& kOrthoMatrixAddress =
     dkr::runtime::revision_addresses::OrthoMatrix;
@@ -81,7 +87,6 @@ dkr::runtime::presentation::PresentationKey g_level_segment_pending_key{};
 bool g_split_world_aspect_active = false;
 bool g_postrace_framed_scope_active = false;
 bool g_track_select_lens_flare_scope_active = false;
-dkr::runtime::intro::TailGate g_title_intro_tail_gate{};
 std::array<float, 8> g_saved_sky_projection_columns{};
 bool g_sky_cover_active = false;
 dkr::runtime::presentation::PostraceFrameGate g_postrace_frame_gate{};
@@ -114,10 +119,6 @@ float ReadRdramFloat(std::uint8_t* rdram, std::uint32_t address) {
 void WriteRdramFloat(std::uint8_t* rdram, std::uint32_t address, float value) {
     const auto signed_address = static_cast<gpr>(static_cast<std::int32_t>(address));
     MEM_W(0, signed_address) = std::bit_cast<std::uint32_t>(value);
-}
-
-gpr RdramAddress(std::uint32_t address) {
-    return static_cast<gpr>(static_cast<std::int32_t>(address));
 }
 
 bool PostraceFullViewScope(std::uint8_t* rdram, float cover) {

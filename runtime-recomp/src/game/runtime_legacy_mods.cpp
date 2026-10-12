@@ -728,8 +728,10 @@ extern "C" int dkr_legacy_track_menu(std::uint8_t* rdram,recomp_context* ctx,uns
         custom_tracks::arm_track_override({});
     auto state=legacy::menu.load();
     try {
-        // Online peers keep the reviewed retail vehicle gate untouched.
-        if(!netplay::session().active())legacy::lend_course_clear(rdram,*ctx,event,fields);
+        // Frozen/owned worlds keep the reviewed retail vehicle gate and must
+        // never consult the live process's transport session.
+        if(!legacy::frozen_courses() && !netplay::session().active())
+            legacy::lend_course_clear(rdram,*ctx,event,fields);
         // Level IDs are assigned at game initialization, after launcher setup.
         // Build the combined catalogue on the first Track Select entry, also
         // when there are no legacy mods enabled for this session.

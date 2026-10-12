@@ -160,6 +160,25 @@ MENU_CPU_HASH = {
 }
 
 
+# Normal prepared output omits the optional water-profile diagnostic hook.
+# Adding only that exact hook to these bodies reconstructs MENU_CPU_HASH for
+# load_level_for_menu byte-for-byte in both revisions. Admit both reviewed
+# variants without inserting diagnostics or weakening any other body pin.
+MENU_STOCK_LEVEL_HASH = {
+    # ABI-4's same reviewed body with exactly one diagnostic call removed.
+    # DisplayList/VertexFlip fields remain; no constructor opcode is changed.
+    77: "9f8b694901dde14dd802618e9700d2360a8962943a6eb3bfe3bc04bb1ca2f58d",
+    80: "c6e14920d56c4890d568c6c4669666ac2325fa3c22d879ee9b45fc707b9ff40c",
+}
+
+
+def menu_cpu_body_reviewed(name, body, revision):
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    expected = MENU_CPU_HASH.get(revision, {}).get(name)
+    return digest == expected or (name == "load_level_for_menu" and
+                                 digest == MENU_STOCK_LEVEL_HASH.get(revision))
+
+
 def menu_scene_cuts(body, revision):
     if hashlib.sha256(body.encode()).hexdigest() != MENU_CPU_HASH.get(revision, {}).get("mode_menu"):
         raise ValueError("Unreviewed mode_menu continuation")
@@ -183,8 +202,8 @@ def menu_scene_cuts(body, revision):
 
 def owned_menu_cpu(functions, revision):
     """Confirmed menu constructors, not live bgload/scheduler permission."""
-    for name,expected in MENU_CPU_HASH.get(revision,{}).items():
-        if name not in functions or hashlib.sha256(functions[name].encode()).hexdigest()!=expected:
+    for name in MENU_CPU_HASH.get(revision,{}):
+        if name not in functions or not menu_cpu_body_reviewed(name, functions[name], revision):
             raise ValueError(f"Unreviewed owned menu dependency: {name}")
     if revision not in MENU_CPU_HASH:
         raise ValueError("Unsupported owned menu revision")
@@ -430,7 +449,10 @@ INPUT_NATIVE_HASH = {
     # fences. Pure guest-memory checks only; no live I/O or pointer repair.
     # Oct 11: shared artwork sections 2/4/12 use the immutable boot bank;
     # their 3/5/13 tables are already extended, never appended twice.
-    "runtime-recomp/src/game/runtime_legacy_mods.cpp": "c6552ed442783a99bb266286a9126413400f65a56f8b4db0300b0e0798aeeaf1",
+    # Oct 12: reviewed merge with PR56's frozen-course guard BEFORE any live
+    # transport read. Retains caller-owned background lists and offline vehicle
+    # selection; neither changes owned checkpoint semantics or asset routing.
+    "runtime-recomp/src/game/runtime_legacy_mods.cpp": "f9af686c2f30ce6f875041f74b694640565d6cef783c18bcdeaf752f298d0988",
     # Oct 9: guest-owned deferred queue/reserve; no shortened borrower lifetime.
     "runtime-recomp/src/game/mods/legacy_memory_safety.h": "17b293ec170dd7d8d25377a01a73b9c5cdfca9636b2c959d06930c178d02cd85",
     "runtime-recomp/src/game/mods/legacy_model_safety.hpp": "64520d21f6721b9caf40ee51f88548266ffaf5bc8821a7c17e6bdc72fa244bb7",
@@ -470,7 +492,9 @@ FULL_SCENE_NATIVE_HASH = {
     "runtime-recomp/src/game/widescreen_policy.hpp": "0d6080326b9794cf468e5c54f2b93bfbb01f43f39b6c6eaf04cbd9f1e53df0dd",
     # Oct 12: scoped signed Track Select drawing and observation-only clips.
     # CPU coordinates/visible neighbourhood are canonical on every peer.
-    "runtime-recomp/src/game/runtime_stubs.cpp": "65e44e833003add962b5d2c42b2d0d56af9ceb689bad7d140a274eae01361894",
+    # PR56 additionally moves the same TailGate/RdramAddress definitions outside
+    # the RT64 guard for headless audio/input. Rendered/owned hooks are unchanged.
+    "runtime-recomp/src/game/runtime_stubs.cpp": "3bd058b1674d9fa12d282f99cfdf0771406dd5da7ba816d81b32225485ff9e51",
     "runtime-recomp/src/game/track_select_draw_guest.h": "6bc51e7168679d32c9602988793cc47e983b116343981db00f3feac6fbc13912",
     "runtime-recomp/src/game/audio_event_queue.h": "efb6c0cdadbc5a1fbab30ee7ff524f558ea54523a43a3424727bba4a997535c2",
     "runtime-recomp/src/game/audio_event_queue_state.h": "ca400d843e9018f5d69c2aa75ec40889a303574c7789a7297185369dcde79b18",
@@ -482,16 +506,27 @@ FULL_SCENE_NATIVE_HASH = {
     # Without a ModWorld the private hooks retain their prior identity branch.
     "runtime-recomp/src/game/custom_music.cpp": "66176450b2e98228da437b5ec36b203a64d831ef048f8172af90f3fc8437f4d2",
     "runtime-recomp/src/game/online_roster_policy.hpp": "3c914fdcad650d62839eed84f76ea22d5743a2fbf1d30512b88d2317e38892f4",
-    "runtime-recomp/src/game/runtime_enhancements.cpp": "7a868375b1a8e4e0f3e5e1c60036795fa2630e7d4b3cd6e954308495743918de",
+    # Re-audited headless SDL guard: RT64 code is unchanged; without a window
+    # the frustum hook retains its original no-op after defensive restoration.
+    # The private canonical presentation hook remains an explicit identity.
+    "runtime-recomp/src/game/runtime_enhancements.cpp": "fe0d3653eb692b20708de52c2aa916aff5b30394a5e016dfa6e8794040e3a56a",
     "runtime-recomp/src/game/character_select_animation_policy.hpp": "ab8a0f4220c00ce1b5726ff75953f0c4944b5b4e24eba942b442e07268ad04da",
     "runtime-recomp/src/game/character_select_music_policy.hpp": "e2e308c4821e2b11cba32ecafd7195cdf7ed9cc4c4166c8b4078ec513441da6c",
 }
 
 
-def full_scene_native_audit():
+def audited_input_path(name, dependencies_dir=None):
+    """Resolve only extern inputs through a read-only shared dependency root."""
     root = Path(__file__).resolve().parents[1]
+    path = Path(name)
+    if dependencies_dir is not None and path.parts[0] == "extern":
+        return Path(dependencies_dir).resolve().joinpath(*path.parts[1:])
+    return root / path
+
+
+def full_scene_native_audit(dependencies_dir=None):
     for name, expected in FULL_SCENE_NATIVE_HASH.items():
-        if hashlib.sha256((root/name).read_bytes()).hexdigest() != expected:
+        if hashlib.sha256(audited_input_path(name, dependencies_dir).read_bytes()).hexdigest() != expected:
             raise ValueError(f"Unreviewed full-scene native participant: {name}")
 
 
@@ -510,21 +545,19 @@ REVIEWED_MAIN_MERGE_HASH = {
 }
 
 
-def input_native_audit():
+def input_native_audit(dependencies_dir=None):
     """Guard the reviewed private ownership boundary against native drift."""
-    root = Path(__file__).resolve().parents[1]
     for name, expected in INPUT_NATIVE_HASH.items():
-        actual = hashlib.sha256((root/name).read_bytes()).hexdigest()
+        actual = hashlib.sha256(audited_input_path(name, dependencies_dir).read_bytes()).hexdigest()
         if actual not in (expected, REVIEWED_MAIN_MERGE_HASH.get(name)):
             raise ValueError(f"Unreviewed native input/Pak/rumble boundary: {name}")
 
 
-def audio_rsp_payload(rsp_source=None):
+def audio_rsp_payload(rsp_source=None, dependencies_dir=None):
     """Read only; return checked private copies, never modify the RSP/runtime."""
-    root = Path(__file__).resolve().parents[1]
     sources = {}
     for name, expected in RSP_INPUT_HASH.items():
-        source_path = (rsp_source / Path(name).name) if rsp_source is not None and name.startswith("runtime-recomp/RecompiledRSP/") else root/name
+        source_path = (rsp_source / Path(name).name) if rsp_source is not None and name.startswith("runtime-recomp/RecompiledRSP/") else audited_input_path(name, dependencies_dir)
         raw = source_path.read_bytes()
         if hashlib.sha256(raw).hexdigest() != expected:
             # The reviewed Windows-generated input uses CRLF, whereas a Git
@@ -564,8 +597,8 @@ def audio_rsp_payload(rsp_source=None):
     return sources, source
 
 
-def audio_dispatch(functions, revision):
-    path = Path(__file__).resolve().parents[1] / f"extern/dkr-decomp/ver/symbols/symbol_addrs.us.v{revision}.txt"
+def audio_dispatch(functions, revision, dependencies_dir=None):
+    path = audited_input_path(f"extern/dkr-decomp/ver/symbols/symbol_addrs.us.v{revision}.txt", dependencies_dir)
     data = path.read_bytes()
     if hashlib.sha256(data).hexdigest() != AUDIO_SYMBOL_HASH.get(revision):
         raise ValueError("Unreviewed retail audio address map")
@@ -582,12 +615,12 @@ def audio_dispatch(functions, revision):
     return dispatch
 
 
-def menu_dispatch(functions, revision):
+def menu_dispatch(functions, revision, dependencies_dir=None):
     pins = MENU_INDIRECT_HASH.get(revision)
     if not pins or any(name not in functions or hashlib.sha256(functions[name].encode()).hexdigest()!=expected
                        for name,expected in pins.items()):
         raise ValueError("Unreviewed retail menu indirect-call boundary")
-    path = Path(__file__).resolve().parents[1] / f"extern/dkr-decomp/ver/symbols/symbol_addrs.us.v{revision}.txt"
+    path = audited_input_path(f"extern/dkr-decomp/ver/symbols/symbol_addrs.us.v{revision}.txt", dependencies_dir)
     data = path.read_bytes()
     if hashlib.sha256(data).hexdigest()!=AUDIO_SYMBOL_HASH[revision]:
         raise ValueError("Unreviewed retail menu address map")
@@ -939,12 +972,12 @@ def runtime_isolation_header(guest_names, import_names, revision):
     return isolation_header(names, (), revision)
 
 
-def generate(source_dir: Path, header_path: Path, output: Path, roots, revision, scene_cuts=False, audio_services=False, input_services=False, authored_cpu=False, isolate_symbols=False, full_scenes=False, boss_finish_diagnostics=False, rsp_source=None, mod_services=False, inline_memory=False):
+def generate(source_dir: Path, header_path: Path, output: Path, roots, revision, scene_cuts=False, audio_services=False, input_services=False, authored_cpu=False, isolate_symbols=False, full_scenes=False, boss_finish_diagnostics=False, rsp_source=None, mod_services=False, inline_memory=False, dependencies_dir=None):
     source_dir, header_path, output = source_dir.resolve(), header_path.resolve(), output.resolve()
     if output.exists() or output == source_dir or source_dir in output.parents or header_path.parent in output.parents:
         raise ValueError("Probe output must be a new, separate directory; protected inputs are never rewritten")
     if input_services:
-        input_native_audit()
+        input_native_audit(dependencies_dir)
     if full_scenes and not (authored_cpu and isolate_symbols):
         raise ValueError("Full scenes require an explicit isolated authored CPU owner")
     if mod_services and not full_scenes:
@@ -952,7 +985,7 @@ def generate(source_dir: Path, header_path: Path, output: Path, roots, revision,
     if boss_finish_diagnostics and not (full_scenes and authored_cpu and isolate_symbols):
         raise ValueError("Boss diagnostics require the isolated full-scene owned adapter")
     if full_scenes:
-        full_scene_native_audit()
+        full_scene_native_audit(dependencies_dir)
     header_bytes = header_path.read_bytes()
     if hashlib.sha256(header_bytes).hexdigest() != HEADER_HASH:
         raise ValueError("Unreviewed recomp.h; audit memory macros before updating the probe")
@@ -998,9 +1031,11 @@ def generate(source_dir: Path, header_path: Path, output: Path, roots, revision,
         if full_scenes:
             functions["dkr_probe_scene_resume_menu_cpu"]=resumed[2]
             origins["dkr_probe_scene_resume_menu_cpu"]={**origins["mode_menu"],"phase":"confirmed-menu-continuation"}
+            menu_source_pins = {name: hashlib.sha256(functions[name].encode()).hexdigest()
+                                for name in MENU_CPU_HASH[revision]}
             for name,body in owned_menu_cpu(functions,revision).items():
                 functions[name]=body
-                origins[name]={"phase":"confirmed-menu-constructor","source_pins":MENU_CPU_HASH[revision]}
+                origins[name]={"phase":"confirmed-menu-constructor","source_pins":menu_source_pins}
         for new,original in (("dkr_probe_scene_resume_main_cpu","main_game_loop"),("dkr_probe_scene_resume_mode_cpu","mode_game")):
             origins[new]={**origins[original],"phase":"private-confirmed-continuation"}
     helpers = set(re.findall(r"^#define\s+(\w+)\s*\(", header, re.M))
@@ -1017,9 +1052,9 @@ def generate(source_dir: Path, header_path: Path, output: Path, roots, revision,
                     "dkr_probe_menu_level_change_begin", "dkr_probe_menu_level_change_ready", "dkr_probe_menu_background_request"))
     helpers.update(("sqrtf", "sqrt", "truncf", "trunc", "roundf", "round", "fabsf", "fabs",
                     "floorf", "floor", "ceilf", "ceil", "fmodf", "fmod", "abs", "assert"))
-    dispatch = audio_dispatch(functions, revision) if audio_services else {}
-    menu_callbacks = menu_dispatch(functions, revision) if full_scenes else {}
-    rsp_headers, rsp_source = audio_rsp_payload(rsp_source) if audio_services else ({}, None)
+    dispatch = audio_dispatch(functions, revision, dependencies_dir) if audio_services else {}
+    menu_callbacks = menu_dispatch(functions, revision, dependencies_dir) if full_scenes else {}
+    rsp_headers, rsp_source = audio_rsp_payload(rsp_source, dependencies_dir) if audio_services else ({}, None)
     roots = list(roots)
     if mod_services:
         roots = list(dict.fromkeys(roots + list(OWNED_MOD_CALLS.values()) + ["rand_range", "tex_animate_texture"]))
@@ -1170,5 +1205,6 @@ if __name__ == "__main__":
     p.add_argument("--boss-finish-diagnostics", action="store_true", help="Bounded observation-only boss-finish tracing; no gameplay changes")
     p.add_argument("--mod-services", action="store_true", help="Reviewed private mod callback closure; session/runtime admission remains separately gated")
     p.add_argument("--rsp-source", type=Path, help="Read-only RSP input directory for an isolated worktree; original SHA-256 pins remain mandatory")
+    p.add_argument("--dependencies-dir", type=Path, help="Read-only prepared extern directory; first-party sources and all SHA-256 pins remain unchanged")
     a = p.parse_args()
-    generate(a.generated, a.header, a.output, a.roots, a.revision, a.scene_cuts, a.audio_services, a.input_services, a.authored_cpu, a.isolate_symbols, a.full_scenes, a.boss_finish_diagnostics, a.rsp_source, a.mod_services, a.inline_memory)
+    generate(a.generated, a.header, a.output, a.roots, a.revision, a.scene_cuts, a.audio_services, a.input_services, a.authored_cpu, a.isolate_symbols, a.full_scenes, a.boss_finish_diagnostics, a.rsp_source, a.mod_services, a.inline_memory, a.dependencies_dir)

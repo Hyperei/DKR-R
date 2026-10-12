@@ -1440,6 +1440,7 @@ public:
     std::shared_ptr<const RenderSnapshot> delayed_consumer;
     std::vector<Effect> effects;
     std::array<std::array<bool,320>,3> sampled{};
+    std::array<unsigned,3> next_sample{};
     unsigned scene=0,pending_preparations=0;
     explicit SceneSessionWorld(std::span<const std::uint8_t> fixture,unsigned first_site)
         :world(fixture,false,true,true,true,91,true),first_site_(first_site) {
@@ -1503,6 +1504,7 @@ FrameInputs scene_inputs(unsigned scene,unsigned frame,unsigned players) {
 }
 bool dkr_probe_scene_session_check(std::span<const std::uint8_t> fixture,unsigned players,unsigned final_frames) {
     if(!DKR_PROBE_HAS_AUTHORED_CPU || players<2 || players>4 || final_frames<12 || final_frames>300)return false;
+    constexpr unsigned boundary_frames=6,prediction_window=6;
     for(unsigned first_site:{1,2}) {
         std::array<std::unique_ptr<SceneSessionWorld>,4> worlds;
         std::array<std::unique_ptr<Session>,4> sessions;
@@ -1518,7 +1520,7 @@ bool dkr_probe_scene_session_check(std::span<const std::uint8_t> fixture,unsigne
             if(p)keys[p]=secure::generate_key();
             worlds[p]=std::make_unique<SceneSessionWorld>(fixture,first_site);
             sessions[p]=std::make_unique<Session>(*worlds[p]);
-            if(!sessions[p]->start({{91,std::uint8_t(players),6},std::uint8_t(p),0},error))return false;
+            if(!sessions[p]->start({{91,std::uint8_t(players),prediction_window},std::uint8_t(p),0},error))return false;
             previous_epoch[p]=91;
             transports[p]=std::make_unique<ImpairedUdp>();
             if(!transports[p]->open(0,error) || !DatagramSocket::resolve("127.0.0.1",transports[p]->local_port(),addresses[p],error))return false;
@@ -1540,10 +1542,19 @@ bool dkr_probe_scene_session_check(std::span<const std::uint8_t> fixture,unsigne
                 if(final_limit) {
                     if(!networks[p]->service() || session.step(false)==SessionStep::Failed)return false;
                 } else if(!pumps[p]->pulse(Network::Clock::now(),[&]{
-                    const auto scene=unsigned(session.epoch()-91),frame=session.frontier();
-                    if(scene>=world.sampled.size() || frame>=world.sampled[scene].size() || world.sampled[scene][frame])
+                    const auto scene=unsigned(session.epoch()-91);
+                    if(scene>=world.sampled.size())
+                        throw std::runtime_error("Out-of-range physical scene input epoch");
+                    // Pump's independent physical clock may publish one frame
+                    // ahead while simulation waits or corrects. With this test's
+                    // zero delay, Timeline assigns successive samples 0,1,...;
+                    // the simulation frontier is not that immutable input ID.
+                    const auto frame=world.next_sample[scene];
+                    if(frame<session.frontier() || std::uint64_t(frame)>std::uint64_t(session.frontier())+1 ||
+                       frame>=world.sampled[scene].size() || world.sampled[scene][frame])
                         throw std::runtime_error("Duplicate/out-of-range physical scene input assignment");
                     world.sampled[scene][frame]=true;
+                    ++world.next_sample[scene];
                     return scene_inputs(scene,frame,players)[p];
                 })) {
                     std::cerr<<"Actual scene session peer="<<p<<" epoch="<<session.epoch()<<" "<<pumps[p]->error()<<'\n';return false;
@@ -1581,13 +1592,25 @@ bool dkr_probe_scene_session_check(std::span<const std::uint8_t> fixture,unsigne
         std::vector<std::uint8_t> expected(reference.contract().state_bytes),actual(expected.size());
         if(!reference.capture(expected,error))return false;
         for(unsigned p=0;p<players;++p) {
+            const auto& samples=worlds[p]->next_sample;
+            // Before a remote boundary is known, prediction can extend the
+            // old scene by its window and the physical clock by one further
+            // sample. That immutable lookahead is discarded at the epoch cut,
+            // never reassigned to the next scene. Check each epoch separately.
+            const bool sample_bounds=samples[0]>=boundary_frames && samples[1]>=boundary_frames &&
+                samples[0]<=boundary_frames+prediction_window+1 && samples[1]<=boundary_frames+prediction_window+1 &&
+                samples[2]>=final_frames && samples[2]<=final_frames+1 &&
+                pumps[p]->view().physical_samples==samples[0]+samples[1]+samples[2];
             if(!worlds[p]->capture(actual,error) || actual!=expected || worlds[p]->effects!=reference.effects ||
                worlds[p]->world.preparations_for_test()!=reference.world.preparations_for_test() ||
                worlds[p]->pending_preparations!=16 || !worlds[p]->mailbox.quiescent() ||
-               worlds[p]->scene!=2 || pumps[p]->view().physical_samples<final_frames+12 ||
-               pumps[p]->view().physical_samples>final_frames+24 || !networks[p]->statistics().rejected) {
+               worlds[p]->scene!=2 || !sample_bounds || !networks[p]->statistics().rejected) {
                 std::cerr<<"Actual chained session mismatch peer="<<p<<" preparations="<<worlds[p]->pending_preparations
-                         <<" samples="<<pumps[p]->view().physical_samples<<'\n';return false;
+                         <<" samples="<<pumps[p]->view().physical_samples
+                         <<" scene-samples="<<worlds[p]->next_sample[0]<<','<<worlds[p]->next_sample[1]<<','<<worlds[p]->next_sample[2]
+                         <<" state="<<(actual==expected)<<" effects="<<(worlds[p]->effects==reference.effects)
+                         <<" construction="<<(worlds[p]->world.preparations_for_test()==reference.world.preparations_for_test())
+                         <<" mailbox="<<worlds[p]->mailbox.quiescent()<<" scene="<<worlds[p]->scene<<'\n';return false;
             }
             rollbacks+=sessions[p]->statistics().rollbacks;
         }

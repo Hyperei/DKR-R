@@ -1408,6 +1408,13 @@ uint64_t dkr_probe_native_args(const char* name, uint8_t* ram, struct recomp_con
     /* These private captures use fresh profiles with no custom characters.
        Match runtime_legacy_mods.cpp's explicit no-character-state paths. */
     if (offline) {
+        /* runtime_legacy_mods.cpp validates the selector, then returns the
+           supplied retail bits before touching RAM when no character/session
+           state exists. ModWorld dispatch above owns all installed mods. */
+        if(count==3 && args[0]<3 && args[1]<=UINT32_MAX && args[2]<=UINT32_MAX &&
+           strcmp(name,"dkr_legacy_racer_stat")==0) return args[2];
+        if(count==2 && args[0]<3 && args[1]<=UINT32_MAX &&
+           strcmp(name,"dkr_legacy_course_component")==0) return args[1];
         if(count==1 && args[0]<4 && strcmp(name,"dkr_legacy_asset_cache_capacity")==0) {
             const uint32_t capacities[4]={700,100,70,100};return capacities[args[0]];
         }

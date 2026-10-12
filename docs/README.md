@@ -33,6 +33,8 @@ are still useful, but they aren't the current feature list.
 - [Architecture](ARCHITECTURE.md), [native runtime](../runtime-recomp/README.md),
   [F3DDKR bridge](F3DDKR.md) and [renderer ownership](RENDER_SNAPSHOT_ARCHITECTURE.md).
 - [Legacy test suite](../runtime-recomp/tests/legacy_mods/README.md).
+- [Regression and performance harness](REGRESSION.md): repeatable runtime checks,
+  private CPU replay routes, checkpoint benchmarks and baseline reports.
 - [Reviewed legacy behaviour evidence](LEGACY-BEHAVIOUR-20261010.txt).
   Exact corpus coverage is not blanket permission to execute unknown mod code.
 - [Asset policy](ASSET_POLICY.md), [controller database provenance](../assets/controllers/README.md)

@@ -2,6 +2,7 @@
 // expose fake peer delivery, without adding test entry points to release code.
 #define DKR_FRIEND_TESTING 1
 #include "netplay/friend_service.cpp"
+#include "temporary_directory.hpp"
 
 #include <cassert>
 #include <future>
@@ -59,8 +60,8 @@ struct FriendServiceTestAccess {
         }
     }
     static void run() {
-        const auto root = std::filesystem::temp_directory_path() /
-            ("dkrr-social-delivery-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        TemporaryDirectory fixture("dkrr-social-delivery");
+        const auto& root = fixture.path();
         FriendService a, b, c;
         profile(a, root, "A"); profile(b, root, "B"); profile(c, root, "C");
         FriendInviteView invite;
@@ -240,7 +241,6 @@ struct FriendServiceTestAccess {
         f.shutdown(); g.shutdown();
         d.shutdown(); e.shutdown();
         a.shutdown(); b.shutdown(); c.shutdown();
-        std::filesystem::remove_all(root);
     }
     static void integration(unsigned soak_seconds = 0) {
         struct ServerState {
@@ -319,8 +319,8 @@ struct FriendServiceTestAccess {
             }
         });
         test_signaling_endpoint = "ws://127.0.0.1:" + std::to_string(server.port());
-        const auto root = std::filesystem::temp_directory_path() /
-            ("dkrr-social-local-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        TemporaryDirectory fixture("dkrr-social-local");
+        const auto& root = fixture.path();
         FriendService a, b, c;
         a.configure(root / "A", "Alice"); b.configure(root / "B", "Bob"); c.configure(root / "C", "Carol");
         const auto wait = [&](auto predicate, const char* label) {
@@ -403,11 +403,10 @@ struct FriendServiceTestAccess {
         { std::lock_guard lock(server_state->mutex); sockets.swap(server_state->sockets); server_state->routes.clear(); }
         for (auto& socket : sockets) { socket->resetCallbacks(); socket->close(); }
         test_signaling_endpoint.clear();
-        std::filesystem::remove_all(root);
     }
     static void regressions() {
-        const auto root = std::filesystem::temp_directory_path() /
-            ("dkrr-social-regression-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        TemporaryDirectory fixture("dkrr-social-regression");
+        const auto& root = fixture.path();
         FriendService a, b;
         profile(a, root, "Sender"); profile(b, root, "Receiver");
         FriendInviteView code; std::string error;
@@ -553,7 +552,6 @@ struct FriendServiceTestAccess {
         recovery_backup.close(); recovered.shutdown();
         old_a.shutdown(); old_b.shutdown(); c.shutdown(); d.shutdown();
         a.shutdown(); b.shutdown();
-        std::filesystem::remove_all(root);
     }
 };
 } // namespace dkr::runtime::netplay

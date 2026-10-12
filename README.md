@@ -148,6 +148,10 @@ is not a promise that every device is qualified. No macOS/iOS binary is included
 in this build pass; their source support is preserved.
 See [platform support](docs/PLATFORMS.md) for the platform-specific requirements.
 
+Contributing without a ROM? Start with the [developer guide](docs/DEVELOPMENT.md).
+`python3 scripts/check.py` runs the fast source/tooling checks without a C++
+build or dependency downloads; host presets cover the C++ tests.
+
 For a source build, follow [Building DKR-R](docs/BUILDING.md). Both ROM
 revisions and the appropriate Patch Pipeline outputs are required for a
 complete release. Never hand-edit submodules or generated recompilation files.

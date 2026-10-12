@@ -37,6 +37,22 @@ and limitations of the build they describe.
 - Windows, Linux x86_64, Linux ARM64, Steam Deck and Android use version 1.0.6.
   Android build code is 1060001; it retains the existing app ID and signing identity
   for upgrades. ARM, Android and SteamOS still need physical-device qualification.
+### Developer tooling
+
+- Repeatable regression/performance harness with private retail CPU routes,
+  ROM-free checkpoint benchmarks, same-machine baselines, deterministic
+  fingerprints and HTML/JSON/JUnit reports with retained attempt logs.
+
+- Fast ROM-free contributor checks, Debug host presets, editor compilation
+  databases and the same preset commands in CI.
+- Worktree-safe source/dependency paths and incremental generation that keeps
+  unchanged output timestamps.
+- One checked dependency patch implementation across platforms, non-mutating
+  validation, explicit repair, and safer nested dependency preparation.
+- More discoverable tests, isolated temporary fixtures, accurate Blender skips
+  and failure reporting, and retained CI diagnostics.
+- Opt-in Linux packaging, automation-friendly Windows launchers, and source/
+  Track Lab archives published only after successful creation and validation.
 
 ## 1.0.5 Public Build — 10 October 2026
 
