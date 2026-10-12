@@ -2,13 +2,27 @@
 // expose fake peer delivery, without adding test entry points to release code.
 #define DKR_FRIEND_TESTING 1
 #include "netplay/friend_service.cpp"
-#include "temporary_directory.hpp"
 
 #include <cassert>
 #include <future>
 #include <iostream>
 
 namespace dkr::runtime::netplay {
+// A timestamp is only a candidate name: parallel CTest processes may observe
+// the same clock tick. Claim the directory atomically before writing profiles.
+static std::filesystem::path reserve_test_directory(const std::filesystem::path& base) {
+    for (unsigned attempt = 0; attempt < 1000; ++attempt) {
+        const auto path = std::filesystem::path(base.string() + "-" + std::to_string(attempt));
+        if (std::filesystem::create_directory(path)) return path;
+    }
+    throw std::runtime_error("Could not reserve an isolated Friend test directory.");
+}
+
+static std::filesystem::path test_directory(std::string_view prefix) {
+    return reserve_test_directory(std::filesystem::temp_directory_path() /
+        (std::string(prefix) + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())));
+}
+
 struct FriendServiceTestAccess {
     using Impl = FriendService::Impl;
     using Peer = Impl::Peer;
@@ -59,9 +73,20 @@ struct FriendServiceTestAccess {
             drain_messages();
         }
     }
+    static void directory_isolation() {
+        const auto root = test_directory("dkrr-social-directory-");
+        // Force the same candidate name, as if both processes saw one tick.
+        const auto first = reserve_test_directory(root / "same-tick");
+        { std::ofstream sentinel(first / "profile"); sentinel << "original identity"; }
+        const auto second = reserve_test_directory(root / "same-tick");
+        assert(first != second && std::filesystem::is_empty(second));
+        std::ifstream sentinel(first / "profile");
+        assert(std::string(std::istreambuf_iterator<char>(sentinel), {}) == "original identity");
+        sentinel.close();
+        std::filesystem::remove_all(root);
+    }
     static void run() {
-        TemporaryDirectory fixture("dkrr-social-delivery");
-        const auto& root = fixture.path();
+        const auto root = test_directory("dkrr-social-delivery-");
         FriendService a, b, c;
         profile(a, root, "A"); profile(b, root, "B"); profile(c, root, "C");
         FriendInviteView invite;
@@ -241,6 +266,7 @@ struct FriendServiceTestAccess {
         f.shutdown(); g.shutdown();
         d.shutdown(); e.shutdown();
         a.shutdown(); b.shutdown(); c.shutdown();
+        std::filesystem::remove_all(root);
     }
     static void integration(unsigned soak_seconds = 0) {
         struct ServerState {
@@ -319,8 +345,7 @@ struct FriendServiceTestAccess {
             }
         });
         test_signaling_endpoint = "ws://127.0.0.1:" + std::to_string(server.port());
-        TemporaryDirectory fixture("dkrr-social-local");
-        const auto& root = fixture.path();
+        const auto root = test_directory("dkrr-social-local-");
         FriendService a, b, c;
         a.configure(root / "A", "Alice"); b.configure(root / "B", "Bob"); c.configure(root / "C", "Carol");
         const auto wait = [&](auto predicate, const char* label) {
@@ -403,10 +428,10 @@ struct FriendServiceTestAccess {
         { std::lock_guard lock(server_state->mutex); sockets.swap(server_state->sockets); server_state->routes.clear(); }
         for (auto& socket : sockets) { socket->resetCallbacks(); socket->close(); }
         test_signaling_endpoint.clear();
+        std::filesystem::remove_all(root);
     }
     static void regressions() {
-        TemporaryDirectory fixture("dkrr-social-regression");
-        const auto& root = fixture.path();
+        const auto root = test_directory("dkrr-social-regression-");
         FriendService a, b;
         profile(a, root, "Sender"); profile(b, root, "Receiver");
         FriendInviteView code; std::string error;
@@ -552,6 +577,7 @@ struct FriendServiceTestAccess {
         recovery_backup.close(); recovered.shutdown();
         old_a.shutdown(); old_b.shutdown(); c.shutdown(); d.shutdown();
         a.shutdown(); b.shutdown();
+        std::filesystem::remove_all(root);
     }
 };
 } // namespace dkr::runtime::netplay
@@ -572,6 +598,7 @@ int main(int argc, char** argv) {
     assert(completion.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
     executor.stop();
     assert(!executor.post([] {}));
+    FriendServiceTestAccess::directory_isolation();
     FriendServiceTestAccess::run();
     FriendServiceTestAccess::regressions();
     if (argc > 1 && std::string_view(argv[1]) == "--integration") FriendServiceTestAccess::integration();
