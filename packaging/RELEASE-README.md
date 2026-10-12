@@ -20,9 +20,35 @@ islands and shaded ridges, and stays enhanced when scene lighting is off.
 Unsupported devices keep the emissive lava surface. This is ray-tested diffuse lighting, not a full
 multi-bounce path tracer; dynamic racers are not hardware occluders.
 
-Android build 1060001 keeps the previous application ID and signing identity
+Android build 1060002 keeps the previous application ID and signing identity
 to preserve upgrades. Its release Java wrapper is not debuggable; it retains
 the existing development signing key, not a newly provisioned production key.
+
+## What's changed since 1.0.5
+
+There is more control over the water now! Original, Performance, Balanced,
+High and Custom presets keep your resolution, MSAA and FPS target unchanged.
+Advanced settings separately control reflection/wake/spray quality and the
+water's strength, roughness, ripples, foam, clarity, refraction, flowing detail
+and tint. Waterfall/river flow and interpolation, reflection handling and
+Track Select water stability have had corrections too.
+
+Custom rows have six alternating backgrounds and a heading on every row.
+Future Fun Land restores its own art. Widescreen scrolling keeps images,
+arrows and text with their frames, including the brief-stretch correction.
+Shared `.dkrmap` texture/sprite tables have stronger length/offset checks for
+mixed track and character libraries. Long in-game captions are abbreviated
+without renaming installed mods.
+
+Offline custom tracks can choose the vehicles their headers allow. Track Lab
+can generate looping preview flights, while preserving authored flights, and
+warns about starts that force a vehicle. The offline Modern camera has revised
+corner, drift and wall-hit behaviour and migrates existing tuning preferences.
+
+Contributor updates add graphics-command bounds/budgets, safer setup and
+packaging, platform-source improvements, and repeatable regression/CI tools.
+Golden Balloon and Wave Race now use the compact technology credit rows.
+See PUBLIC-1.0.6-NOTES.txt and the source changelog for the full breakdown.
 
 ## Start playing
 

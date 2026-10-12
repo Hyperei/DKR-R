@@ -4,7 +4,30 @@ This is the player-facing release history. Current instructions live in the
 [documentation index](docs/README.md); dated investigations retain the findings
 and limitations of the build they describe.
 
-## 1.0.6 — 11 October 2026
+## 1.0.6 — 12 October 2026
+
+There's more in this update than the new lava! These changes are compared
+against the published 1.0.5 source. Existing custom characters, online mod
+sharing, texture priorities and save protection are carried forward.
+
+### Water, waterfalls and lava
+
+- Additional enhanced-water stability, scratch-allocation, viewport and MSAA
+  protections address effect popping and the Whale Bay Track Select crash.
+  Hardware-scene failures retain screen-space reflections where available;
+  the UI reports the active method and bounded allocation fallback status.
+- New water presets: Original, Performance, Balanced, High and Custom.
+  Reflection, wake and spray detail can be set separately. Appearance controls
+  cover reflection strength/range, roughness, ripples, foam, wakes, clarity,
+  refraction, waterfall detail and RGB tint, with reset controls and optional
+  bounded GPU timing logs. These do not change race physics or the selected
+  game resolution, MSAA, FPS target or reflection method.
+- Waterfalls/fountains use a continuous flowing material, preserve authored
+  alpha/fog, and have reflection opacity masks and corrected UV interpolation.
+  Authored mapping keeps joined river sheets aligned; Snowflake Mountain's
+  river follows the retail scroll direction without reversing vertical falls.
+
+### Play, Track Select and presentation
 
 - Play has a **Skip intro logos** tickbox with Start menu and Character select
   destinations. Start menu keeps its original first sequence, music and reveal
@@ -31,12 +54,37 @@ and limitations of the build they describe.
   remains unchanged.
 - Golden Balloon and Wave Race credits now share the compact name-and-link
   layout used by the other technology credits, with their acknowledgements retained.
-- All changes merged into main through PRs #52–#57 are integrated, including HLE
+- Custom `.dkrmap` 3D/2D textures and sprites share boot-owned namespaces with
+  character artwork. Asset-table scans use exact available lengths instead of
+  truncating large libraries at 4,096 words. Signed ID/offset, monotonic-table
+  and allocation checks reject invalid data rather than guessing or overrunning RAM.
+- Offline authored tracks can use the vehicles their headers allow without
+  writing fake Adventure progress to the save. Online retains its existing gate.
+- Track Lab export generates a looping preview flight when a race/boss track
+  has none. Generate Preview Flight creates editable nodes and preserves
+  manually authored flights. Validation warns about forced-vehicle race starts.
+- Modern camera keeps up better in sustained corners and at speed, smooths
+  drift transitions, revises wall-hit recovery and no longer rolls in corners
+  by default. Version-2 tuning migration preserves changed preferences.
+
+### Stability and platforms
+
+- F3DDKR graphics commands are checked before fetch, including counted lists,
+  out-of-range targets, incomplete packets and loops. Shared command budgets
+  prevent malformed lists from running indefinitely.
+- All changes merged into main through PRs #51–#58 are integrated, including HLE
   bounds protection, setup/test improvements, session fixture safety, Blender work
   and the iOS source port. Apple binaries are not supplied in this build pass.
 - Windows, Linux x86_64, Linux ARM64, Steam Deck and Android use version 1.0.6.
-  Android build code is 1060001; it retains the existing app ID and signing identity
+  Android build code is 1060002; it retains the existing app ID and signing identity
   for upgrades. ARM, Android and SteamOS still need physical-device qualification.
+
+- macOS source changes retain the original app artwork, Retina icon support,
+  memory-aware online cache sizing, prerequisite checks, concurrent-build locks
+  and packaging validation. The iOS sideload source port adds Metal/touch,
+  document import, lifecycle and device-only IPA checks. No Apple binary is
+  supplied in this release pass; its platform limitations remain documented.
+
 ### Developer tooling
 
 - Repeatable regression/performance harness with private retail CPU routes,
@@ -53,6 +101,13 @@ and limitations of the build they describe.
   and failure reporting, and retained CI diagnostics.
 - Opt-in Linux packaging, automation-friendly Windows launchers, and source/
   Track Lab archives published only after successful creation and validation.
+- Release-mode assertions remain enabled in tests. Direct-session fixtures
+  avoid live-worker races; friend-delivery fixtures atomically claim their own
+  temporary directories for concurrent runs rather than sharing clock names.
+- Windows/Linux/macOS CI gains checked compiler/dependency caches and retained
+  test summaries. Android/iOS compilation CI checks platform adapters; it does
+  not substitute for complete APK/IPA builds or device gameplay. Workflow
+  lint/security checks use pinned, checksum-verified tools and read-only tokens.
 
 ## 1.0.5 Public Build — 10 October 2026
 

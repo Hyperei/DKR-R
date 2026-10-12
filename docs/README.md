@@ -1,6 +1,6 @@
 # DKR-R documentation
 
-Start here for the current 1.0.5 instructions. The older plans and playtest logs
+Start here for the current 1.0.6 instructions. The older plans and playtest logs
 are still useful, but they aren't the current feature list.
 
 ## Playing and settings
@@ -42,14 +42,15 @@ are still useful, but they aren't the current feature list.
 
 ## Releases and credits
 
-- [Changelog](../CHANGELOG.md) and [current public release notes](PUBLIC-1.0.5-NOTES.txt).
+- [Changelog](../CHANGELOG.md) and [current public release notes](PUBLIC-1.0.6-NOTES.txt).
 - [Release validation](../RELEASE-VALIDATION.md) separates recorded automated
   checks from user-led gameplay/hardware acceptance.
 - [Packaged readme template](../packaging/RELEASE-README.md).
 - [Third-party credits](../THIRD_PARTY.md), [project licence](../LICENSE.md)
   and [runtime licensing notice](../runtime-recomp/COPYING-NOTICE.md).
 
-Windows x64 and Linux x64 AppImage are the current Public Build delivery.
+The 1.0.6 release targets Windows x64, Linux x86_64/ARM64 AppImages, Steam Deck
+and Android ARM64. See the platform guide and validation record for actual checks.
 Experimental Rollback and hardware ray tracing remain experimental.
 Android/ARM/macOS support must not be inferred from a desktop test count.
 

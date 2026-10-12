@@ -61,7 +61,10 @@ and legacy online play.
 
 The **Ray tracing & water** section has:
 
-- **Water quality:** Original, Enhanced or High.
+- **Water preset:** Original, Performance, Balanced, High or Custom.
+  Performance/Balanced/High set the water component budgets; Custom reflects
+  your individual changes. A preset does not change resolution, MSAA, target
+  presentation rate or the reflection method.
 - **Reflections:** Sky, Screen-space or Hardware ray tracing (experimental).
 - **Racer wakes** and **Water spray**.
 - **RTX lava lighting:** its own on/off tickbox, intensity, pulse and range.
@@ -69,11 +72,31 @@ The **Ray tracing & water** section has:
   Performance uses one sixteenth as many lighting pixels as High; Balanced uses
   one quarter and is the default. These settings do not lower the game resolution.
 
+Open **Advanced water settings** to adjust:
+
+- **Reflection detail**, **Wake quality** and **Spray detail** independently:
+  Preset default, Low, Medium or High.
+- **Hardware reflection distance** and **Reflection strength**. A zero reflection
+  strength skips reflection tracing; reducing distance can reduce ray work.
+- **Surface roughness**, **Fine ripple strength**, **Foam intensity**,
+  **Wake visibility**, **Water clarity** and **Refraction strength**.
+- **Waterfall flowing detail**, including zero to retain the original artwork.
+- **Use track colours**, or individual red/green/blue water tint controls.
+- **Reset water appearance** and **Restore existing water quality defaults**.
+- **Log water GPU timings**, which takes effect next game launch and records
+  bounded summaries without adding a diagnostic GPU drain.
+
+Appearance controls change the look, not the game simulation. Low component
+quality reduces its work; simply reducing a visual slider does not always make
+the pass cheaper. Settings are saved locally, including during online play.
+The panel reports the last active reflection method and allocation fallback
+status so a hardware fallback is not mistaken for a changed saved preference.
+
 Enhanced lava has moving molten cracks, rough hot-rock islands and shaded ridges.
 That surface detail does not need the surrounding RTX lighting pass. It is a
 material effect, not extra collision geometry or a full multi-bounce path tracer.
 
-Original keeps the game's water. Enhanced/High add the new water presentation
+Original keeps the game's water. The enhanced presets add the new water presentation
 to eligible flat and animated water. Waterfalls and fountains retain their
 authored appearance with added flowing detail. Recognised custom-track water
 can use the same renderer path; arbitrary mod surfaces still need valid water

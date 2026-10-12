@@ -1,4 +1,4 @@
-# Building DKR-R 1.0.5
+# Building DKR-R 1.0.6
 
 For contributor checks that need no ROM or game build, start with
 `python3 scripts/check.py` and the [host presets](DEVELOPMENT.md#first-contribution-tests-without-a-rom).
@@ -80,7 +80,7 @@ Example Windows configuration, with placeholder paths replaced:
 
 ```powershell
 cmake -S runtime-recomp -B build/public-windows -G "Visual Studio 17 2022" -A x64 `
-  '-DDKR_RELEASE_VERSION=1.0.5' `
+  '-DDKR_RELEASE_VERSION=1.0.6' `
   -DDKR_RUNTIME_BUILD_RT64=ON -DDKR_RUNTIME_BUILD_SDL3_INPUT_HOST=ON `
   '-DDKR_GENERATED_SOURCE_V77=<normal-v77>' '-DDKR_GENERATED_SOURCE_V80=<normal-v80>' `
   '-DDKR_GENERATED_RSP_SOURCE=<prepared-RSP-output>' `
@@ -101,7 +101,7 @@ On Linux use Ninja and a fresh build directory, with the same reviewed payloads:
 
 ```bash
 cmake -S runtime-recomp -B build/public-linux -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release -DDKR_RELEASE_VERSION=1.0.5 \
+  -DCMAKE_BUILD_TYPE=Release -DDKR_RELEASE_VERSION=1.0.6 \
   -DDKR_RUNTIME_BUILD_RT64=ON -DDKR_RUNTIME_BUILD_SDL3_INPUT_HOST=ON \
   '-DDKR_GENERATED_SOURCE_V77=<normal-v77>' \
   '-DDKR_GENERATED_SOURCE_V80=<normal-v80>' \
@@ -117,8 +117,8 @@ DKR_LINUX_BUILD_DIR="$PWD/build/public-linux" ./scripts/Package-Linux-AppImage.s
 ```
 
 `VERSION` supplies the package version. Default outputs are
-`dist/DKR-R-1.0.5-Windows-x64.zip` and
-`dist/DKR-R-1.0.5-Linux-x86_64.AppImage`.
+`dist/DKR-R-1.0.6-Windows-x64.zip` and
+`dist/DKR-R-1.0.6-Linux-x86_64.AppImage`.
 Keep prior outputs; the AppImage packager expects a fresh output/AppDir.
 Do not skip runtime checks for a public package.
 

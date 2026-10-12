@@ -19,15 +19,52 @@ Nintendo/Rare assets are included.
 ## What's new in 1.0.6
 
 - Skip intro logos in Play, then choose Start menu or Character select. The
-  Start menu keeps its normal opening sequence instead of jumping into a race.
-- RTX lava lighting adds a pulsating glow to nearby geometry, with intensity,
-  pulse and range controls. Its own tickbox leaves the glowing, rough lava
-  surface and other water effects enabled when the surrounding light is off.
-  Balanced and Performance lighting options reduce the ray workload.
-- Custom Track Select rows cycle through six backgrounds and each row has
-  its own header. Returning to Future Fun Land restores its original background.
-- The latest merged contributor work is included, without losing our mods,
-  online improvements, Track Lab or Blender additions.
+  Start menu keeps its opening sequence and music. Online startup stays unchanged.
+- Enhanced water has had another stability pass, including effect popping,
+  reflection handling and the Whale Bay Track Select crash. Waterfalls now have
+  continuous flowing detail with corrected scrolling/interpolation, transparency
+  and reflection masks. The river near Snowflake Mountain follows its authored flow.
+- There is much more control over the water! Original, Performance, Balanced,
+  High and Custom presets are joined by separate reflection, wake and spray
+  quality controls. Fine-tune reflection strength/range, roughness, ripples,
+  foam, clarity, refraction, waterfall detail and water tint. Presets leave
+  your game resolution, MSAA, FPS target and reflection method alone.
+- Hot Top Volcano has enhanced, glowing lava with moving molten cracks and
+  rough hot-rock detail. Optional RTX lava lighting adds a pulsating glow to
+  nearby walls and ground. Its own tickbox leaves the enhanced surface and
+  water effects on; quality, intensity, pulse and range settings control the
+  surrounding light. Lower-resolution lighting reduces the ray workload.
+- Every custom Track Select row now has a CUSTOM TRACKS header and cycles
+  through six backgrounds. Future Fun Land restores its own artwork when you
+  scroll back. Images, names and arrows stay with their wooden frames on wide
+  screens, including the fix for brief horizontal stretching during transitions.
+- Custom `.dkrmap` artwork shares the correct texture/sprite namespace with
+  character mods. Asset-table length, offset and allocation checks address
+  Track Select failures when combining tracks and large character libraries.
+  Very long in-game captions are shortened without renaming your installed mods.
+- Offline custom tracks can use the vehicles allowed by their headers.
+  Track Lab can generate looping Track Select preview flights along the race
+  line, while preserving flights placed by the author. Export validation warns
+  about race starts that force a different vehicle. Online vehicle selection
+  keeps its existing restrictions.
+- The Modern camera has revised corner, drift and wall-hit behaviour, less
+  spring lag and no corner roll by default. Existing tuning files migrate
+  while preserving changed values. The camera remains an offline feature.
+- Malformed graphics commands now have stronger bounds and execution-budget
+  checks. Water rendering also has additional allocation, viewport and MSAA
+  safety checks. Golden Balloon and Wave Race credits use the same tidy link
+  rows as the other technology credits.
+- Contributor work adds safer dependency setup, build locking and packaging,
+  improved macOS support, and an iOS sideload source port. Apple binaries are
+  not part of this delivery. Windows, both Linux architectures, Steam Deck and
+  Android are being brought onto the same 1.0.6 release source.
+- Developers now have a regression/performance harness with retained reports,
+  private retail replay checks, repeatable build presets, faster incremental
+  builds and CI caching, workflow linting and mobile compilation checks.
+
+See the [1.0.6 changelog](CHANGELOG.md#106--12-october-2026) for the full breakdown,
+[Graphics](docs/GRAPHICS.md) for the water/lighting controls, and
+[Track Lab](tools/blender/README.md) for authoring changes.
 
 The features carried forward from 1.0.5 include:
 
@@ -72,12 +109,13 @@ qualified. The [platform guide](docs/PLATFORMS.md) explains the current coverage
    dropdown lets you switch between installed revisions.
 4. Choose **Accurate** for the original 4:3/30 FPS presentation, or **Modern**
    for widescreen, higher presentation rates and the additional settings.
-5. Tick **Skip intro** in Play if you want to go straight to the normal Start
-   Game title screen when playing offline, then select **PLAY OFFLINE**.
+5. Optionally tick **Skip intro logos** and choose **Start menu** or
+   **Character select**, then select **PLAY OFFLINE**.
 
 Skip intro is remembered between launches and is off by default. It does not
-change online startup or skip file/character selection. Track Lab's direct-track
-launch still takes priority when it is enabled.
+change online startup. Start menu retains the normal title sequence and music;
+Character select follows the normal title exit into Player Select. Track Lab's
+direct-track launch still takes priority when it is enabled.
 
 `.z64`, `.v64` and `.n64` byte orders are detected from the file itself.
 Both supported revisions run inside the same application; there's no separate
@@ -166,8 +204,9 @@ delivery.
 ## Credits and licensing
 
 DKR-R was created by ThatGuyMcd with help from the project's contributors.
-Thanks to the contributors behind the macOS support, Modern camera and
-Track Lab improvements included in 1.0.5.
+Thanks to the contributors behind the platform support, Modern camera,
+Track Lab, graphics safety and development tools. The 1.0.6 integration includes
+the merged work from PRs #51–#58 alongside our tested local changes.
 
 The application icon was created by
 [POOTERMAN](https://www.deviantart.com/pooterman). `sr.gu` leads the DKR-R HDR

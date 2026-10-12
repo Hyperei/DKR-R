@@ -1,6 +1,6 @@
 # DKR-R native recompilation runtime
 
-This is the project-owned integration layer for DKR-R 1.0.5.
+This is the project-owned integration layer for DKR-R 1.0.6.
 It combines generated DKR CPU/Rare RSP output, N64ModernRuntime, the F3DDKR/RT64
 bridge and the shared launcher/overlay.
 
