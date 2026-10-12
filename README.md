@@ -9,8 +9,9 @@
 </p>
 
 DKR-R 1.0.6 is here! There's been a lot going on since the last update.
-We've now got custom tracks and characters, Track Lab integration, texture-pack
-priorities and online mod sharing built into the launcher.
+We've got new lava, more control over the water, tidier custom Track Select
+rows and more fixes alongside all the custom tracks, characters and online
+mod sharing from 1.0.5.
 
 DKR-R is a native static recompilation of Diddy Kong Racing. Bring your own
 legally obtained US v1.0 or US Rev A/v1.1 ROM; no game ROM or extracted
@@ -206,7 +207,7 @@ delivery.
 DKR-R was created by ThatGuyMcd with help from the project's contributors.
 Thanks to the contributors behind the platform support, Modern camera,
 Track Lab, graphics safety and development tools. The 1.0.6 integration includes
-the merged work from PRs #51–#58 alongside our tested local changes.
+the merged work from PRs #51–#59 alongside our tested local changes.
 
 The application icon was created by
 [POOTERMAN](https://www.deviantart.com/pooterman). `sr.gu` leads the DKR-R HDR

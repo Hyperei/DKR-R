@@ -107,6 +107,8 @@ Source and updates: https://github.com/ThatGuyMcd/DKR-R
 
 PR #49 contributes macOS build/platform support and ultrawide sky fixes.
 PR #50 contributes Modern camera and Track Lab improvements.
+PRs #51–#59 include runtime safety, Track Lab, source platform support,
+regression/build tooling and concurrent Friend-test isolation improvements.
 POOTERMAN created the application icon; sr.gu leads the community HDR pack.
 Golden Balloon informed HUD grouping; Wave Race 64 Recomp informed enhanced water.
 See the bundled notices and THIRD_PARTY.md in the source for exact licensing.

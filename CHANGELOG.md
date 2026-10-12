@@ -72,7 +72,7 @@ sharing, texture priorities and save protection are carried forward.
 - F3DDKR graphics commands are checked before fetch, including counted lists,
   out-of-range targets, incomplete packets and loops. Shared command budgets
   prevent malformed lists from running indefinitely.
-- All changes merged into main through PRs #51–#58 are integrated, including HLE
+- All changes merged into main through PRs #51–#59 are integrated, including HLE
   bounds protection, setup/test improvements, session fixture safety, Blender work
   and the iOS source port. Apple binaries are not supplied in this build pass.
 - Windows, Linux x86_64, Linux ARM64, Steam Deck and Android use version 1.0.6.

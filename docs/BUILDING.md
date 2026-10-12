@@ -55,7 +55,7 @@ revision-specific entries; don't overwrite them with a blind translation.
 
 ## Generate the owned rollback payloads
 
-The current Windows/Linux Public Build also needs two isolated full-scene owned
+The complete Windows/Linux/Android Public Build also needs two isolated full-scene owned
 outputs. A normal payload or the old single-track probe is not sufficient.
 
 Run `scripts/generate_replay_probe.py --help` for the input contract.
@@ -211,6 +211,27 @@ are historical, not current release certification.
 Android needs the correct NDK/SDK, ARM64 SDL2 input, shared C++ runtime and
 native alignment requirements. Don't reuse a desktop SDL3 worker as an Android
 input backend. No APK or cross-compiled AppImage certifies a physical GPU.
+
+For 1.0.6, compose both normal and owned payloads above before using
+`runtime-recomp/cmake/AndroidArm64.cmake` or
+`runtime-recomp/cmake/LinuxArm64.cmake`. Android builds the `DKRPortGame` and
+`DKRLegacyModWorker` targets with the Android NDK. Linux ARM64 builds the
+desktop runtime and separate input/import workers against its ARM64 sysroot.
+Keep private qualification switches off in the packaged builds.
+
+Package Android with `scripts/Package-Android-Preview.ps1 -ReleaseBuild`,
+supplying the native build, SDL2 source, NDK, Gradle and fresh staging/output
+directories. Despite the script's historical name, `-ReleaseBuild` produces
+the non-debuggable `DKR-R-1.0.6-Android-arm64.apk`. Build code 1060002 keeps
+the existing application ID and signing identity so it can update the old
+app. Verify the signature, ARM64 libraries, 16 KiB ELF/ZIP alignment and
+bundled notices before distribution; do not replace the signing key casually.
+
+For ARM64 AppImages, set `DKR_LINUX_ARCH=aarch64` and use matching ARM64
+linuxdeploy/AppImage tools with `scripts/Package-Linux-AppImage.sh`. The
+cross-host runner is `scripts/Run-Arm64-AppImage.sh`; QEMU self-tests still
+do not replace device rendering/audio tests. The Steam Deck artifact is a
+named copy of the checked Linux x86_64 AppImage, not a separate engine build.
 
 ## Release checks
 
