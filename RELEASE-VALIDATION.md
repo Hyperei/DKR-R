@@ -1,5 +1,87 @@
 # Release validation
 
+## 12 October 2026 — 1.0.6 public release integration through PR #59
+
+The release preserves the user-tested local work in checkpoint `e850efd` and
+includes every contributor merge since the published 1.0.5 source, through
+`2ced503` (PR #59). Contributor history is retained through merge commits;
+PR #59's Friend test file is byte-identical to upstream. Its forced same-tick
+directory regression is included, rather than replaced by the earlier local fix.
+
+README, changelog, graphics, launcher, mods, platform/build and Track Lab guides
+describe the actual 1.0.5-to-1.0.6 changes. Existing 1.0.5 features are separate
+from newly added features. Historical notes retain their original findings
+and now point to the current guides. All 98 checked local Markdown targets exist.
+
+- Windows Release: 152/152 tests passed (221.79 seconds).
+- Linux x86_64 Release: 153/153 passed (176.88 seconds).
+- Linux ARM64 Release under QEMU: 153/153 passed (218.94 seconds).
+- Both owned revisions passed 58 production dispatch checks on Windows,
+  Linux x86_64 and emulated ARM64. The generator audit passed 53/53.
+- The host regression harness passed all 11 scenarios with one warmup and
+  three measured repetitions. Reports/logs are retained privately; the
+  checkpoint benchmark is synthetic, not a gameplay FPS measurement.
+- PR #59's Friend checks passed five repetitions each on Windows and the
+  final Linux/ARM64 suites. Track Lab's 30 plain-Python suites passed, including
+  the retail extraction check rerun with NumPy. Six Blender application suites
+  remain skipped because Blender is unavailable; that is not a Blender UI pass.
+- Water/lava shader, projection, allocation, waterfall and ray-query checks
+  passed on Windows DirectX 12 and Vulkan. Linux Vulkan checks passed on
+  llvmpipe, a software driver, not a physical GPU performance qualification.
+- Version 1.0.6 and 57 patch pins validated. Present managed dependency stacks
+  passed read-only checks. The optional separate SDL2 checkout is absent;
+  these builds use their configured desktop/mobile SDL2 inputs. No dependency
+  checkout or protected generated input was edited.
+- Exact-package importer/capability, SDL3 controller, Controller Pak and two
+  live SDL2/SDL3 ownership round trips passed on Windows and both AppImages.
+  ARM64 package execution uses QEMU. The Windows ZIP's 58 files were scanned;
+  its executable, current notes and all seven custom-background assets match.
+- Linux ELF code/data sections, current release notes, AppStream metadata and
+  custom-background assets match the checked build/source after packaging.
+  Both Linux executables require glibc 2.38+. Steam Deck is the byte-identical
+  Linux x86_64 AppImage, not a separate engine or a SteamOS acceptance test.
+- Android APK 1060002 is ARM64-only, non-debuggable, correctly signed with
+  the previous upgrade identity, and has verified 16 KiB ELF/ZIP alignment.
+  Packaged native code/data match the newly built libraries. Its application
+  ID and development signing identity are retained; no production-key migration
+  or device gameplay qualification is claimed.
+
+The first ARM64 pass exposed a cancellation race in the standalone private
+process helper: under QEMU, the parent could attempt process-group cancellation
+before the child had established its group. The trace recorded `ESRCH`, followed
+by an unwanted ten-second wait. The helper now falls back only to its own
+unreaped child PID when the group is absent. No test deadline was loosened.
+Eight consecutive ARM64 lifecycle checks passed at about 1.74 seconds each,
+followed by the complete passing suite. This helper is not the integrated game's
+worker-retirement path; its source participates in the conservative identity,
+so every native package was refreshed before final delivery.
+
+Final owned contract: `70fd0b30564d6d74431d876428c40fff84c2337de91b9aa71308df85f59596a5`.
+Both reviewed full-scene outputs remain unchanged. Private qualification flags
+are off in all distributed builds. ROMs, personal saves, crash logs, private
+fixtures and signing material are excluded from the distributed artifacts.
+
+Final package SHA-256 values:
+
+| Artifact | SHA-256 |
+|---|---|
+| Windows x64 ZIP | `426ecf0e3a94ce5efcbae4e89f56b64e9fdf833026e936a072880a4660993e62` |
+| Linux x86_64 / Steam Deck AppImage | `ae07be937ae0445c17f1d0018e45647e023aa4b8f9c0067f0a74c38ba2832ad0` |
+| Linux ARM64 AppImage | `7c19d0189780c3dd4839794d7aa97dd8e43afffffac1582fcd419c762e34a506` |
+| Android ARM64 APK | `6bb2863b3f1643cf1ef7dcef6ebe1139c016ef1a628f872d34a0171fb73b708d` |
+| Track Lab ZIP | `782d0facca32d775c7a61de6ab196643881310d431be48cfa0a9449fbbd011e6` |
+
+The final source ZIP, checksum list and release manifest are supplied beside
+the packages. Previous candidates and the tested-source backup remain retained.
+No gameplay window was opened for these checks. ARM/Android GPU, audio,
+controller/touch, SteamOS and real-WAN acceptance still require physical testing.
+Architecture/floating-point admission limits remain; identical contract hashes
+do not certify x64-to-ARM rollback. No macOS/iOS binary is supplied.
+
+Local main and the release tag are prepared after the final checks. Remote
+publication requires GitHub authentication; packages are supplied for the
+maintainer to upload, not automatically published as a GitHub Release.
+
 ## 12 October 2026 — 1.0.6 Windows Track Select brief-stretch correction
 
 The follow-up recording shows preview images, arrows and captions briefly

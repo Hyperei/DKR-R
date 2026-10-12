@@ -58,7 +58,7 @@ Nintendo/Rare assets are included.
 - Contributor work adds safer dependency setup, build locking and packaging,
   improved macOS support, and an iOS sideload source port. Apple binaries are
   not part of this delivery. Windows, both Linux architectures, Steam Deck and
-  Android are being brought onto the same 1.0.6 release source.
+  Android share the same 1.0.6 release source.
 - Developers now have a regression/performance harness with retained reports,
   private retail replay checks, repeatable build presets, faster incremental
   builds and CI caching, workflow linting and mobile compilation checks.
