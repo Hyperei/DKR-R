@@ -48,7 +48,7 @@ corner, drift and wall-hit behaviour and migrates existing tuning preferences.
 Contributor updates add graphics-command bounds/budgets, safer setup and
 packaging, platform-source improvements, and repeatable regression/CI tools.
 Golden Balloon and Wave Race now use the compact technology credit rows.
-See PUBLIC-1.0.6-NOTES.txt and the source changelog for the full breakdown.
+See the bundled release notes and the source changelog for the full breakdown.
 
 ## Start playing
 
