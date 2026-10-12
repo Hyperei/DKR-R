@@ -122,6 +122,10 @@ DKR_LINUX_BUILD_DIR="$PWD/build/public-linux" ./scripts/Package-Linux-AppImage.s
 Keep prior outputs; the AppImage packager expects a fresh output/AppDir.
 Do not skip runtime checks for a public package.
 
+The delivered Linux 1.0.6 binaries require glibc 2.38 or newer. AppImages
+bundle application libraries, not the system glibc or GPU driver. Record the
+ELF architecture and required symbol versions when using a different build host.
+
 The simpler `Build-Windows.cmd`/`Build-Linux.sh` wrappers consume prepared
 normal sources. Supply `-GeneratedSource`/`-Revision80GeneratedSource`
 on the Windows script, or `DKR_LINUX_GENERATED_SOURCE`/

@@ -9,8 +9,8 @@ ports, and macOS now has a source/build workflow.
 | Platform | Current delivery | Important limits |
 |---|---|---|
 | Windows x64 | Public ZIP | Use the whole package, including private workers. |
-| Linux x86_64 | Public AppImage | Requires a working compatible Vulkan driver. |
-| Linux ARM64 | ARM64 AppImage | Needs compatible 64-bit Linux/Vulkan and physical-device qualification. Cross-build and QEMU checks are not a physical GPU test. |
+| Linux x86_64 | Public AppImage | Requires glibc 2.38+ and a working compatible Vulkan driver. |
+| Linux ARM64 | ARM64 AppImage | Needs glibc 2.38+, compatible 64-bit Linux/Vulkan and physical-device qualification. Cross-build and QEMU checks are not a physical GPU test. |
 | Steam Deck | Linux x86_64 AppImage payload | A separate named artifact, not a different engine build. SteamOS/controller integration needs a physical-device check. |
 | Android ARM64 | APK, code 1060002 | Android 9+, ARM64 OS and compatible Vulkan features are required. Startup, driver behaviour and sustained performance vary; desktop parity is not established. Existing app ID/signature are retained. |
 | macOS | Source/build-kit support | Requires an Apple build host. No newly qualified macOS binary is included in this delivery; integrated Experimental Rollback is currently gated out on Apple. |
@@ -19,6 +19,10 @@ ports, and macOS now has a source/build workflow.
 Both clean US v1.0 and US Rev A/v1.1 ROMs are supported by the native revision
 selection. Owning a 64-bit CPU is not enough if the OS or GPU driver lacks the
 required features. There is no 32-bit ARM or Android x86 package in this workflow.
+
+These Linux packages were built with a glibc 2.38 baseline. An AppImage does
+not replace the system's glibc or Vulkan driver; an older distribution needs
+an appropriate source build rather than a renamed package.
 
 ## Android and handhelds
 
