@@ -55,8 +55,8 @@ lockfile, reviewed patches, and preparation scripts. Every cache hit still
 passes checkout and patch validation. The cache is saved before configuration
 and excludes build outputs, ROMs, and generated retail payloads.
 
-macOS CI caches C/C++ compiler results with ccache; Windows CI uses pinned
-sccache with a local disk cache. GitHub Actions stores these caches separately
+macOS and Linux CI cache C/C++ compiler results with ccache; Windows CI uses
+pinned sccache with a local disk cache. GitHub Actions stores these caches separately
 for each runner architecture and compiler/SDK version. A new commit can reuse
 unchanged compilations; both caches still check source, headers, and compiler
 options. Builds
