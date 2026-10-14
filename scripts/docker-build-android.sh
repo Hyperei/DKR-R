@@ -29,9 +29,21 @@ EOF
 fi
 
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+# The validation layer lives outside the repo: it is a 27 MB third-party
+# binary, and only diagnostic builds need it.
+LAYER_MOUNT=()
+LAYER_ENV=()
+if [[ -n "${DKR_ANDROID_VALIDATION_LAYER:-}" ]]; then
+  [[ -f "$DKR_ANDROID_VALIDATION_LAYER" ]] ||
+    { echo "No validation layer at $DKR_ANDROID_VALIDATION_LAYER" >&2; exit 1; }
+  LAYER_MOUNT=(-v "$DKR_ANDROID_VALIDATION_LAYER:/opt/vvl/libVkLayer_khronos_validation.so:ro")
+  LAYER_ENV=(-e DKR_ANDROID_VALIDATION_LAYER=/opt/vvl/libVkLayer_khronos_validation.so)
+fi
+
 exec docker run --rm --name "$CONTAINER" \
   -v "$PROJECT_ROOT:/work/dkr-r" \
   -v "$KEYSTORE_DIR:/home/builder/.android" \
+  "${LAYER_MOUNT[@]}" "${LAYER_ENV[@]}" \
   -w /work/dkr-r \
   "$IMAGE" \
   ./Build-Android.sh "$@"

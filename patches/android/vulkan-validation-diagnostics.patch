@@ -1,0 +1,67 @@
+diff --git a/src/contrib/plume/plume_vulkan.cpp b/src/contrib/plume/plume_vulkan.cpp
+index dc31f2c..019b577 100644
+--- a/src/contrib/plume/plume_vulkan.cpp
++++ b/src/contrib/plume/plume_vulkan.cpp
+@@ -4917,10 +4917,30 @@ namespace plume {
+             enabledExtensions.push_back(extension.c_str());
+         }
+ 
++#   ifdef VULKAN_VALIDATION_LAYER_ENABLED
++        // Messenger delivery keeps validation output in the same stderr stream
++        // the runtime redirects to runtime.log, so a phone without adb can
++        // export it. Push before the pointer is taken: a later push_back could
++        // reallocate the vector.
++        enabledExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
++#   endif
++
+         createInfo.ppEnabledExtensionNames = enabledExtensions.data();
+         createInfo.enabledExtensionCount = uint32_t(enabledExtensions.size());
+ 
+ #   ifdef VULKAN_VALIDATION_LAYER_ENABLED
++        // Synchronization validation tracks every resource access and reports
++        // read/write hazards that an explicit barrier should have ordered.
++        VkValidationFeatureEnableEXT enabledValidationFeatures[] = {
++            VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT,
++        };
++        VkValidationFeaturesEXT validationFeatures = {};
++        validationFeatures.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
++        validationFeatures.enabledValidationFeatureCount = 1;
++        validationFeatures.pEnabledValidationFeatures = enabledValidationFeatures;
++        validationFeatures.pNext = createInfo.pNext;
++        createInfo.pNext = &validationFeatures;
++
+         // Search for validation layer and enabled it.
+         uint32_t layerCount;
+         vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+@@ -4947,6 +4967,31 @@ namespace plume {
+ 
+         volkLoadInstance(instance);
+ 
++#   ifdef VULKAN_VALIDATION_LAYER_ENABLED
++        if (vkCreateDebugUtilsMessengerEXT != nullptr) {
++            VkDebugUtilsMessengerCreateInfoEXT messengerInfo = {};
++            messengerInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
++            messengerInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
++                VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
++            messengerInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
++            // Captureless lambda: VKAPI_ATTR/VKAPI_CALL are empty on this ABI.
++            messengerInfo.pfnUserCallback = [](VkDebugUtilsMessageSeverityFlagBitsEXT severity,
++                VkDebugUtilsMessageTypeFlagsEXT, const VkDebugUtilsMessengerCallbackDataEXT *data, void *) -> VkBool32 {
++                fprintf(stderr, "[Validation][%s] %s: %s\n",
++                    (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) ? "error" : "warning",
++                    (data != nullptr && data->pMessageIdName != nullptr) ? data->pMessageIdName : "?",
++                    (data != nullptr && data->pMessage != nullptr) ? data->pMessage : "?");
++                return VK_FALSE;
++            };
++            VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
++            const VkResult messengerRes = vkCreateDebugUtilsMessengerEXT(instance, &messengerInfo, nullptr, &messenger);
++            fprintf(stderr, "[Validation] messenger result=%d\n", int(messengerRes));
++        }
++        else {
++            fprintf(stderr, "[Validation] VK_EXT_debug_utils unavailable; layer output goes to logcat only\n");
++        }
++#   endif
++
+         // Fill capabilities.
+         capabilities.shaderFormat = RenderShaderFormat::SPIRV;
+ 

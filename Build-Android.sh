@@ -19,11 +19,18 @@ API_LEVEL=28
 JOBS="${CMAKE_BUILD_PARALLEL_LEVEL:-}"
 VARIANT=release
 CLEAN_STAGE=0
+VALIDATION=0
+VALIDATION_LAYER="${DKR_ANDROID_VALIDATION_LAYER:-}"
 
 usage() {
   cat <<EOF
 Usage: $(basename "$0") [options]
   --debug          Assemble the debuggable variant instead of release
+  --validation     Diagnostic build: bundle the Khronos validation layer and
+                   enable synchronization validation. Implies --debug, because
+                   Android only loads layers from the APK of a debuggable app.
+                   Needs DKR_ANDROID_VALIDATION_LAYER to point at an arm64
+                   libVkLayer_khronos_validation.so. Not for distribution.
   --jobs N         Parallel jobs (default: host CPU count)
   --clean-stage    Remove an existing staging directory first
   --output DIR     APK output directory (default: dist)
@@ -37,6 +44,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
   --debug) VARIANT=debug ;;
   --clean-stage) CLEAN_STAGE=1 ;;
+  --validation) VALIDATION=1; VARIANT=debug ;;
   --jobs)
     [[ $# -ge 2 && -n "$2" ]] || { echo "$1 requires a value." >&2; exit 1; }
     JOBS="$2"; shift ;;
@@ -93,7 +101,8 @@ cmake -S "$PROJECT_ROOT/runtime-recomp" -B "$BUILD_DIR" -G Ninja \
   -DDKR_ANDROID_SDL2_SOURCE="$SDL2_SOURCE" \
   -DDKR_HOST_FILE_TO_C="$FILE_TO_C" \
   -DDKR_GENERATED_SOURCE_V77="$GENERATED_ROOT/v77/RecompiledFuncs" \
-  -DDKR_GENERATED_SOURCE_V80="$GENERATED_ROOT/v80/RecompiledFuncs"
+  -DDKR_GENERATED_SOURCE_V80="$GENERATED_ROOT/v80/RecompiledFuncs" \
+  -DDKR_ANDROID_VALIDATION="$([[ "$VALIDATION" -eq 1 ]] && echo ON || echo OFF)"
 
 step "Build DKRPortGame and DKRLegacyModWorker"
 cmake --build "$BUILD_DIR" --parallel "$JOBS" --target DKRPortGame DKRLegacyModWorker
@@ -127,6 +136,17 @@ for library in \
   "$LLVM_BIN/llvm-strip" --strip-debug "$NATIVE/$(basename "$library")" || fail "Native symbol stripping failed."
   echo "[OK] $(basename "$library")"
 done
+
+if [[ "$VALIDATION" -eq 1 ]]; then
+  [[ -f "$VALIDATION_LAYER" ]] ||
+    fail "Set DKR_ANDROID_VALIDATION_LAYER to an arm64 libVkLayer_khronos_validation.so"
+  "$LLVM_BIN/llvm-readelf" -h "$VALIDATION_LAYER" | grep -q AArch64 ||
+    fail "Validation layer is not AArch64: $VALIDATION_LAYER"
+  # Shipped unstripped: the layer is the diagnostic, and its symbols are what
+  # make a reported hazard readable.
+  cp "$VALIDATION_LAYER" "$NATIVE/libVkLayer_khronos_validation.so"
+  echo "[OK] libVkLayer_khronos_validation.so (diagnostic build)"
+fi
 
 cp -r "$BUILD_DIR/assets" "$ASSETS/runtime"
 NOTICES="$ASSETS/notices"
@@ -183,6 +203,7 @@ gradle -p "$PROJECT_ROOT/packaging/android" \
 
 suffix=""
 [[ "$VARIANT" == release ]] || suffix="-debug"
+[[ "$VALIDATION" -eq 0 ]] || suffix="-validation"
 OUTPUT="$OUTPUT_DIR/DKR-R-$VERSION-Android-arm64-pixel10$suffix.apk"
 [[ ! -e "$OUTPUT" ]] || fail "Refusing to replace an existing APK: $OUTPUT"
 cp "$PROJECT_ROOT/packaging/android/app/build/outputs/apk/$VARIANT/app-$VARIANT.apk" "$OUTPUT"
