@@ -21,6 +21,7 @@ VARIANT=release
 CLEAN_STAGE=0
 VALIDATION=0
 VALIDATION_LAYER="${DKR_ANDROID_VALIDATION_LAYER:-}"
+SERIALISE=0
 
 usage() {
   cat <<EOF
@@ -45,6 +46,7 @@ while [[ $# -gt 0 ]]; do
   --debug) VARIANT=debug ;;
   --clean-stage) CLEAN_STAGE=1 ;;
   --validation) VALIDATION=1; VARIANT=debug ;;
+  --serialise-probe) SERIALISE=1 ;;
   --jobs)
     [[ $# -ge 2 && -n "$2" ]] || { echo "$1 requires a value." >&2; exit 1; }
     JOBS="$2"; shift ;;
@@ -102,7 +104,8 @@ cmake -S "$PROJECT_ROOT/runtime-recomp" -B "$BUILD_DIR" -G Ninja \
   -DDKR_HOST_FILE_TO_C="$FILE_TO_C" \
   -DDKR_GENERATED_SOURCE_V77="$GENERATED_ROOT/v77/RecompiledFuncs" \
   -DDKR_GENERATED_SOURCE_V80="$GENERATED_ROOT/v80/RecompiledFuncs" \
-  -DDKR_ANDROID_VALIDATION="$([[ "$VALIDATION" -eq 1 ]] && echo ON || echo OFF)"
+  -DDKR_ANDROID_VALIDATION="$([[ "$VALIDATION" -eq 1 ]] && echo ON || echo OFF)" \
+  -DDKR_ANDROID_SERIALISE_PROBE="$([[ "$SERIALISE" -eq 1 ]] && echo ON || echo OFF)"
 
 step "Build DKRPortGame and DKRLegacyModWorker"
 cmake --build "$BUILD_DIR" --parallel "$JOBS" --target DKRPortGame DKRLegacyModWorker
@@ -204,6 +207,7 @@ gradle -p "$PROJECT_ROOT/packaging/android" \
 suffix=""
 [[ "$VARIANT" == release ]] || suffix="-debug"
 [[ "$VALIDATION" -eq 0 ]] || suffix="-validation"
+[[ "$SERIALISE" -eq 0 ]] || suffix="${suffix}-serialise"
 OUTPUT="$OUTPUT_DIR/DKR-R-$VERSION-Android-arm64-pixel10$suffix.apk"
 [[ ! -e "$OUTPUT" ]] || fail "Refusing to replace an existing APK: $OUTPUT"
 cp "$PROJECT_ROOT/packaging/android/app/build/outputs/apk/$VARIANT/app-$VARIANT.apk" "$OUTPUT"

@@ -20,6 +20,17 @@ configure_file("${CMAKE_BINARY_DIR}/generated/android-queue-families/src/contrib
     "${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits/src/contrib/plume/plume_vulkan.h" COPYONLY)
 target_include_directories(plume BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits/src/contrib/plume")
 target_include_directories(rt64 BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits/src/contrib/plume")
+# Diagnostic-only stage: serialise GPU submissions on Imagination hardware to
+# test whether the corruption is frame overlap on a tile-based renderer.
+if(DKR_ANDROID_SERIALISE_PROBE)
+    dkr_stage_patch(plume "${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits" android-serialise-probe
+        "${DKRPORT_ROOT}/patches/android/vulkan-serialise-probe.patch"
+        src/contrib/plume/plume_vulkan.cpp)
+    configure_file("${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits/src/contrib/plume/plume_vulkan.h"
+        "${CMAKE_BINARY_DIR}/generated/android-serialise-probe/src/contrib/plume/plume_vulkan.h" COPYONLY)
+    target_include_directories(plume BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-serialise-probe/src/contrib/plume")
+    target_include_directories(rt64 BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-serialise-probe/src/contrib/plume")
+endif()
 # Diagnostic-only stage. Plume enables VK_LAYER_KHRONOS_validation under
 # VULKAN_VALIDATION_LAYER_ENABLED, which its own header only sets for !NDEBUG;
 # define it explicitly so a Release-configured diagnostic build can use it.
