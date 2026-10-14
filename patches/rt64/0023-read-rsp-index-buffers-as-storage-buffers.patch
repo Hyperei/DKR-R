@@ -1,0 +1,122 @@
+diff --git a/src/render/rt64_descriptor_sets.h b/src/render/rt64_descriptor_sets.h
+index 8c004da..d60fa7f 100644
+--- a/src/render/rt64_descriptor_sets.h
++++ b/src/render/rt64_descriptor_sets.h
+@@ -539,12 +539,12 @@ namespace RT64 {
+             srcTcVel = builder.addStructuredBuffer(4);
+             srcCol = builder.addStructuredBuffer(5);
+             srcNorm = builder.addStructuredBuffer(6);
+-            srcViewProjIndices = builder.addFormattedBuffer(7);
+-            srcWorldIndices = builder.addFormattedBuffer(8);
+-            srcFogIndices = builder.addFormattedBuffer(9);
+-            srcLightIndices = builder.addFormattedBuffer(10);
+-            srcLightCounts = builder.addFormattedBuffer(11);
+-            srcLookAtIndices = builder.addFormattedBuffer(12);
++            srcViewProjIndices = builder.addStructuredBuffer(7);
++            srcWorldIndices = builder.addStructuredBuffer(8);
++            srcFogIndices = builder.addStructuredBuffer(9);
++            srcLightIndices = builder.addStructuredBuffer(10);
++            srcLightCounts = builder.addStructuredBuffer(11);
++            srcLookAtIndices = builder.addStructuredBuffer(12);
+             rspViewportVector = builder.addStructuredBuffer(13);
+             rspFogVector = builder.addStructuredBuffer(14);
+             rspLightVector = builder.addStructuredBuffer(15);
+diff --git a/src/render/rt64_rsp_processor.cpp b/src/render/rt64_rsp_processor.cpp
+index 8d0109c..3a07eb4 100644
+--- a/src/render/rt64_rsp_processor.cpp
++++ b/src/render/rt64_rsp_processor.cpp
+@@ -33,12 +33,13 @@ namespace RT64 {
+         // One packed RGBA8 element per vertex; the shader unpacks the bytes.
+         processSet->setBuffer(processSet->srcCol, p.drawBuffers->normalColorBuffer.get(), RenderBufferStructuredView(sizeof(uint8_t) * 4));
+         processSet->setBuffer(processSet->srcNorm, p.drawBuffers->normalColorBuffer.get(), RenderBufferStructuredView(sizeof(uint8_t) * 4));
+-        processSet->setBuffer(processSet->srcViewProjIndices, p.drawBuffers->viewProjIndicesBuffer.get(), p.drawBuffers->viewProjIndicesBuffer.getView(0));
+-        processSet->setBuffer(processSet->srcWorldIndices, p.drawBuffers->worldIndicesBuffer.get(), p.drawBuffers->worldIndicesBuffer.getView(0));
+-        processSet->setBuffer(processSet->srcFogIndices, p.drawBuffers->fogIndicesBuffer.get(), p.drawBuffers->fogIndicesBuffer.getView(0));
+-        processSet->setBuffer(processSet->srcLightIndices, p.drawBuffers->lightIndicesBuffer.get(), p.drawBuffers->lightIndicesBuffer.getView(0));
+-        processSet->setBuffer(processSet->srcLightCounts, p.drawBuffers->lightCountsBuffer.get(), p.drawBuffers->lightCountsBuffer.getView(0));
+-        processSet->setBuffer(processSet->srcLookAtIndices, p.drawBuffers->lookAtIndicesBuffer.get(), p.drawBuffers->lookAtIndicesBuffer.getView(0));
++        // Packed 32-bit elements; the shader unpacks the 16- and 8-bit entries.
++        processSet->setBuffer(processSet->srcViewProjIndices, p.drawBuffers->viewProjIndicesBuffer.get(), RenderBufferStructuredView(sizeof(uint32_t)));
++        processSet->setBuffer(processSet->srcWorldIndices, p.drawBuffers->worldIndicesBuffer.get(), RenderBufferStructuredView(sizeof(uint32_t)));
++        processSet->setBuffer(processSet->srcFogIndices, p.drawBuffers->fogIndicesBuffer.get(), RenderBufferStructuredView(sizeof(uint32_t)));
++        processSet->setBuffer(processSet->srcLightIndices, p.drawBuffers->lightIndicesBuffer.get(), RenderBufferStructuredView(sizeof(uint32_t)));
++        processSet->setBuffer(processSet->srcLightCounts, p.drawBuffers->lightCountsBuffer.get(), RenderBufferStructuredView(sizeof(uint32_t)));
++        processSet->setBuffer(processSet->srcLookAtIndices, p.drawBuffers->lookAtIndicesBuffer.get(), RenderBufferStructuredView(sizeof(uint32_t)));
+         processSet->setBuffer(processSet->rspViewportVector, p.drawBuffers->rspViewportsBuffer.get(), RenderBufferStructuredView(sizeof(interop::RSPViewport)));
+         processSet->setBuffer(processSet->rspFogVector, p.drawBuffers->rspFogBuffer.get(), RenderBufferStructuredView(sizeof(interop::RSPFog)));
+         processSet->setBuffer(processSet->rspLightVector, p.drawBuffers->rspLightsBuffer.get(), RenderBufferStructuredView(sizeof(interop::RSPLight)));
+diff --git a/src/shaders/RSPProcessCS.hlsl b/src/shaders/RSPProcessCS.hlsl
+index f7d2a1f..ea663c7 100644
+--- a/src/shaders/RSPProcessCS.hlsl
++++ b/src/shaders/RSPProcessCS.hlsl
+@@ -46,12 +46,24 @@ float RSPUnpackSNorm8(uint packed, uint byteIndex) {
+ float RSPUnpackUNorm8(uint packed, uint byteIndex) {
+     return RSPUnpackByte(packed, byteIndex) / 255.0f;
+ }
+-Buffer<uint> srcViewProjIndices : register(t7);
+-Buffer<uint> srcWorldIndices : register(t8);
+-Buffer<uint> srcFogIndices : register(t9);
+-Buffer<uint> srcLightIndices : register(t10);
+-Buffer<uint> srcLightCounts : register(t11);
+-Buffer<uint> srcLookAtIndices : register(t12);
++// One entry per vertex for a whole workload, so these run past
++// maxTexelBufferElements for the same reason the attribute buffers do. The
++// underlying data stays 16-bit (8-bit for light counts); unpack it from the
++// 32-bit structured elements.
++StructuredBuffer<uint> srcViewProjIndices : register(t7);
++StructuredBuffer<uint> srcWorldIndices : register(t8);
++StructuredBuffer<uint> srcFogIndices : register(t9);
++StructuredBuffer<uint> srcLightIndices : register(t10);
++StructuredBuffer<uint> srcLightCounts : register(t11);
++StructuredBuffer<uint> srcLookAtIndices : register(t12);
++
++uint RSPLoadU16(StructuredBuffer<uint> source, uint index) {
++    return (source[index >> 1u] >> ((index & 1u) * 16u)) & 0xFFFFu;
++}
++
++uint RSPLoadU8(StructuredBuffer<uint> source, uint index) {
++    return (source[index >> 2u] >> ((index & 3u) * 8u)) & 0xFFu;
++}
+ StructuredBuffer<RSPViewport> rspViewportVector : register(t13);
+ StructuredBuffer<RSPFog> rspFogVector : register(t14);
+ StructuredBuffer<RSPLight> rspLightVector : register(t15);
+@@ -69,8 +81,8 @@ void CSMain(uint vertexIndex : SV_DispatchThreadID) {
+     }
+ 
+     const uint vertexOffsetIndex = gConstants.vertexStart + vertexIndex;
+-    const uint viewProjIndex = srcViewProjIndices[vertexOffsetIndex];
+-    const uint transformIndex = srcWorldIndices[vertexOffsetIndex];
++    const uint viewProjIndex = RSPLoadU16(srcViewProjIndices, vertexOffsetIndex);
++    const uint transformIndex = RSPLoadU16(srcWorldIndices, vertexOffsetIndex);
+     const float4x4 viewProjMat = viewProjTransforms[viewProjIndex];
+     const float4x4 worldMat = worldTransforms[transformIndex];
+     const uint posIndex = vertexOffsetIndex * 3;
+@@ -87,7 +99,7 @@ void CSMain(uint vertexIndex : SV_DispatchThreadID) {
+     float4 tfPos = mul(mul(viewProjMat, worldMat), float4(pos - vel * (1.0f - gConstants.curFrameWeight), 1.0f));
+ 
+     // Fog.
+-    const uint fogIndex = srcFogIndices[vertexOffsetIndex];
++    const uint fogIndex = RSPLoadU16(srcFogIndices, vertexOffsetIndex);
+     float4 vertexColor;
+     if (fogIndex > 0) {
+         const RSPFog rspFog = rspFogVector[fogIndex - 1];
+@@ -100,7 +112,7 @@ void CSMain(uint vertexIndex : SV_DispatchThreadID) {
+ 
+     // Texgen.
+     const uint tcIndex = vertexOffsetIndex * 2;
+-    const uint lookAtIndex = srcLookAtIndices[vertexOffsetIndex];
++    const uint lookAtIndex = RSPLoadU16(srcLookAtIndices, vertexOffsetIndex);
+     float2 tc = float2(srcTc[tcIndex + 0], srcTc[tcIndex + 1]);
+     if (lookAtIndex & RSP_LOOKAT_INDEX_ENABLED) {
+         const bool textureGenLinear = lookAtIndex & RSP_LOOKAT_INDEX_LINEAR;
+@@ -114,8 +126,8 @@ void CSMain(uint vertexIndex : SV_DispatchThreadID) {
+     }
+ 
+     // Lighting.
+-    const uint lightIndex = srcLightIndices[vertexOffsetIndex];
+-    const uint lightCount = srcLightCounts[vertexOffsetIndex];
++    const uint lightIndex = RSPLoadU16(srcLightIndices, vertexOffsetIndex);
++    const uint lightCount = RSPLoadU8(srcLightCounts, vertexOffsetIndex);
+     if (lightCount > 0) {
+         const uint ambientIndex = lightIndex + lightCount - 1;
+         float3 resultColor = rspLightVector[ambientIndex].col;

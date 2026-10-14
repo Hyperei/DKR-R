@@ -234,6 +234,10 @@
         {
           "path": "patches/rt64/0022-read-vertex-attributes-as-storage-buffers.patch",
           "sha256": "e0daea9df513bb9e68d3be0f61935175b1f3bb1a2d8d125e2a33ca0c1e68419a"
+        },
+        {
+          "path": "patches/rt64/0023-read-rsp-index-buffers-as-storage-buffers.patch",
+          "sha256": "06831aefb2af63cc2297fb27b922d5849e3a866b1485fa38fb2bc845971647cf"
         }
       ]
     },
