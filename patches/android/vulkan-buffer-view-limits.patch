@@ -1,0 +1,29 @@
+diff --git a/src/contrib/plume/plume_vulkan.cpp b/src/contrib/plume/plume_vulkan.cpp
+index dc31f2c..1e102c4 100644
+--- a/src/contrib/plume/plume_vulkan.cpp
++++ b/src/contrib/plume/plume_vulkan.cpp
+@@ -991,6 +991,24 @@ namespace plume {
+         createInfo.offset = 0;
+         createInfo.range = buffer->desc.size;
+ 
++        // The Android preflight qualifies images and descriptor counts but
++        // nothing checks buffer views, which is where this device actually
++        // runs out: PowerVR reports maxTexelBufferElements at the Vulkan
++        // minimum of 65536. A view beyond the limit has no defined contents
++        // past it. Report the shortfall with the numbers a fix needs, rather
++        // than quarantining - the renderer still works for everything that
++        // fits below the limit.
++        {
++            const uint32_t texelSize = RenderFormatSize(format);
++            const uint32_t limit = buffer->device->physicalDeviceProperties.limits.maxTexelBufferElements;
++            const uint64_t elements = (texelSize > 0) ? (createInfo.range / texelSize) : 0;
++            if (elements > limit) {
++                fprintf(stderr, "[Android] Oversized texel buffer view: bytes=%llu format=%u texelSize=%u elements=%llu limit=%u\\n",
++                    static_cast<unsigned long long>(createInfo.range), unsigned(format), texelSize,
++                    static_cast<unsigned long long>(elements), limit);
++            }
++        }
++
+         VkResult res = vkCreateBufferView(buffer->device->vk, &createInfo, nullptr, &vk);
+         if (res != VK_SUCCESS) {
+             fprintf(stderr, "vkCreateBufferView failed with error code 0x%X.\n", res);

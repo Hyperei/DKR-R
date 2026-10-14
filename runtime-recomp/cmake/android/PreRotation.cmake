@@ -12,15 +12,23 @@ configure_file("${CMAKE_BINARY_DIR}/generated/android-prerotation/src/contrib/pl
     "${CMAKE_BINARY_DIR}/generated/android-queue-families/src/contrib/plume/plume_vulkan.h" COPYONLY)
 target_include_directories(plume BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-queue-families/src/contrib/plume")
 target_include_directories(rt64 BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-queue-families/src/contrib/plume")
+# Buffer views are the one resource class the Android preflight never checked.
+dkr_stage_patch(plume "${CMAKE_BINARY_DIR}/generated/android-queue-families" android-buffer-view-limits
+    "${DKRPORT_ROOT}/patches/android/vulkan-buffer-view-limits.patch"
+    src/contrib/plume/plume_vulkan.cpp)
+configure_file("${CMAKE_BINARY_DIR}/generated/android-queue-families/src/contrib/plume/plume_vulkan.h"
+    "${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits/src/contrib/plume/plume_vulkan.h" COPYONLY)
+target_include_directories(plume BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits/src/contrib/plume")
+target_include_directories(rt64 BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits/src/contrib/plume")
 # Diagnostic-only stage. Plume enables VK_LAYER_KHRONOS_validation under
 # VULKAN_VALIDATION_LAYER_ENABLED, which its own header only sets for !NDEBUG;
 # define it explicitly so a Release-configured diagnostic build can use it.
 # This is never part of a packaged release build.
 if(DKR_ANDROID_VALIDATION)
-    dkr_stage_patch(plume "${CMAKE_BINARY_DIR}/generated/android-queue-families" android-validation-diagnostics
+    dkr_stage_patch(plume "${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits" android-validation-diagnostics
         "${DKRPORT_ROOT}/patches/android/vulkan-validation-diagnostics.patch"
         src/contrib/plume/plume_vulkan.cpp)
-    configure_file("${CMAKE_BINARY_DIR}/generated/android-queue-families/src/contrib/plume/plume_vulkan.h"
+    configure_file("${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits/src/contrib/plume/plume_vulkan.h"
         "${CMAKE_BINARY_DIR}/generated/android-validation-diagnostics/src/contrib/plume/plume_vulkan.h" COPYONLY)
     target_include_directories(plume BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-validation-diagnostics/src/contrib/plume")
     target_include_directories(rt64 BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-validation-diagnostics/src/contrib/plume")
