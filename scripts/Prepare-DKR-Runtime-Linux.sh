@@ -1,0 +1,283 @@
+#!/usr/bin/env bash
+# Linux port of Prepare-DKR-Runtime-macOS.sh.
+#
+# Prepares everything an Android or Linux build compiles: pinned dependencies
+# with their patches, N64Recomp, and the recompiled CPU payloads for both
+# supported ROM revisions (US v1.0 = v77, US Rev A/v1.1 = v80). Re-running is
+# cheap: the decomp ELF and payload stages are skipped while their inputs are
+# unchanged.
+#
+# Differences from the macOS script, all host-portability only:
+#   - no Homebrew/Xcode prerequisite step; tools are checked, never installed
+#   - sha256sum instead of shasum, nproc instead of sysctl
+#   - the decomp's DETECTED_OS resolves to linux, so ido-recomp/linux/cc
+#   - no metal-cpp symlink (Apple-only renderer backend)
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOG_DIR="$PROJECT_ROOT/build-logs"
+LOG_PATH="$LOG_DIR/prepare-dkr-runtime-$(date '+%Y%m%d-%H%M%S').log"
+
+ROM_V77="${DKR_ROM_V77:-}"
+ROM_V80="${DKR_ROM_V80:-}"
+OUTPUT="${DKR_GENERATED_ROOT:-$PROJECT_ROOT/build/generated}"
+FORCE=0
+JOBS="${CMAKE_BUILD_PARALLEL_LEVEL:-}"
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") --rom-v77 <US 1.0 ROM> --rom-v80 <US Rev A ROM> [options]
+  --rom-v77 PATH   Diddy Kong Racing US v1.0 (.z64/.v64/.n64), or \$DKR_ROM_V77
+  --rom-v80 PATH   Diddy Kong Racing US Rev A/v1.1, or \$DKR_ROM_V80
+  --output DIR     Generated payload root (default: build/generated)
+  --force          Rebuild the decomp ELFs and payloads even if inputs are unchanged
+  --jobs N         Parallel jobs (default: host CPU count)
+Writes <output>/v77/RecompiledFuncs and <output>/v80/RecompiledFuncs.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --rom-v77)
+    [[ $# -ge 2 && "$2" != --* && -n "$2" ]] || { echo "$1 requires a path." >&2; exit 1; }
+    ROM_V77="$2"; shift ;;
+  --rom-v80)
+    [[ $# -ge 2 && "$2" != --* && -n "$2" ]] || { echo "$1 requires a path." >&2; exit 1; }
+    ROM_V80="$2"; shift ;;
+  --output)
+    [[ $# -ge 2 && "$2" != --* && -n "$2" ]] || { echo "$1 requires a path." >&2; exit 1; }
+    OUTPUT="$2"; shift ;;
+  --force) FORCE=1 ;;
+  --jobs)
+    [[ $# -ge 2 && "$2" != --* && -n "$2" ]] || { echo "$1 requires a value." >&2; exit 1; }
+    JOBS="$2"; shift ;;
+  -h | --help) usage; exit 0 ;;
+  *) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
+  esac
+  shift
+done
+
+[[ "$(uname -s)" == Linux ]] || {
+  echo 'This script targets Linux. Use Prepare-DKR-Runtime-macOS.sh on Apple hosts.' >&2
+  exit 1
+}
+[[ -n "$JOBS" ]] || JOBS="$(nproc)"
+[[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || { echo '--jobs must be a positive integer.' >&2; exit 1; }
+mkdir -p "$LOG_DIR"
+exec > >(tee -a "$LOG_PATH") 2>&1
+
+fail() {
+  echo "[ERROR] $*" >&2
+  echo "Full log: $LOG_PATH" >&2
+  exit 1
+}
+step() { echo; echo "==> $*"; }
+
+# Keep paths valid when N64Recomp changes its working directory.
+[[ "$OUTPUT" == /* ]] || OUTPUT="$PWD/$OUTPUT"
+[[ -n "$ROM_V77" && -f "$ROM_V77" ]] || { usage >&2; fail "--rom-v77 must name your US v1.0 ROM."; }
+[[ -n "$ROM_V80" && -f "$ROM_V80" ]] || { usage >&2; fail "--rom-v80 must name your US Rev A/v1.1 ROM."; }
+
+step "Host tools"
+# Checked, never installed: this script must not mutate the host.
+missing=()
+for tool in git python3 cmake ninja make curl tar rsync gcc g++ sha256sum; do
+  command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+done
+[[ "${#missing[@]}" -eq 0 ]] || fail "Missing host tools: ${missing[*]}"
+echo "[OK] host tools present (jobs=$JOBS)"
+
+# Never retire generated output through an unresolved/aliased source path.
+OUTPUT="$(
+  python3 - "$OUTPUT" "$PROJECT_ROOT" <<'PY'
+import pathlib, sys
+target, root = (pathlib.Path(p).resolve() for p in sys.argv[1:])
+blocked = [pathlib.Path.home().resolve(), root, root / "extern",
+           root / "runtime-recomp" / "RecompiledFuncs",
+           root / "runtime-recomp" / "RecompiledPatches"]
+stages = [target] + [(root / "build" / "decomp" / ("v" + str(r))).resolve()
+                     for r in (77, 80)]
+for stage in stages:
+    if stage == pathlib.Path(stage.anchor) or any(
+            stage == p or stage in p.parents for p in blocked) or any(
+            p == stage or p in stage.parents for p in blocked[2:]):
+        raise SystemExit("output and decomp stages must be dedicated build directories")
+for revision in (77, 80):
+    child = target / ("v" + str(revision))
+    if child.is_symlink():
+        raise SystemExit("refusing symlinked generated revision: " + str(child))
+    tree = root / "build" / "decomp" / ("v" + str(revision))
+    if tree.is_symlink():
+        raise SystemExit("refusing symlinked decomp stage: " + str(tree))
+print(target)
+PY
+)" || fail "Unsafe generated output directory."
+
+step "Pinned dependencies"
+pinned="$(
+  python3 - "$PROJECT_ROOT/dependencies.lock.json" <<'PY'
+import json, sys
+for d in json.load(open(sys.argv[1]))["dependencies"]:
+    print(d["name"], d["destination"], d["commit"], str(d.get("recursive", False)).lower(), sep="\t")
+PY
+)" || fail "Could not read dependencies.lock.json"
+# Only fetch what isn't already at its pinned commit: patched checkouts are
+# intentionally dirty and must not be reset on every run.
+while IFS=$'\t' read -r name destination commit recursive; do
+  if [[ -e "$PROJECT_ROOT/$destination/.git" ]] &&
+    [[ "$(git -C "$PROJECT_ROOT/$destination" rev-parse HEAD 2>/dev/null)" == "$commit" ]]; then
+    echo "[OK] $name at ${commit:0:12}"
+  else
+    python3 "$SCRIPT_DIR/bootstrap_dependencies.py" --only "$name"
+  fi
+  if [[ "$recursive" == true ]]; then
+    git -C "$PROJECT_ROOT/$destination" submodule update --init --recursive
+  fi
+done <<<"$pinned"
+git -C "$PROJECT_ROOT/extern/dkr-decomp" submodule update --init --recursive
+
+step "Dependency patches"
+python3 "$SCRIPT_DIR/apply_dependency_patches.py"
+
+step "N64Recomp"
+TOOL_BUILD="$PROJECT_ROOT/build/runtime-tools/n64recomp"
+cmake -S "$PROJECT_ROOT/extern/n64-modern-runtime/N64Recomp" -B "$TOOL_BUILD" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release >/dev/null
+cmake --build "$TOOL_BUILD" --parallel "$JOBS" --target N64RecompCLI
+RECOMPILER="$TOOL_BUILD/N64Recomp"
+[[ -x "$RECOMPILER" ]] || fail "N64Recomp was not built: $RECOMPILER"
+
+step "Decomp toolchain"
+DECOMP="$PROJECT_ROOT/extern/dkr-decomp"
+BINUTILS_CACHE="$PROJECT_ROOT/build/runtime-tools/mips-binutils"
+BINUTILS_SOURCE="$DECOMP/tools/binutils"
+if ! [[ -x "$DECOMP/tools/binutils/mips64-elf-ld" ]] &&
+  ! { command -v mips64-elf-ld >/dev/null && command -v mips64-elf-gcc >/dev/null; }; then
+  BINUTILS_SOURCE="$BINUTILS_CACHE"
+  if ! [[ -x "$BINUTILS_CACHE/mips64-elf-ld" ]]; then
+    version="binutils-2.46.0"
+    scratch="$(mktemp -d "${TMPDIR:-/tmp}/dkr-binutils.XXXXXX")"
+    trap 'rm -rf "$scratch"' EXIT
+    tarball="$scratch/$version.tar.xz"
+    curl -fsSL -o "$tarball" "https://ftp.gnu.org/gnu/binutils/$version.tar.xz" ||
+      fail "Downloading $version failed."
+    echo "d75a94f4d73e7a4086f7513e67e439e8fcdcbb726ffe63f4661744e6256b2cf2  $tarball" | sha256sum -c - >/dev/null ||
+      fail "$version checksum mismatch."
+    tar -xJf "$tarball" -C "$scratch"
+    (
+      cd "$scratch/$version"
+      ./configure --target=mips64-elf --prefix=/usr --with-sysroot=/usr/mips64-elf \
+        --enable-64-bit-bfd --disable-gold --disable-nls --disable-shared --disable-werror >/dev/null
+      make -j"$JOBS" >/dev/null
+    ) || fail "Building MIPS binutils failed."
+    mkdir -p "$BINUTILS_CACHE"
+    for pair in binutils/ar:ar binutils/objcopy:objcopy binutils/objdump:objdump \
+      binutils/strip-new:strip gas/as-new:as ld/ld-new:ld; do
+      cp "$scratch/$version/${pair%%:*}" "$BINUTILS_CACHE/mips64-elf-${pair##*:}"
+    done
+  fi
+fi
+
+# The decomp Makefile resolves DETECTED_OS from uname; on Linux that is "linux".
+decomp_ready() {
+  local tree="$1"
+  [[ -x "$tree/.venv/bin/python3" ]] && "$tree/.venv/bin/python3" -c 'import splat' 2>/dev/null &&
+    [[ -x "$tree/tools/dkr_assets_tool" && -x "$tree/tools/n64crc" && -x "$tree/tools/ido-recomp/linux/cc" ]]
+}
+
+stamp_matches() { [[ "$FORCE" -eq 0 && -f "$1" && "$(cat "$1")" == "$2" ]]; }
+
+prepare_revision() {
+  local revision="$1" rom="$2" sha1="$3" entrypoint="$4"
+  local tree="$PROJECT_ROOT/build/decomp/v$revision"
+  local elf="$tree/build/dkr.us.v$revision.elf" built_rom="$tree/build/dkr.us.v$revision.z64"
+  local work="$OUTPUT/v$revision"
+
+  step "US v$revision: ROM"
+  mkdir -p "$tree/baseroms"
+  python3 - "$rom" "$tree/baseroms/baserom.us.v$revision.z64" "$sha1" <<'PY'
+import hashlib, pathlib, sys
+source, target, expected = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3]
+data = bytearray(source.read_bytes())
+magic = bytes(data[:4]).hex()
+if magic == "37804012":
+    data[0::2], data[1::2] = data[1::2], data[0::2]
+elif magic == "40123780":
+    for i in range(0, len(data) - 3, 4):
+        data[i:i + 4] = data[i:i + 4][::-1]
+elif magic != "80371240":
+    raise SystemExit(f"{source}: not an N64 ROM (magic {magic})")
+digest = hashlib.sha1(data).hexdigest()
+if digest != expected:
+    raise SystemExit(f"{source}: SHA-1 {digest}, expected {expected}")
+if not target.exists() or target.read_bytes() != data:
+    target.write_bytes(data)
+print(f"[OK] {source.name} verified ({digest})")
+PY
+
+  step "US v$revision: decomp ELF"
+  local decomp_commit
+  decomp_commit="$(git -C "$DECOMP" rev-parse HEAD)"
+  if stamp_matches "$tree/.dkr-elf-stamp" "$decomp_commit $sha1" && [[ -f "$elf" && -f "$built_rom" ]]; then
+    echo "[OK] up to date: $elf"
+  else
+    rsync -a --delete --exclude /.git --exclude /build --exclude /asm --exclude /assets \
+      --exclude /baseroms --exclude /.venv --exclude /.dkr-elf-stamp "$DECOMP/" "$tree/"
+    if [[ -x "$BINUTILS_SOURCE/mips64-elf-ld" ]]; then
+      mkdir -p "$tree/tools/binutils"
+      cp "$BINUTILS_SOURCE"/mips64-elf-* "$tree/tools/binutils/"
+      touch "$tree/tools/binutils/.dkr-toolchain"
+    fi
+    if ! decomp_ready "$tree"; then
+      (cd "$tree" && make setup) || fail "Decomp setup failed."
+      decomp_ready "$tree" || fail "Decomp setup did not produce its tools; see the log above."
+    fi
+    (cd "$tree" && make VERSION="v$revision" extract && make VERSION="v$revision" -j"$JOBS") ||
+      fail "The US v$revision decomp build failed."
+    echo "$decomp_commit $sha1" >"$tree/.dkr-elf-stamp"
+  fi
+
+  step "US v$revision: recompiled payload"
+  local inputs
+  inputs="$(cat "$PROJECT_ROOT"/runtime-recomp/*.v"$revision".*.json "$PROJECT_ROOT"/scripts/*.py \
+    "$SCRIPT_DIR/Prepare-DKR-Runtime-Linux.sh" "$elf" "$RECOMPILER" | sha256sum | cut -d' ' -f1)"
+  if stamp_matches "$work/.dkr-payload-stamp" "$inputs" && [[ -f "$work/RecompiledFuncs/funcs.h" ]]; then
+    echo "[OK] up to date: $work/RecompiledFuncs"
+    return
+  fi
+  if [[ -e "$work" ]]; then
+    [[ -f "$work/.dkr-payload-stamp" ]] || fail "Refusing to replace unmanaged output: $work"
+    local previous="$work.previous-$(date '+%Y%m%d-%H%M%S')-$$"
+    [[ ! -e "$previous" ]] || fail "Recovery output already exists: $previous"
+    mv "$work" "$previous"
+    echo "[OK] Previous generated output preserved: $previous"
+  fi
+  mkdir -p "$work/RecompiledFuncs"
+  python3 "$SCRIPT_DIR/compose_legacy_mod_policy.py" \
+    --policy "$PROJECT_ROOT/runtime-recomp/dkr.us.v$revision.recomp-policy.json" \
+    --fragment "$PROJECT_ROOT/runtime-recomp/legacy-mods.v$revision.recomp-fragment.json" \
+    --track-menu "$PROJECT_ROOT/runtime-recomp/legacy-track-menu.v$revision.recomp-fragment.json" \
+    --characters "$PROJECT_ROOT/runtime-recomp/legacy-characters.v$revision.recomp-fragment.json" \
+    --character-menu "$PROJECT_ROOT/runtime-recomp/legacy-character-menu.v$revision.recomp-fragment.json" \
+    --scene-runtime --elf "$elf" --output "$work/policy.json"
+  python3 "$SCRIPT_DIR/generate_recomp_config.py" \
+    --policy "$work/policy.json" --elf "$elf" --rom "$built_rom" \
+    --output-functions "$work/RecompiledFuncs" --entrypoint "$entrypoint" \
+    --output "$work/dkr.us.v$revision.toml"
+  (cd "$PROJECT_ROOT/runtime-recomp" && "$RECOMPILER" "$work/dkr.us.v$revision.toml") \
+    >"$work/n64recomp.log" 2>&1 || {
+    tail -20 "$work/n64recomp.log"
+    fail "N64Recomp failed for v$revision."
+  }
+  echo "$inputs" >"$work/.dkr-payload-stamp"
+  echo "[OK] $work/RecompiledFuncs"
+}
+
+# Entrypoints are mainproc in each retail image.
+prepare_revision 77 "$ROM_V77" 0cb115d8716dbbc2922fda38e533b9fe63bb9670 0x80065D40
+prepare_revision 80 "$ROM_V80" 6d96743d46f8c0cd0edb0ec5600b003c89b93755 0x80065F80
+
+echo
+echo "[OK] Payloads ready in $OUTPUT"
+echo "Full log: $LOG_PATH"
