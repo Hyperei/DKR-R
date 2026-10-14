@@ -3,8 +3,15 @@
 dkr_stage_patch(plume "${CMAKE_BINARY_DIR}/generated/android-read-barriers" android-prerotation
     "${DKRPORT_ROOT}/patches/android/vulkan-prerotation.patch"
     src/contrib/plume/plume_vulkan.cpp src/contrib/plume/plume_vulkan.h)
-target_include_directories(plume BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-prerotation/src/contrib/plume")
-target_include_directories(rt64 BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-prerotation/src/contrib/plume")
+# Queue family selection is the last plume stage: it composes on top of the
+# rotation edit and leaves plume_vulkan.h untouched.
+dkr_stage_patch(plume "${CMAKE_BINARY_DIR}/generated/android-prerotation" android-queue-families
+    "${DKRPORT_ROOT}/patches/android/vulkan-queue-families.patch"
+    src/contrib/plume/plume_vulkan.cpp)
+configure_file("${CMAKE_BINARY_DIR}/generated/android-prerotation/src/contrib/plume/plume_vulkan.h"
+    "${CMAKE_BINARY_DIR}/generated/android-queue-families/src/contrib/plume/plume_vulkan.h" COPYONLY)
+target_include_directories(plume BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-queue-families/src/contrib/plume")
+target_include_directories(rt64 BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-queue-families/src/contrib/plume")
 dkr_stage_patch(rt64 "${DKR_RT64_SOURCE}" android-vi-prerotation
     "${DKRPORT_ROOT}/patches/android/vi-prerotation.patch" src/render/rt64_vi_renderer.cpp)
 dkr_stage_patch(rt64 "${DKR_RT64_SOURCE}" android-inspector-prerotation
