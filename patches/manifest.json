@@ -226,6 +226,10 @@
         {
           "path": "patches/rt64/0020-ios-imgui-pixel-size.patch",
           "sha256": "d346ecb854a422b3c9b0349a72b8217a08e4b0b5dc86e22f5b1ab995d25a7ca5"
+        },
+        {
+          "path": "patches/rt64/0021-match-framebuffer-storage-image-formats.patch",
+          "sha256": "cc7e638299f763e3787e974730e108eef977a5ed81dafc6f4561d7d93622ab78"
         }
       ]
     },
