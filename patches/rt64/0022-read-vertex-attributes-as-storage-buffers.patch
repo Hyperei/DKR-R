@@ -1,0 +1,156 @@
+diff --git a/src/hle/rt64_workload.cpp b/src/hle/rt64_workload.cpp
+index 2817a16..ab4dd14 100644
+--- a/src/hle/rt64_workload.cpp
++++ b/src/hle/rt64_workload.cpp
+@@ -198,10 +198,13 @@ namespace RT64 {
+     void Workload::uploadDrawData(RenderWorker *worker, BufferUploader *bufferUploader) {
+         const RenderBufferFlags rtInputFlag = worker->device->getCapabilities().raytracing ? RenderBufferFlag::ACCELERATION_STRUCTURE_INPUT : RenderBufferFlag::NONE;
+         bufferUploader->submit(worker, {
+-            { drawData.posFloats.data(), drawRanges.posFloats, sizeof(float), RenderBufferFlag::FORMATTED, { RenderFormat::R32_FLOAT }, &drawBuffers.positionBuffer },
+-            { drawData.velFloats.data(), drawRanges.velFloats, sizeof(float), RenderBufferFlag::FORMATTED, { RenderFormat::R32_FLOAT }, &drawBuffers.velocityBuffer },
+-            { drawData.tcFloats.data(), drawRanges.tcFloats, sizeof(float), RenderBufferFlag::FORMATTED, { RenderFormat::R32_FLOAT }, &drawBuffers.texcoordBuffer },
+-            { drawData.tcVelFloats.data(), drawRanges.tcVelFloats, sizeof(float), RenderBufferFlag::FORMATTED, { RenderFormat::R32_FLOAT }, &drawBuffers.texcoordVelocityBuffer },
++            // STORAGE as well as FORMATTED: the RSP process pass reads these as
++            // structured buffers to escape maxTexelBufferElements. Other passes
++            // still use the formatted views.
++            { drawData.posFloats.data(), drawRanges.posFloats, sizeof(float), RenderBufferFlag::FORMATTED | RenderBufferFlag::STORAGE, { RenderFormat::R32_FLOAT }, &drawBuffers.positionBuffer },
++            { drawData.velFloats.data(), drawRanges.velFloats, sizeof(float), RenderBufferFlag::FORMATTED | RenderBufferFlag::STORAGE, { RenderFormat::R32_FLOAT }, &drawBuffers.velocityBuffer },
++            { drawData.tcFloats.data(), drawRanges.tcFloats, sizeof(float), RenderBufferFlag::FORMATTED | RenderBufferFlag::STORAGE, { RenderFormat::R32_FLOAT }, &drawBuffers.texcoordBuffer },
++            { drawData.tcVelFloats.data(), drawRanges.tcVelFloats, sizeof(float), RenderBufferFlag::FORMATTED | RenderBufferFlag::STORAGE, { RenderFormat::R32_FLOAT }, &drawBuffers.texcoordVelocityBuffer },
+             { drawData.normColBytes.data(), drawRanges.normColBytes, sizeof(uint8_t), RenderBufferFlag::FORMATTED | RenderBufferFlag::STORAGE, { RenderFormat::R8_UINT, RenderFormat::R8_SINT }, &drawBuffers.normalColorBuffer },
+             { drawData.viewProjIndices.data(), drawRanges.viewProjIndices, sizeof(uint16_t), RenderBufferFlag::FORMATTED | RenderBufferFlag::STORAGE, { RenderFormat::R16_UINT }, &drawBuffers.viewProjIndicesBuffer },
+             { drawData.worldIndices.data(), drawRanges.worldIndices, sizeof(uint16_t), RenderBufferFlag::FORMATTED | RenderBufferFlag::STORAGE, { RenderFormat::R16_UINT }, &drawBuffers.worldIndicesBuffer },
+diff --git a/src/render/rt64_descriptor_sets.h b/src/render/rt64_descriptor_sets.h
+index 69a82ac..8c004da 100644
+--- a/src/render/rt64_descriptor_sets.h
++++ b/src/render/rt64_descriptor_sets.h
+@@ -530,12 +530,15 @@ namespace RT64 {
+ 
+         RSPProcessDescriptorSet(RenderDevice *device = nullptr) {
+             builder.begin();
+-            srcPos = builder.addFormattedBuffer(1);
+-            srcVel = builder.addFormattedBuffer(2);
+-            srcTc = builder.addFormattedBuffer(3);
+-            srcTcVel = builder.addFormattedBuffer(4);
+-            srcCol = builder.addFormattedBuffer(5);
+-            srcNorm = builder.addFormattedBuffer(6);
++            // Structured rather than formatted: these span a whole workload and
++            // routinely exceed maxTexelBufferElements, which may be as low as
++            // 65536. Storage buffers have no equivalent element limit.
++            srcPos = builder.addStructuredBuffer(1);
++            srcVel = builder.addStructuredBuffer(2);
++            srcTc = builder.addStructuredBuffer(3);
++            srcTcVel = builder.addStructuredBuffer(4);
++            srcCol = builder.addStructuredBuffer(5);
++            srcNorm = builder.addStructuredBuffer(6);
+             srcViewProjIndices = builder.addFormattedBuffer(7);
+             srcWorldIndices = builder.addFormattedBuffer(8);
+             srcFogIndices = builder.addFormattedBuffer(9);
+diff --git a/src/render/rt64_rsp_processor.cpp b/src/render/rt64_rsp_processor.cpp
+index 5687b81..8d0109c 100644
+--- a/src/render/rt64_rsp_processor.cpp
++++ b/src/render/rt64_rsp_processor.cpp
+@@ -26,12 +26,13 @@ namespace RT64 {
+         p.outputBuffers->screenPosBuffer.computedSize += processCB.vertexCount * sizeof(float) * 4;
+         p.outputBuffers->genTexCoordBuffer.computedSize += processCB.vertexCount * sizeof(float) * 2;
+         p.outputBuffers->shadedColBuffer.computedSize += processCB.vertexCount * sizeof(float) * 4;
+-        processSet->setBuffer(processSet->srcPos, p.drawBuffers->positionBuffer.get(), p.drawBuffers->positionBuffer.getView(0));
+-        processSet->setBuffer(processSet->srcVel, p.drawBuffers->velocityBuffer.get(), p.drawBuffers->velocityBuffer.getView(0));
+-        processSet->setBuffer(processSet->srcTc, p.drawBuffers->texcoordBuffer.get(), p.drawBuffers->texcoordBuffer.getView(0));
+-        processSet->setBuffer(processSet->srcTcVel, p.drawBuffers->texcoordVelocityBuffer.get(), p.drawBuffers->texcoordVelocityBuffer.getView(0));
+-        processSet->setBuffer(processSet->srcCol, p.drawBuffers->normalColorBuffer.get(), p.drawBuffers->normalColorBuffer.getView(0));
+-        processSet->setBuffer(processSet->srcNorm, p.drawBuffers->normalColorBuffer.get(), p.drawBuffers->normalColorBuffer.getView(1));
++        processSet->setBuffer(processSet->srcPos, p.drawBuffers->positionBuffer.get(), RenderBufferStructuredView(sizeof(float)));
++        processSet->setBuffer(processSet->srcVel, p.drawBuffers->velocityBuffer.get(), RenderBufferStructuredView(sizeof(float)));
++        processSet->setBuffer(processSet->srcTc, p.drawBuffers->texcoordBuffer.get(), RenderBufferStructuredView(sizeof(float)));
++        processSet->setBuffer(processSet->srcTcVel, p.drawBuffers->texcoordVelocityBuffer.get(), RenderBufferStructuredView(sizeof(float)));
++        // One packed RGBA8 element per vertex; the shader unpacks the bytes.
++        processSet->setBuffer(processSet->srcCol, p.drawBuffers->normalColorBuffer.get(), RenderBufferStructuredView(sizeof(uint8_t) * 4));
++        processSet->setBuffer(processSet->srcNorm, p.drawBuffers->normalColorBuffer.get(), RenderBufferStructuredView(sizeof(uint8_t) * 4));
+         processSet->setBuffer(processSet->srcViewProjIndices, p.drawBuffers->viewProjIndicesBuffer.get(), p.drawBuffers->viewProjIndicesBuffer.getView(0));
+         processSet->setBuffer(processSet->srcWorldIndices, p.drawBuffers->worldIndicesBuffer.get(), p.drawBuffers->worldIndicesBuffer.getView(0));
+         processSet->setBuffer(processSet->srcFogIndices, p.drawBuffers->fogIndicesBuffer.get(), p.drawBuffers->fogIndicesBuffer.getView(0));
+diff --git a/src/shaders/RSPProcessCS.hlsl b/src/shaders/RSPProcessCS.hlsl
+index b02446e..f7d2a1f 100644
+--- a/src/shaders/RSPProcessCS.hlsl
++++ b/src/shaders/RSPProcessCS.hlsl
+@@ -19,12 +19,33 @@ struct RSPProcessCB {
+ };
+ 
+ [[vk::push_constant]] ConstantBuffer<RSPProcessCB> gConstants : register(b0);
+-Buffer<float> srcPos : register(t1);
+-Buffer<float> srcVel : register(t2);
+-Buffer<float> srcTc : register(t3);
+-Buffer<float> srcTcVel : register(t4);
+-Buffer<uint> srcCol : register(t5);
+-Buffer<int> srcNorm : register(t6);
++// These are per-vertex attribute buffers for an entire workload, which can
++// reach hundreds of thousands of elements. A texel buffer view is limited to
++// maxTexelBufferElements, and the Vulkan specification permits that to be as
++// low as 65536 - PowerVR reports exactly the minimum. Storage buffers carry no
++// such element limit, so read these as structured buffers instead.
++StructuredBuffer<float> srcPos : register(t1);
++StructuredBuffer<float> srcVel : register(t2);
++StructuredBuffer<float> srcTc : register(t3);
++StructuredBuffer<float> srcTcVel : register(t4);
++// One packed RGBA8 element per vertex, read as colour through srcCol and as
++// signed normals through srcNorm. The texel buffer views widened each byte on
++// the hardware; unpack by hand now.
++StructuredBuffer<uint> srcCol : register(t5);
++StructuredBuffer<uint> srcNorm : register(t6);
++
++uint RSPUnpackByte(uint packed, uint byteIndex) {
++    return (packed >> (byteIndex * 8u)) & 0xFFu;
++}
++
++float RSPUnpackSNorm8(uint packed, uint byteIndex) {
++    // Branchless sign extension of an 8-bit value.
++    return (int(RSPUnpackByte(packed, byteIndex) ^ 0x80u) - 128) / 127.0f;
++}
++
++float RSPUnpackUNorm8(uint packed, uint byteIndex) {
++    return RSPUnpackByte(packed, byteIndex) / 255.0f;
++}
+ Buffer<uint> srcViewProjIndices : register(t7);
+ Buffer<uint> srcWorldIndices : register(t8);
+ Buffer<uint> srcFogIndices : register(t9);
+@@ -53,11 +74,11 @@ void CSMain(uint vertexIndex : SV_DispatchThreadID) {
+     const float4x4 viewProjMat = viewProjTransforms[viewProjIndex];
+     const float4x4 worldMat = worldTransforms[transformIndex];
+     const uint posIndex = vertexOffsetIndex * 3;
+-    const uint normColIndex = vertexOffsetIndex * 4;
++    const uint packedNormCol = srcNorm[vertexOffsetIndex];
+     const float3 norm = float3(
+-        srcNorm[normColIndex + 0] / 127.0f,
+-        srcNorm[normColIndex + 1] / 127.0f,
+-        srcNorm[normColIndex + 2] / 127.0f
++        RSPUnpackSNorm8(packedNormCol, 0),
++        RSPUnpackSNorm8(packedNormCol, 1),
++        RSPUnpackSNorm8(packedNormCol, 2)
+     );
+ 
+     // NDC Position.
+@@ -74,7 +95,7 @@ void CSMain(uint vertexIndex : SV_DispatchThreadID) {
+         vertexColor.a = clamp(fogAlpha / 255.0f, 0.0f, 1.0f);
+     }
+     else {
+-        vertexColor.a = srcCol[normColIndex + 3] / 255.0f;
++        vertexColor.a = RSPUnpackUNorm8(srcCol[vertexOffsetIndex], 3);
+     }
+ 
+     // Texgen.
+@@ -111,10 +132,11 @@ void CSMain(uint vertexIndex : SV_DispatchThreadID) {
+         vertexColor.rgb = min(resultColor, 1.0f);
+     }
+     else {
++        const uint packedCol = srcCol[vertexOffsetIndex];
+         vertexColor.rgb = float3(
+-            srcCol[normColIndex + 0] / 255.0f, 
+-            srcCol[normColIndex + 1] / 255.0f, 
+-            srcCol[normColIndex + 2] / 255.0f
++            RSPUnpackUNorm8(packedCol, 0),
++            RSPUnpackUNorm8(packedCol, 1),
++            RSPUnpackUNorm8(packedCol, 2)
+         );
+     }
+     

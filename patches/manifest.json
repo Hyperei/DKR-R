@@ -230,6 +230,10 @@
         {
           "path": "patches/rt64/0021-match-framebuffer-storage-image-formats.patch",
           "sha256": "cc7e638299f763e3787e974730e108eef977a5ed81dafc6f4561d7d93622ab78"
+        },
+        {
+          "path": "patches/rt64/0022-read-vertex-attributes-as-storage-buffers.patch",
+          "sha256": "e0daea9df513bb9e68d3be0f61935175b1f3bb1a2d8d125e2a33ca0c1e68419a"
         }
       ]
     },
