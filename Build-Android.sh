@@ -190,3 +190,10 @@ cp "$PROJECT_ROOT/packaging/android/app/build/outputs/apk/$VARIANT/app-$VARIANT.
 echo
 echo "[OK] $OUTPUT"
 sha256sum "$OUTPUT"
+# Report the signing identity: a changed certificate means Android will refuse
+# to install this build over the previous one.
+APKSIGNER="$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | head -1)"
+if [[ -x "$APKSIGNER" ]]; then
+  "$APKSIGNER" verify --print-certs "$OUTPUT" 2>/dev/null |
+    grep -i "certificate SHA-256 digest" || true
+fi
