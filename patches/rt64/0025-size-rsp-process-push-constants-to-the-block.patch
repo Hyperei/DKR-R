@@ -1,0 +1,17 @@
+diff --git a/src/render/rt64_shader_library.cpp b/src/render/rt64_shader_library.cpp
+index a370263..be1eb2a 100644
+--- a/src/render/rt64_shader_library.cpp
++++ b/src/render/rt64_shader_library.cpp
+@@ -542,7 +542,11 @@ namespace RT64 {
+         {
+             RSPProcessDescriptorSet descriptorSet;
+             layoutBuilder.begin();
+-            layoutBuilder.addPushConstant(0, 0, sizeof(uint32_t) * 4, RenderShaderStageFlag::COMPUTE);
++            // RSPProcessCB carries five words once the enhanced-water adapter
++            // adds waterWorldActive. A range short of the block leaves that
++            // field outside the push constant storage, so the shader reads it
++            // from undefined memory on every dispatch.
++            layoutBuilder.addPushConstant(0, 0, sizeof(uint32_t) * 5, RenderShaderStageFlag::COMPUTE);
+             layoutBuilder.addDescriptorSet(descriptorSet);
+             layoutBuilder.end();
+             rspProcess.pipelineLayout = layoutBuilder.create(device);

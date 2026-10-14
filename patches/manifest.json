@@ -242,6 +242,10 @@
         {
           "path": "patches/rt64/0024-read-rsp-world-inputs-as-storage-buffers.patch",
           "sha256": "c5f57efe3f96613635f2f4b7c0fea2b191190b77b3ccce9625774dcbeaafc5a4"
+        },
+        {
+          "path": "patches/rt64/0025-size-rsp-process-push-constants-to-the-block.patch",
+          "sha256": "5418a9efc1d3013069160844f5a5fab4f4a9a048ef0d03e6208031bfedd09c83"
         }
       ]
     },
