@@ -20,7 +20,9 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
     defaultConfig {
-        applicationId 'io.github.thatguymcd.dkrr.preview'
+        // Pixel 10 / PowerVR investigation fork. A separate application ID keeps
+        // this build side-by-side with an installed upstream DKR-R.
+        applicationId 'io.github.thatguymcd.dkrr.pixel10'
         minSdk 28
         targetSdk 35
         versionCode 1060002
@@ -39,8 +41,9 @@ android {
         release {
             minifyEnabled false
             debuggable false
-            // Keep upgrade compatibility with the existing distributed APKs.
-            // A future production key migration needs an explicit user-data plan.
+            // This fork ships under its own application ID and installs beside
+            // the upstream build, so it carries its own debug signing identity
+            // and its own private app data.
             signingConfig signingConfigs.debug
         }
     }
