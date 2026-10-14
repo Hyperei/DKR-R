@@ -1,0 +1,26 @@
+diff --git a/src/render/rt64_rsp_processor.cpp b/src/render/rt64_rsp_processor.cpp
+index 3a07eb4..39e3cb0 100644
+--- a/src/render/rt64_rsp_processor.cpp
++++ b/src/render/rt64_rsp_processor.cpp
+@@ -78,7 +78,7 @@ namespace RT64 {
+             worker->commandList->setComputePipelineLayout(shaderLibrary->rspProcess.pipelineLayout.get());
+             worker->commandList->setComputePushConstants(0, &processCB);
+             worker->commandList->setComputeDescriptorSet(processSet->get(), 0);
+-            worker->commandList->dispatch(dispatchCount, 1, 1);
++            for (uint32_t base = 0; base < processCB.vertexCount; base += 65535u * ThreadGroupSize) { ProcessCB runCB = processCB; runCB.vertexStart = processCB.vertexStart + base; const uint32_t left = processCB.vertexCount - base; runCB.vertexCount = (left < (65535u * ThreadGroupSize)) ? left : (65535u * ThreadGroupSize); worker->commandList->setComputePushConstants(0, &runCB); worker->commandList->dispatch((runCB.vertexCount + ThreadGroupSize - 1) / ThreadGroupSize, 1, 1); }
+             worker->commandList->barriers(RenderBarrierStage::GRAPHICS, afterBarriers, uint32_t(std::size(afterBarriers)));
+         }
+ 
+diff --git a/src/render/rt64_vertex_processor.cpp b/src/render/rt64_vertex_processor.cpp
+index f0f53a0..006205b 100644
+--- a/src/render/rt64_vertex_processor.cpp
++++ b/src/render/rt64_vertex_processor.cpp
+@@ -63,7 +63,7 @@ namespace RT64 {
+         worker->commandList->setComputePipelineLayout(shaderLibrary->rspWorld.pipelineLayout.get());
+         worker->commandList->setComputePushConstants(0, &worldCB);
+         worker->commandList->setComputeDescriptorSet(descriptorSet->get(), 0);
+-        worker->commandList->dispatch(dispatchCount, 1, 1);
++        for (uint32_t base = 0; base < worldCB.vertexCount; base += 65535u * ThreadGroupSize) { WorldCB runCB = worldCB; runCB.vertexStart = worldCB.vertexStart + base; const uint32_t left = worldCB.vertexCount - base; runCB.vertexCount = (left < (65535u * ThreadGroupSize)) ? left : (65535u * ThreadGroupSize); worker->commandList->setComputePushConstants(0, &runCB); worker->commandList->dispatch((runCB.vertexCount + ThreadGroupSize - 1) / ThreadGroupSize, 1, 1); }
+         worker->commandList->barriers(RenderBarrierStage::COMPUTE, afterBarriers, uint32_t(std::size(afterBarriers)));
+     }
+ };

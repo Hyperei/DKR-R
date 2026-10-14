@@ -246,6 +246,10 @@
         {
           "path": "patches/rt64/0025-size-rsp-process-push-constants-to-the-block.patch",
           "sha256": "5418a9efc1d3013069160844f5a5fab4f4a9a048ef0d03e6208031bfedd09c83"
+        },
+        {
+          "path": "patches/rt64/0026-bound-rsp-dispatches-to-the-workgroup-limit.patch",
+          "sha256": "1e7b40f95786fd2067dcc1eae71c4dfbbfc7c74f6fd6ac31371fb52d4202b73c"
         }
       ]
     },
