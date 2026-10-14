@@ -1,0 +1,20 @@
+diff --git a/src/contrib/plume/plume_vulkan.cpp b/src/contrib/plume/plume_vulkan.cpp
+index c12971d..5bcaee3 100644
+--- a/src/contrib/plume/plume_vulkan.cpp
++++ b/src/contrib/plume/plume_vulkan.cpp
+@@ -2861,7 +2861,14 @@ namespace plume {
+ 
+             // Upgrade the operations to NONE if supported. Fixes the following validation issue: https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/2349
+             // We prefer to just ignore this potential hazard on older Vulkan versions as it just seems to be an edge case for some hardware.
+-            const bool preferNoneForReadOnly = desc.depthAttachmentReadOnly && device->loadStoreOpNoneSupported;
++            // Imagination's tile-based renderer does not bring a depth attachment
++            // into tile memory under LOAD_OP_NONE, so a read-only depth pass
++            // tests against nothing and every depth-compared draw in it - DKR's
++            // billboard HUD sprites, for one - is rejected outright. Keep the
++            // explicit load and store there; the hazard NONE was avoiding is
++            // the validation edge case noted below, not a rendering fault.
++            const bool vendorNeedsDepthLoad = device->physicalDeviceProperties.vendorID == 0x1010;
++            const bool preferNoneForReadOnly = desc.depthAttachmentReadOnly && device->loadStoreOpNoneSupported && !vendorNeedsDepthLoad;
+             VkAttachmentDescription attachment = {};
+             attachment.format = toVk(depthAttachmentViewDesc.format);
+             attachment.samples = VkSampleCountFlagBits(depthAttachment->desc.multisampling.sampleCount);
