@@ -238,6 +238,10 @@
         {
           "path": "patches/rt64/0023-read-rsp-index-buffers-as-storage-buffers.patch",
           "sha256": "06831aefb2af63cc2297fb27b922d5849e3a866b1485fa38fb2bc845971647cf"
+        },
+        {
+          "path": "patches/rt64/0024-read-rsp-world-inputs-as-storage-buffers.patch",
+          "sha256": "c5f57efe3f96613635f2f4b7c0fea2b191190b77b3ccce9625774dcbeaafc5a4"
         }
       ]
     },

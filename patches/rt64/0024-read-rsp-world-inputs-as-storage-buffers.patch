@@ -1,0 +1,87 @@
+diff --git a/src/render/rt64_descriptor_sets.h b/src/render/rt64_descriptor_sets.h
+index d60fa7f..3c201b7 100644
+--- a/src/render/rt64_descriptor_sets.h
++++ b/src/render/rt64_descriptor_sets.h
+@@ -614,10 +614,10 @@ namespace RT64 {
+ 
+         RSPWorldDescriptorSet(RenderDevice *device = nullptr) {
+             builder.begin();
+-            srcPos = builder.addFormattedBuffer(1);
+-            srcVel = builder.addFormattedBuffer(2);
+-            srcNorm = builder.addFormattedBuffer(3);
+-            srcIndices = builder.addFormattedBuffer(4);
++            srcPos = builder.addStructuredBuffer(1);
++            srcVel = builder.addStructuredBuffer(2);
++            srcNorm = builder.addStructuredBuffer(3);
++            srcIndices = builder.addStructuredBuffer(4);
+             worldMats = builder.addStructuredBuffer(5);
+             invTWorldMats = builder.addStructuredBuffer(6);
+             prevWorldMats = builder.addStructuredBuffer(7);
+diff --git a/src/render/rt64_vertex_processor.cpp b/src/render/rt64_vertex_processor.cpp
+index ee48dad..f0f53a0 100644
+--- a/src/render/rt64_vertex_processor.cpp
++++ b/src/render/rt64_vertex_processor.cpp
+@@ -26,10 +26,11 @@ namespace RT64 {
+         p.outputBuffers->worldNormBuffer.computedSize += worldCB.vertexCount * sizeof(float) * 4;
+         p.outputBuffers->worldVelBuffer.computedSize += worldCB.vertexCount * sizeof(float) * 4;
+         
+-        descriptorSet->setBuffer(descriptorSet->srcPos, p.drawBuffers->positionBuffer.get(), p.drawBuffers->positionBuffer.getView(0));
+-        descriptorSet->setBuffer(descriptorSet->srcVel, p.drawBuffers->velocityBuffer.get(), p.drawBuffers->velocityBuffer.getView(0));
+-        descriptorSet->setBuffer(descriptorSet->srcNorm, p.drawBuffers->normalColorBuffer.get(), p.drawBuffers->normalColorBuffer.getView(1));
+-        descriptorSet->setBuffer(descriptorSet->srcIndices, p.drawBuffers->worldIndicesBuffer.get(), p.drawBuffers->worldIndicesBuffer.getView(0));
++        descriptorSet->setBuffer(descriptorSet->srcPos, p.drawBuffers->positionBuffer.get(), RenderBufferStructuredView(sizeof(float)));
++        descriptorSet->setBuffer(descriptorSet->srcVel, p.drawBuffers->velocityBuffer.get(), RenderBufferStructuredView(sizeof(float)));
++        // One packed RGBA8 element per vertex; the shader unpacks the signed bytes.
++        descriptorSet->setBuffer(descriptorSet->srcNorm, p.drawBuffers->normalColorBuffer.get(), RenderBufferStructuredView(sizeof(uint8_t) * 4));
++        descriptorSet->setBuffer(descriptorSet->srcIndices, p.drawBuffers->worldIndicesBuffer.get(), RenderBufferStructuredView(sizeof(uint32_t)));
+         descriptorSet->setBuffer(descriptorSet->worldMats, p.drawBuffers->worldTransformsBuffer.get(), RenderBufferStructuredView(sizeof(interop::float4x4)));
+         descriptorSet->setBuffer(descriptorSet->invTWorldMats, p.drawBuffers->invTWorldTransformsBuffer.get(), RenderBufferStructuredView(sizeof(interop::float4x4)));
+         descriptorSet->setBuffer(descriptorSet->prevWorldMats, p.drawBuffers->prevWorldTransformsBuffer.get(), RenderBufferStructuredView(sizeof(interop::float4x4)));
+diff --git a/src/shaders/RSPWorldCS.hlsl b/src/shaders/RSPWorldCS.hlsl
+index 205dc4c..83b98c3 100644
+--- a/src/shaders/RSPWorldCS.hlsl
++++ b/src/shaders/RSPWorldCS.hlsl
+@@ -12,10 +12,23 @@ struct RSPWorldCB {
+ };
+ 
+ [[vk::push_constant]] ConstantBuffer<RSPWorldCB> gConstants : register(b0);
+-Buffer<float> srcPos : register(t1);
+-Buffer<float> srcVel : register(t2);
+-Buffer<int> srcNorm : register(t3);
+-Buffer<uint> srcIndices : register(t4);
++// Per-vertex buffers for a whole workload, which run past
++// maxTexelBufferElements. Read them as storage buffers, which have no
++// equivalent limit, and unpack the narrow entries by hand.
++StructuredBuffer<float> srcPos : register(t1);
++StructuredBuffer<float> srcVel : register(t2);
++StructuredBuffer<uint> srcNorm : register(t3);
++StructuredBuffer<uint> srcIndices : register(t4);
++
++float RSPWorldSByte(uint packed, uint byteIndex) {
++    const uint value = (packed >> (byteIndex * 8u)) & 0xFFu;
++    // Branchless sign extension of an 8-bit value.
++    return float(int(value ^ 0x80u) - 128);
++}
++
++uint RSPWorldU16(StructuredBuffer<uint> source, uint index) {
++    return (source[index >> 1u] >> ((index & 1u) * 16u)) & 0xFFFFu;
++}
+ StructuredBuffer<float4x4> worldMats : register(t5);
+ StructuredBuffer<float4x4> invTWorldMats : register(t6);
+ StructuredBuffer<float4x4> prevWorldMats : register(t7);
+@@ -30,12 +43,12 @@ void CSMain(uint vertexIndex : SV_DispatchThreadID) {
+     }
+     
+     const uint vertexOffsetIndex = gConstants.vertexStart + vertexIndex;
+-    const uint transformIndex = srcIndices[vertexOffsetIndex];
++    const uint transformIndex = RSPWorldU16(srcIndices, vertexOffsetIndex);
+     const uint posIndex = vertexOffsetIndex * 3;
+-    const uint normIndex = vertexOffsetIndex * 4;
++    const uint packedNorm = srcNorm[vertexOffsetIndex];
+     const float3 pos = float3(srcPos[posIndex + 0], srcPos[posIndex + 1], srcPos[posIndex + 2]);
+     const float3 vel = float3(srcVel[posIndex + 0], srcVel[posIndex + 1], srcVel[posIndex + 2]);
+-    const float3 norm = float3(srcNorm[normIndex + 0], srcNorm[normIndex + 1], srcNorm[normIndex + 2]);
++    const float3 norm = float3(RSPWorldSByte(packedNorm, 0), RSPWorldSByte(packedNorm, 1), RSPWorldSByte(packedNorm, 2));
+     const float4 worldPos = mul(worldMats[transformIndex], float4(pos - vel * (1.0f - gConstants.curFrameWeight), 1.0f));
+     const float4 worldNorm = all(norm == 0.0f) ? float4(0.0f, 0.0f, 0.0f, 1.0f) : float4(normalize(mul(invTWorldMats[transformIndex], float4(norm, 0.0f)).xyz), 1.0f);
+     const float4 prevWorldPos = mul(prevWorldMats[transformIndex], float4(pos - vel * (1.0f - gConstants.prevFrameWeight), 1.0f));
