@@ -250,6 +250,10 @@
         {
           "path": "patches/rt64/0026-bound-rsp-dispatches-to-the-workgroup-limit.patch",
           "sha256": "1e7b40f95786fd2067dcc1eae71c4dfbbfc7c74f6fd6ac31371fb52d4202b73c"
+        },
+        {
+          "path": "patches/rt64/0027-read-native-framebuffers-as-storage-buffers.patch",
+          "sha256": "2622cd3718811215303923ec6e58579c06cd00d7227a71de62896fe34b08a1e4"
         }
       ]
     },

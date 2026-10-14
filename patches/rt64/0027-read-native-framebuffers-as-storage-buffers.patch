@@ -1,0 +1,177 @@
+diff --git a/src/render/rt64_descriptor_sets.h b/src/render/rt64_descriptor_sets.h
+index 3c201b7..a0d52da 100644
+--- a/src/render/rt64_descriptor_sets.h
++++ b/src/render/rt64_descriptor_sets.h
+@@ -87,8 +87,8 @@ namespace RT64 {
+ 
+         FramebufferReadChangesDescriptorBufferSet(RenderDevice *device = nullptr) {
+             builder.begin();
+-            gNewInput = builder.addFormattedBuffer(1);
+-            gCurInput = builder.addFormattedBuffer(2);
++            gNewInput = builder.addStructuredBuffer(1);
++            gCurInput = builder.addStructuredBuffer(2);
+             gOutputCount = builder.addReadWriteStructuredBuffer(3);
+             builder.end();
+ 
+@@ -121,7 +121,7 @@ namespace RT64 {
+ 
+         FramebufferWriteDescriptorBufferSet(RenderDevice *device = nullptr) {
+             builder.begin();
+-            gOutput = builder.addReadWriteFormattedBuffer(1);
++            gOutput = builder.addReadWriteStructuredBuffer(1);
+             builder.end();
+ 
+             if (device != nullptr) {
+diff --git a/src/render/rt64_native_target.cpp b/src/render/rt64_native_target.cpp
+index 6891b7b..fec98ef 100644
+--- a/src/render/rt64_native_target.cpp
++++ b/src/render/rt64_native_target.cpp
+@@ -114,7 +114,8 @@ namespace RT64 {
+             readBuffer.readDescSet = std::make_unique<FramebufferReadChangesDescriptorBufferSet>(worker->device);
+         }
+ 
+-        readBuffer.readDescSet->setBuffer(readBuffer.readDescSet->gNewInput, readBuffer.nativeBuffer.get(), readBuffer.nativeBufferSize, readBuffer.nativeBufferView.get());
++        const RenderBufferStructuredView nativeWords(sizeof(uint32_t));
++        readBuffer.readDescSet->setBuffer(readBuffer.readDescSet->gNewInput, readBuffer.nativeBuffer.get(), readBuffer.nativeBufferSize, &nativeWords);
+         readBuffer.readDescSet->setBuffer(readBuffer.readDescSet->gOutputCount, changeCountBuffer.get(), RenderBufferStructuredView(sizeof(uint32_t)));
+ 
+         if (previousReadBuffer != nullptr) {
+@@ -131,7 +132,7 @@ namespace RT64 {
+                 previousBufferView = previousReadBuffer->nativeBufferNextView.get();
+             }
+ 
+-            readBuffer.readDescSet->setBuffer(readBuffer.readDescSet->gCurInput, previousReadBuffer->nativeBuffer.get(), previousReadBuffer->nativeBufferSize, previousBufferView);
++            readBuffer.readDescSet->setBuffer(readBuffer.readDescSet->gCurInput, previousReadBuffer->nativeBuffer.get(), previousReadBuffer->nativeBufferSize, &nativeWords);
+         }
+ 
+         void *dstData = readBuffer.nativeUploadBuffer->map();
+@@ -318,7 +319,8 @@ namespace RT64 {
+             writeBuffer.writeDescSet = std::make_unique<FramebufferWriteDescriptorBufferSet>(worker->device);
+         }
+ 
+-        writeBuffer.writeDescSet->setBuffer(writeBuffer.writeDescSet->gOutput, readBuffer->nativeBuffer.get(), bufferSize, readBuffer->nativeBufferWriteView.get());
++        const RenderBufferStructuredView nativeWords(sizeof(uint32_t));
++        writeBuffer.writeDescSet->setBuffer(writeBuffer.writeDescSet->gOutput, readBuffer->nativeBuffer.get(), bufferSize, &nativeWords);
+ 
+         if (smallerReadBuffer != nullptr) {
+             RenderBufferBarrier copyBarriers[] = {
+diff --git a/src/shaders/FbCommon.hlsli b/src/shaders/FbCommon.hlsli
+index 973ee67..8797ed5 100644
+--- a/src/shaders/FbCommon.hlsli
++++ b/src/shaders/FbCommon.hlsli
+@@ -35,6 +35,44 @@ uint EndianSwapUINT(uint i, uint siz) {
+     }
+ }
+ 
++// Native framebuffer pixels through a 32-bit structured buffer. The texel
++// buffer views this replaces are bounded by maxTexelBufferElements, which
++// some devices expose at the 65536 minimum; a 320x240 16-bit framebuffer is
++// 76800 pixels on its own, and everything past the limit reads undefined.
++// Each pixel is unpacked from, or masked into, its share of a 32-bit word.
++uint FbLoadNative(StructuredBuffer<uint> source, uint pixelIndex, uint siz) {
++    switch (siz) {
++    case G_IM_SIZ_32b:
++        return source[pixelIndex];
++    case G_IM_SIZ_16b:
++        return (source[pixelIndex >> 1u] >> ((pixelIndex & 1u) * 16u)) & 0xFFFFu;
++    default: // 8-bit; 4-bit framebuffers are addressed per byte as well.
++        return (source[pixelIndex >> 2u] >> ((pixelIndex & 3u) * 8u)) & 0xFFu;
++    }
++}
++
++// Threads sharing a word only ever clear and set their own bits, so the
++// two atomics interleave safely with a neighbour doing the same.
++void FbStoreNative(RWStructuredBuffer<uint> target, uint pixelIndex, uint siz, uint value) {
++    switch (siz) {
++    case G_IM_SIZ_32b:
++        target[pixelIndex] = value;
++        break;
++    case G_IM_SIZ_16b: {
++        const uint shift = (pixelIndex & 1u) * 16u;
++        InterlockedAnd(target[pixelIndex >> 1u], ~(0xFFFFu << shift));
++        InterlockedOr(target[pixelIndex >> 1u], (value & 0xFFFFu) << shift);
++        break;
++    }
++    default: {
++        const uint shift = (pixelIndex & 3u) * 8u;
++        InterlockedAnd(target[pixelIndex >> 2u], ~(0xFFu << shift));
++        InterlockedOr(target[pixelIndex >> 2u], (value & 0xFFu) << shift);
++        break;
++    }
++    }
++}
++
+ float4 UINT16ToFloat4(uint i, uint fmt) {
+     switch (fmt) {
+     case G_IM_FMT_RGBA:
+diff --git a/src/shaders/FbReadAnyChangesCS.hlsl b/src/shaders/FbReadAnyChangesCS.hlsl
+index 778c087..df06105 100644
+--- a/src/shaders/FbReadAnyChangesCS.hlsl
++++ b/src/shaders/FbReadAnyChangesCS.hlsl
+@@ -13,8 +13,8 @@
+ // R32_FLOAT for a depth pool. A storage image whose declared format differs
+ // from its view yields undefined values across the whole image, so declare
+ // them unformatted. gOutputChangeBoolean is always R8_UINT and can say so.
+-[[vk::image_format("unknown")]] Buffer<uint> gNewInput : register(t1, space0);
+-[[vk::image_format("unknown")]] Buffer<uint> gCurInput : register(t2, space0);
++StructuredBuffer<uint> gNewInput : register(t1, space0);
++StructuredBuffer<uint> gCurInput : register(t2, space0);
+ RWStructuredBuffer<uint> gOutputCount : register(u3, space0);
+ [[vk::image_format("unknown")]] RWTexture2D<float4> gOutputChangeColor : register(u0, space1);
+ [[vk::image_format("unknown")]] RWTexture2D<float> gOutputChangeDepth : register(u1, space1);
+@@ -25,8 +25,9 @@ void CSMain(uint2 coord : SV_DispatchThreadID) {
+     if ((coord.x < gConstants.resolution.x) && (coord.y < gConstants.resolution.y)) {
+         const uint bufferIndex = coord.y * gConstants.resolution.x.x + coord.x;
+         const uint2 pixelCoord = gConstants.offset + coord.xy;
+-        if (gNewInput[bufferIndex] != gCurInput[bufferIndex]) {
+-            const uint swappedUint = EndianSwapUINT(gNewInput[bufferIndex], gConstants.siz);
++        const uint newNative = FbLoadNative(gNewInput, bufferIndex, gConstants.siz);
++        if (newNative != FbLoadNative(gCurInput, bufferIndex, gConstants.siz)) {
++            const uint swappedUint = EndianSwapUINT(newNative, gConstants.siz);
+             if (gConstants.fmt == G_IM_FMT_DEPTH) {
+                 const float newDepth = Depth16ToFloat(swappedUint);
+                 gOutputChangeDepth[pixelCoord] = newDepth;
+diff --git a/src/shaders/FbReadAnyFullCS.hlsl b/src/shaders/FbReadAnyFullCS.hlsl
+index aca99cf..b88737c 100644
+--- a/src/shaders/FbReadAnyFullCS.hlsl
++++ b/src/shaders/FbReadAnyFullCS.hlsl
+@@ -9,7 +9,7 @@
+ // See FbReadAnyChangesCS: the bound view formats are runtime choices, so the
+ // varying descriptors are declared unformatted and only the always-R8_UINT
+ // boolean target states its format.
+-[[vk::image_format("unknown")]] Buffer<uint> gNewInput : register(t1, space0);
++StructuredBuffer<uint> gNewInput : register(t1, space0);
+ [[vk::image_format("unknown")]] RWTexture2D<float4> gOutputChangeColor : register(u0, space1);
+ [[vk::image_format("unknown")]] RWTexture2D<float> gOutputChangeDepth : register(u1, space1);
+ [[vk::image_format("r8ui")]] RWTexture2D<uint> gOutputChangeBoolean : register(u2, space1);
+@@ -19,7 +19,7 @@ void CSMain(uint2 coord : SV_DispatchThreadID) {
+     if ((coord.x < gConstants.resolution.x) && (coord.y < gConstants.resolution.y)) {
+         uint bufferIndex = coord.y * gConstants.resolution.x + coord.x;
+         uint2 pixelCoord = gConstants.offset + coord.xy;
+-        uint swappedUint = EndianSwapUINT(gNewInput[bufferIndex], gConstants.siz);
++        uint swappedUint = EndianSwapUINT(FbLoadNative(gNewInput, bufferIndex, gConstants.siz), gConstants.siz);
+         if (gConstants.fmt == G_IM_FMT_DEPTH) {
+             const float newDepth = Depth16ToFloat(swappedUint);
+             gOutputChangeDepth[pixelCoord] = newDepth;
+diff --git a/src/shaders/FbWriteColorCS.hlsl b/src/shaders/FbWriteColorCS.hlsl
+index 7129e95..ef90f07 100644
+--- a/src/shaders/FbWriteColorCS.hlsl
++++ b/src/shaders/FbWriteColorCS.hlsl
+@@ -7,7 +7,7 @@
+ 
+ [[vk::push_constant]] ConstantBuffer<FbCommonCB> gConstants : register(b0, space0);
+ // The destination view follows the framebuffer bit depth (R8/R16/R32_UINT).
+-[[vk::image_format("unknown")]] RWBuffer<uint> gOutput : register(u1, space0);
++RWStructuredBuffer<uint> gOutput : register(u1, space0);
+ Texture2D<float4> gInput : register(t0, space1);
+ 
+ [numthreads(FB_COMMON_WORKGROUP_SIZE, FB_COMMON_WORKGROUP_SIZE, 1)]
+@@ -20,6 +20,6 @@ void CSMain(uint2 coord : SV_DispatchThreadID) {
+         uint randomSeed = initRand(gConstants.ditherRandomSeed, dstIndex, 16);
+         uint ditherValue = DitherPatternValue(gConstants.ditherPattern, offsetCoord, randomSeed);
+         uint nativeUint = Float4ToUINT(color, gConstants.siz, gConstants.fmt, oddColumn, ditherValue, gConstants.usesHDR);
+-        gOutput[dstIndex] = EndianSwapUINT(nativeUint, gConstants.siz);
++        FbStoreNative(gOutput, dstIndex, gConstants.siz, EndianSwapUINT(nativeUint, gConstants.siz));
+     }
+ }
+\ No newline at end of file
