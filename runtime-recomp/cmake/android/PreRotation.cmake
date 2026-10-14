@@ -20,26 +20,32 @@ configure_file("${CMAKE_BINARY_DIR}/generated/android-queue-families/src/contrib
     "${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits/src/contrib/plume/plume_vulkan.h" COPYONLY)
 target_include_directories(plume BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits/src/contrib/plume")
 target_include_directories(rt64 BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits/src/contrib/plume")
-# Diagnostic-only stage: serialise GPU submissions on Imagination hardware to
-# test whether the corruption is frame overlap on a tile-based renderer.
-if(DKR_ANDROID_SERIALISE_PROBE)
-    dkr_stage_patch(plume "${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits" android-serialise-probe
-        "${DKRPORT_ROOT}/patches/android/vulkan-serialise-probe.patch"
-        src/contrib/plume/plume_vulkan.cpp)
-    configure_file("${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits/src/contrib/plume/plume_vulkan.h"
-        "${CMAKE_BINARY_DIR}/generated/android-serialise-probe/src/contrib/plume/plume_vulkan.h" COPYONLY)
-    target_include_directories(plume BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-serialise-probe/src/contrib/plume")
-    target_include_directories(rt64 BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-serialise-probe/src/contrib/plume")
-endif()
+# Complete each submission before the next on Imagination hardware: its
+# deferred fragment phase otherwise reads data the host has already rewritten.
+dkr_stage_patch(plume "${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits" android-serialise-submissions
+    "${DKRPORT_ROOT}/patches/android/vulkan-serialise-submissions.patch"
+    src/contrib/plume/plume_vulkan.cpp)
+configure_file("${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits/src/contrib/plume/plume_vulkan.h"
+    "${CMAKE_BINARY_DIR}/generated/android-serialise-submissions/src/contrib/plume/plume_vulkan.h" COPYONLY)
+target_include_directories(plume BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-serialise-submissions/src/contrib/plume")
+target_include_directories(rt64 BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-serialise-submissions/src/contrib/plume")
+# Storage buffer bindings were the other unchecked resource class.
+dkr_stage_patch(plume "${CMAKE_BINARY_DIR}/generated/android-serialise-submissions" android-storage-range-limits
+    "${DKRPORT_ROOT}/patches/android/vulkan-storage-range-limits.patch"
+    src/contrib/plume/plume_vulkan.cpp)
+configure_file("${CMAKE_BINARY_DIR}/generated/android-serialise-submissions/src/contrib/plume/plume_vulkan.h"
+    "${CMAKE_BINARY_DIR}/generated/android-storage-range-limits/src/contrib/plume/plume_vulkan.h" COPYONLY)
+target_include_directories(plume BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-storage-range-limits/src/contrib/plume")
+target_include_directories(rt64 BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-storage-range-limits/src/contrib/plume")
 # Diagnostic-only stage. Plume enables VK_LAYER_KHRONOS_validation under
 # VULKAN_VALIDATION_LAYER_ENABLED, which its own header only sets for !NDEBUG;
 # define it explicitly so a Release-configured diagnostic build can use it.
 # This is never part of a packaged release build.
 if(DKR_ANDROID_VALIDATION)
-    dkr_stage_patch(plume "${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits" android-validation-diagnostics
+    dkr_stage_patch(plume "${CMAKE_BINARY_DIR}/generated/android-storage-range-limits" android-validation-diagnostics
         "${DKRPORT_ROOT}/patches/android/vulkan-validation-diagnostics.patch"
         src/contrib/plume/plume_vulkan.cpp)
-    configure_file("${CMAKE_BINARY_DIR}/generated/android-buffer-view-limits/src/contrib/plume/plume_vulkan.h"
+    configure_file("${CMAKE_BINARY_DIR}/generated/android-storage-range-limits/src/contrib/plume/plume_vulkan.h"
         "${CMAKE_BINARY_DIR}/generated/android-validation-diagnostics/src/contrib/plume/plume_vulkan.h" COPYONLY)
     target_include_directories(plume BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-validation-diagnostics/src/contrib/plume")
     target_include_directories(rt64 BEFORE PRIVATE "${CMAKE_BINARY_DIR}/generated/android-validation-diagnostics/src/contrib/plume")

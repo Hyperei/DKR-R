@@ -1,0 +1,24 @@
+diff --git a/src/contrib/plume/plume_vulkan.cpp b/src/contrib/plume/plume_vulkan.cpp
+index 1e102c4..d3985b3 100644
+--- a/src/contrib/plume/plume_vulkan.cpp
++++ b/src/contrib/plume/plume_vulkan.cpp
+@@ -3919,6 +3919,14 @@ namespace plume {
+         {
+             const std::scoped_lock queueLock(*queue->mutex);
+             res = vkQueueSubmit(queue->vk, 1, &submitInfo, submitFence);
++            // Imagination's tile-based deferred renderer runs fragment shading
++            // for a frame after, and overlapped with, the vertex work of the
++            // next. Anything the fragment phase reads that the host has since
++            // rewritten - texture contents, update-after-bind descriptor slots -
++            // comes out wrong: geometry was consumed early and is correct,
++            // colour and texture were consumed late and are not. Completing
++            // each submission before the next closes that window. Confirmed on
++            // a Pixel 10 (PowerVR DXT-48-1536): a full race with no corruption
++            // where every other change left it unaffected. Other vendors keep
++            // their asynchronous behaviour.
++            if (res == VK_SUCCESS && device->physicalDeviceProperties.vendorID == 0x1010) {
++                vkQueueWaitIdle(queue->vk);
++            }
+         }
+ 
+         if (res != VK_SUCCESS) {

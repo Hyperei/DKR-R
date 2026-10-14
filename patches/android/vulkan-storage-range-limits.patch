@@ -1,0 +1,25 @@
+diff --git a/src/contrib/plume/plume_vulkan.cpp b/src/contrib/plume/plume_vulkan.cpp
+index cae2135..c12971d 100644
+--- a/src/contrib/plume/plume_vulkan.cpp
++++ b/src/contrib/plume/plume_vulkan.cpp
+@@ -2080,6 +2080,20 @@ namespace plume {
+             assert(bufferStructuredView->structureByteStride > 0);
+ 
+             bufferInfo.offset = bufferStructuredView->firstElement * bufferStructuredView->structureByteStride;
++
++            // A structured view spans the whole buffer, and whole-workload
++            // buffers only ever grow. Past maxStorageBufferRange - 128 MiB on
++            // this device - the descriptor write is invalid. Report which
++            // binding and clamp so the descriptor is at least well formed;
++            // reads beyond the clamp remain undefined, so this is a diagnostic
++            // for sizing the real fix, not that fix.
++            const uint64_t storageLimit = interfaceBuffer->device->physicalDeviceProperties.limits.maxStorageBufferRange;
++            if (bufferInfo.range > bufferInfo.offset && (bufferInfo.range - bufferInfo.offset) > storageLimit) {
++                fprintf(stderr, "[Android] Oversized storage buffer binding: descriptor=%u range=%llu offset=%llu stride=%u limit=%llu\\n",
++                    descriptorIndex, static_cast<unsigned long long>(bufferInfo.range), static_cast<unsigned long long>(bufferInfo.offset),
++                    bufferStructuredView->structureByteStride, static_cast<unsigned long long>(storageLimit));
++                bufferInfo.range = bufferInfo.offset + storageLimit;
++            }
+         }
+         else {
+             bufferInfo.offset = 0;
